@@ -2,9 +2,115 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Tokens ───────────────────────────────────────────────────────────────────
+   Palette source: calibrated Olympic plates. The accent is the 20kg blue — the
+   plate on the bar for most working sets. Semantic colours are the rest of the
+   set (10kg green, 15kg yellow, 25kg red), so colour is a system a lifter
+   already reads rather than decoration. Neutrals are graphite with a cyan-blue
+   bias, taken from bar steel — never a pure grey, never a pure black.
+
+   Components style through these tokens only. To retheme the app, edit here.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --ground:     238 241 243;  /* #EEF1F3 cool paper */
+  --surface:    255 255 255;
+  --raised:     231 236 239;
+  --line:       215 222 227;
+  --ink:         13  18  21;
+  --muted:       90 104 116;
+  --faint:      147 161 172;
+
+  --accent:      27  95 191;  /* #1B5FBF — deepened for contrast on paper */
+  --accent-ink: 255 255 255;
+
+  --good:        47 125  58;
+  --warn:       169 116  31;
+  --crit:       176  42  37;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:    13  18  21;  /* #0D1215 graphite */
+    --surface:   21  28  33;
+    --raised:    30  39  46;
+    --line:      38  49  58;
+    --ink:      230 237 243;
+    --muted:    139 154 167;
+    --faint:     90 104 116;
+
+    --accent:    46 123 214;  /* #2E7BD6 — lifted for contrast on graphite */
+    --accent-ink: 255 255 255;
+
+    --good:      63 163  77;
+    --warn:     224 166  60;
+    --crit:     200  51  46;
+  }
+}
+
+/* The in-app toggle stamps data-theme on <html> and must win over the media
+   query in both directions. */
+:root[data-theme='dark'] {
+  --ground:    13  18  21;
+  --surface:   21  28  33;
+  --raised:    30  39  46;
+  --line:      38  49  58;
+  --ink:      230 237 243;
+  --muted:    139 154 167;
+  --faint:     90 104 116;
+  --accent:    46 123 214;
+  --accent-ink: 255 255 255;
+  --good:      63 163  77;
+  --warn:     224 166  60;
+  --crit:     200  51  46;
+}
+
+:root[data-theme='light'] {
+  --ground:   238 241 243;
+  --surface:  255 255 255;
+  --raised:   231 236 239;
+  --line:     215 222 227;
+  --ink:       13  18  21;
+  --muted:     90 104 116;
+  --faint:    147 161 172;
+  --accent:    27  95 191;
+  --accent-ink: 255 255 255;
+  --good:      47 125  58;
+  --warn:     169 116  31;
+  --crit:     176  42  37;
+}
+
+/* ─── Base ─────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ground text-ink font-sans antialiased;
+  }
+
+  /* Every digit in this app sits in a column that should not jitter. */
+  :where(input, select, textarea, button) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/70 ring-offset-2 ring-offset-ground;
+  }
+}
+
 @layer utilities {
   .pb-safe {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  /* Barbell knurling — the one texture in the app. Marks the header edge. */
+  .knurl {
+    background-image:
+      repeating-linear-gradient(45deg,  rgb(var(--faint) / 0.55) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(-45deg, rgb(var(--faint) / 0.55) 0 1px, transparent 1px 4px);
   }
 }
 
@@ -12,8 +118,36 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Spinners steal width from numbers that are already the point of the screen. */
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Date pickers ship a light-mode glyph; match it to the resolved theme. */
+:root[data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) input[type='date']::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
