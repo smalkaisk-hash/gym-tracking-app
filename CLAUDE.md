@@ -76,7 +76,3 @@ Palette source is calibrated Olympic plates: the accent is the 20kg blue, and `g
 **Recharts takes colour strings, not classes**, so the tokens are mirrored in the `CHART` object as hex per theme. It's the one place hex is allowed — if you change a token's value, update `CHART` to match, or the charts drift from the UI. Chart-bearing components need the resolved `theme` passed down.
 
 **Editing Tailwind config requires a dev-server restart.** Vite caches it; `@apply` of a new token will 500 with "class does not exist" until you restart, even though `npm run build` (a fresh process) succeeds. Don't chase that error in the source.
-
-## Repo state
-
-There is an untracked `gym-tracker-app.tsx` in the **repo root** — a stale, divergent 1232-line copy that persists via `window.storage` (a Claude artifact API) rather than localStorage. It is not built and not imported. The live file is [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx); ignore the root copy, and don't sync changes into it. Ask the user before deleting it.
