@@ -1603,7 +1603,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
 // date-filters `workouts` and picks the size. The ring answers "what's my split"
 // at a glance; the legend beside it carries the exact numbers, since you can't
 // read a count off a slice. `theme` selects the CHART palette, like the charts.
-const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg', size = 220, sliceLimit = 6, legendLimit, emptyMessage = 'No sets logged yet.' }: any) => {
+const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg', size = 220, sliceLimit = 6, emptyMessage = 'No sets logged yet.' }: any) => {
   const c    = resolveChart(prefs, theme);
   const data = muscleGroupBreakdown(workouts, metric);
 
@@ -1611,77 +1611,95 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
     return <p className="text-xs text-faint text-center py-6">{emptyMessage}</p>;
   }
 
-  // A ring of thirteen 2%-slivers is unreadable, so keep the top few and fold the
-  // rest (plus any real "Other") into a single trailing slice.
-  const top       = data.slice(0, sliceLimit).filter(d => d.group !== OTHER_GROUP);
-  const folded    = data.filter(d => !top.includes(d)).reduce((n, d) => n + d.value, 0);
-  const total     = data.reduce((n, d) => n + d.value, 0);
-  const slices    = folded > 0
-    ? [...top, { group: OTHER_GROUP, value: folded, pct: (folded / total) * 100 }]
-    : top;
+  // A ring of a dozen 2%-slivers is unreadable, so the top real groups keep their
+  // own colour and everything past the budget — plus any free-text "Other" — folds
+  // into one neutral arc. Folding only kicks in when it compresses ≥2 groups: a lone
+  // leftover keeps its own colour rather than hiding behind an unlabelled catch-all.
+  const total      = data.reduce((n, d) => n + d.value, 0);
+  const realGroups = data.filter(d => d.group !== OTHER_GROUP);
+  const otherReal  = data.find(d => d.group === OTHER_GROUP);
+  const leftover   = [...realGroups.slice(sliceLimit), ...(otherReal ? [otherReal] : [])];
+  const foldedVal  = leftover.reduce((n, d) => n + d.value, 0);
+  const slices     = leftover.length >= 2
+    ? [...realGroups.slice(0, sliceLimit),
+       { group: OTHER_GROUP, value: foldedVal, pct: total ? (foldedVal / total) * 100 : 0, count: leftover.length }]
+    : data;
 
   // The catch-all recedes to the muted neutral; real groups take catalogue hues in
-  // fixed order. One helper feeds both the slices and the legend swatches, so a
-  // group's ring colour and its legend dot never drift apart.
+  // fixed order. The legend renders these same slices, in the same order, so a
+  // group's ring colour and its legend dot can never drift apart — and the folded
+  // arc is always spelled out in the legend rather than left as a mystery wedge.
   const colorAt = (group: string, i: number) =>
     group === OTHER_GROUP ? c.muted : c.cat[i % c.cat.length];
 
-  const legendRows = legendLimit ? data.slice(0, legendLimit) : data;
-  // The legend indexes the full ranked list, but colours must match the ring — so
-  // map each legend group back to its slice position (folded groups get muted).
-  const sliceIndexOf = (group: string) => slices.findIndex(s => s.group === group);
+  // Volume zeroes bodyweight/cardio (no external load moved), so those groups drop
+  // off the ring entirely. Count how many vanished against the set tally so the
+  // absence can be captioned rather than silently misread as "not trained".
+  const hiddenByVolume = metric === 'volume'
+    ? muscleGroupBreakdown(workouts, 'sets').length - data.length
+    : 0;
 
-  // Past four groups a single stacked column runs long and leaves the donut's
-  // right side empty, so split into two columns filled top-to-bottom (ranks 1..n
-  // down the first column, then the rest down the second) rather than row-wise.
-  const twoCols   = legendRows.length > 4;
+  // Past four rows a single column runs long and leaves the donut's right side
+  // empty, so split into two filled top-to-bottom (ranks down the first column,
+  // then the rest down the second) rather than row-wise.
+  const twoCols   = slices.length > 4;
   const legendCss = twoCols
-    ? { gridTemplateRows: `repeat(${Math.ceil(legendRows.length / 2)}, minmax(0, 1fr))`, gridAutoFlow: 'column' as const, gridAutoColumns: 'minmax(0, 1fr)' }
+    ? { gridTemplateRows: `repeat(${Math.ceil(slices.length / 2)}, minmax(0, 1fr))`, gridAutoFlow: 'column' as const, gridAutoColumns: 'minmax(0, 1fr)' }
     : undefined;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-4">
-      <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={slices} dataKey="value" nameKey="group"
-              innerRadius="62%" outerRadius="88%" paddingAngle={1.5}
-              startAngle={90} endAngle={-270}
-              stroke={c.surface} strokeWidth={2} isAnimationActive={false}
-            >
-              {slices.map((d, i) => <Cell key={d.group} fill={colorAt(d.group, i)} />)}
-            </Pie>
-            <Tooltip
-              contentStyle={{ backgroundColor: c.surface, border: `1px solid ${c.line}`, borderRadius: '6px', fontFamily: 'Barlow, system-ui, sans-serif', fontSize: '12px' }}
-              labelStyle={{ color: c.muted }}
-              formatter={(v: any, _n: any, p: any) => [`${metricValueLabel(metric, v, units)} · ${Math.round(p.payload.pct)}%`, p.payload.group]}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        {/* Centre readout — the metric total in the hole. Overlay so it needs no
-            chart colour; pointer-events-none keeps slice hovers alive underneath. */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className={`${readout} text-2xl`}>{metric === 'volume' ? fmtVolume(total, units).replace(/ (kg|lb)$/, '') : total}</span>
-          <span className={`${label} text-[10px] mt-0.5`}>{metric === 'volume' ? units : metric}</span>
+    <div>
+      <div className="flex flex-col sm:flex-row items-center gap-4">
+        <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={slices} dataKey="value" nameKey="group"
+                innerRadius="62%" outerRadius="88%" paddingAngle={1.5}
+                startAngle={90} endAngle={-270}
+                stroke={c.surface} strokeWidth={2} isAnimationActive={false}
+              >
+                {slices.map((d, i) => <Cell key={d.group} fill={colorAt(d.group, i)} />)}
+              </Pie>
+              <Tooltip
+                contentStyle={{ backgroundColor: c.surface, border: `1px solid ${c.line}`, borderRadius: '6px', fontFamily: 'Barlow, system-ui, sans-serif', fontSize: '12px' }}
+                labelStyle={{ color: c.muted }}
+                formatter={(v: any, _n: any, p: any) => [`${metricValueLabel(metric, v, units)} · ${Math.round(p.payload.pct)}%`, p.payload.count > 1 ? `Other · ${p.payload.count} groups` : p.payload.group]}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          {/* Centre readout — the metric total in the hole. Overlay so it needs no
+              chart colour; pointer-events-none keeps slice hovers alive underneath. */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className={`${readout} text-2xl`}>{metric === 'volume' ? fmtVolume(total, units).replace(/ (kg|lb)$/, '') : total}</span>
+            <span className={`${label} text-[10px] mt-0.5`}>{metric === 'volume' ? units : metric}</span>
+          </div>
         </div>
+
+        {/* Legend mirrors the ring slice-for-slice: same order, same colours, and
+            the folded arc spelled out as "Other · N groups" so no wedge is unlabelled. */}
+        <ul className="w-full grid gap-x-4 gap-y-1.5" style={legendCss}>
+          {slices.map((d, i) => {
+            const folded = d.group === OTHER_GROUP && (d as any).count > 1;
+            return (
+              <li key={d.group} className="flex items-center gap-2 text-sm">
+                <span className="w-2.5 h-2.5 rounded-chip flex-shrink-0" style={{ background: colorAt(d.group, i) }} />
+                <span className="text-ink truncate">{folded ? `Other · ${(d as any).count} groups` : d.group}</span>
+                <span className="ml-auto tabular-nums text-muted flex-shrink-0">
+                  {metric === 'volume' ? fmtVolume(d.value, units) : d.value}<span className="text-faint"> · {Math.round(d.pct)}%</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
-      <ul className="w-full grid gap-x-4 gap-y-1.5" style={legendCss}>
-        {legendRows.map(d => {
-          const si = sliceIndexOf(d.group);
-          const swatch = si >= 0 ? colorAt(d.group, si) : c.muted;
-          return (
-            <li key={d.group} className="flex items-center gap-2 text-sm">
-              <span className="w-2.5 h-2.5 rounded-chip flex-shrink-0" style={{ background: swatch }} />
-              <span className="text-ink truncate">{d.group}</span>
-              <span className="ml-auto tabular-nums text-muted flex-shrink-0">
-                {metric === 'volume' ? fmtVolume(d.value, units) : d.value}<span className="text-faint"> · {Math.round(d.pct)}%</span>
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      {/* Volume drops loadless work; say so, so an empty-looking ring isn't misread. */}
+      {hiddenByVolume > 0 && (
+        <p className="mt-3 text-[11px] text-faint text-center sm:text-left">
+          {hiddenByVolume} {hiddenByVolume === 1 ? 'group' : 'groups'} with no logged load (bodyweight, cardio) aren’t counted by volume.
+        </p>
+      )}
     </div>
   );
 };
@@ -1906,7 +1924,6 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
             units={units}
             size={230}
             sliceLimit={5}
-            legendLimit={6}
             emptyMessage="No sets logged in this timeframe."
           />
         </div>
@@ -2680,7 +2697,7 @@ const GymTrackerApp = () => {
           {workouts.length > 0 && !prefs.hidden.includes('dash.muscle') && (
             <div className={`${card} p-4`}>
               <h3 className={`${label} mb-3`}>Muscle focus · Last 30 days</h3>
-              <MuscleGroupDonut workouts={last30Workouts} theme={theme} prefs={prefs} metric={prefs.muscleMetric} units={units} size={150} sliceLimit={5} legendLimit={6} emptyMessage="No sets logged in the last 30 days." />
+              <MuscleGroupDonut workouts={last30Workouts} theme={theme} prefs={prefs} metric={prefs.muscleMetric} units={units} size={150} sliceLimit={5} emptyMessage="No sets logged in the last 30 days." />
             </div>
           )}
 
