@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW } from './supabase';
 
 // Vite hashes and copies these into dist/assets at build time.
 import pushImg from '../Assets/pexels-tima-miroshnichenko-5327522.jpg';
@@ -1162,13 +1163,13 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   // straight through it — no `filtered[i]` lookup, which would be wrong once the
   // calendar renders a single day's subset instead of the whole list.
   const saveEditing = (oi: number) => {
-    updateWorkout(oi, editData);
+    updateWorkout(workouts[oi].id, editData);   // oi = originalIndex → resolve the row uuid
     setEditingWorkout(null);
     setEditData(null);
   };
 
   const confirmDelete = (oi: number) => {
-    deleteWorkout(oi);
+    deleteWorkout(workouts[oi].id);
     setExpandedWorkout(null);
     setEditingWorkout(null);
     setConfirmingDelete(null);
@@ -1987,7 +1988,7 @@ const Segmented = ({ value, onChange, options }: any) => (
   </div>
 );
 
-const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onDone }: any) => {
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onSignOut, userEmail, onDone }: any) => {
   const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
   const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -2161,8 +2162,22 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         {progKeys.map(widgetRow)}
       </div>
 
-      {/* Data — everything lives in this browser only, so a backup is the only
-          safety net. Export writes a JSON file; import replaces the current data. */}
+      {/* Account — the signed-in identity; data syncs to this account. */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Account</h3>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="text-sm text-ink truncate">{userEmail ?? 'Signed in'}</p>
+            <p className="text-xs text-faint mt-0.5">Your workouts sync to this account.</p>
+          </div>
+          <button onClick={() => onSignOut && onSignOut()} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+            <LogOut size={14} /> Sign out
+          </button>
+        </div>
+      </div>
+
+      {/* Data — backups. Export writes a JSON file; import replaces the account's
+          data. Data lives in your Supabase project (and a local cache). */}
       <div className={`${card} p-4`}>
         <h3 className={`${label} mb-3`}>Data</h3>
         <div className="flex flex-wrap gap-2">
@@ -2175,7 +2190,7 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
         </div>
         {importMsg && <p className="text-xs text-muted mt-2">{importMsg}</p>}
-        <p className="text-xs text-faint mt-2">Your data is stored only in this browser. Export regularly — clearing site data wipes it.</p>
+        <p className="text-xs text-faint mt-2">Your data syncs to your Supabase account, with a local cache for offline reads. Export gives you a portable backup.</p>
 
         <div className="h-px bg-line my-4" />
         {!confirmingClear ? (
@@ -2198,11 +2213,106 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
   );
 };
 
+// ─── Auth gate screens ─────────────────────────────────────────────────────────
+// A full-screen shell shared by the pre-app states (loading / login / config
+// error), so they match the app chrome instead of flashing bare.
+const AuthShell = ({ children }: any) => (
+  <div className="min-h-screen bg-ground text-ink flex flex-col items-center justify-center px-6">
+    <div className="w-full max-w-sm">{children}</div>
+  </div>
+);
+
+const FullScreenLoader = () => (
+  <AuthShell>
+    <div className="flex flex-col items-center gap-3 text-muted">
+      <Loader2 size={28} className="animate-spin text-accent" />
+      <p className="text-sm">Loading…</p>
+    </div>
+  </AuthShell>
+);
+
+// Shown when the Supabase env vars are missing — the app can't run without a
+// backend, so say exactly what to do rather than crash.
+const ConfigError = () => (
+  <AuthShell>
+    <div className={`${card} p-6`}>
+      <h1 className="font-display text-xl font-bold uppercase tracking-wide text-ink mb-2">Backend not configured</h1>
+      <p className="text-sm text-muted mb-3">
+        Set <code className="text-ink">VITE_SUPABASE_URL</code> and{' '}
+        <code className="text-ink">VITE_SUPABASE_ANON_KEY</code> in a{' '}
+        <code className="text-ink">.env.local</code> file (see <code className="text-ink">.env.example</code>), then restart the dev server.
+      </p>
+    </div>
+  </AuthShell>
+);
+
+// Magic-link sign in. Supabase emails a one-time link; clicking it returns here
+// with a session, which onAuthStateChange picks up. No passwords to store.
+const LoginScreen = () => {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  const sendLink = async () => {
+    const addr = email.trim();
+    if (!addr) return;
+    setStatus('sending');
+    const { error } = await supabase.auth.signInWithOtp({
+      email: addr,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setStatus(error ? 'error' : 'sent');
+  };
+
+  return (
+    <AuthShell>
+      <div className="flex items-center gap-2 justify-center mb-6">
+        <div className="w-10 h-10 rounded-ctl bg-accent grid place-items-center">
+          <Dumbbell size={22} className="text-accent-ink" />
+        </div>
+        <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">FitPulse</h1>
+      </div>
+
+      {status === 'sent' ? (
+        <div className={`${card} p-6 text-center`}>
+          <Mail size={28} className="text-accent mx-auto mb-3" />
+          <p className="text-sm text-ink font-medium mb-1">Check your email</p>
+          <p className="text-xs text-muted">We sent a sign-in link to {email.trim()}. Open it on this device.</p>
+          <button onClick={() => setStatus('idle')} className={`${btnSecondary} mt-4 px-4 py-2 text-sm`}>Use a different email</button>
+        </div>
+      ) : (
+        <div className={`${card} p-6`}>
+          <label htmlFor="login-email" className={`${label} block mb-2`}>Email</label>
+          <input
+            id="login-email"
+            type="email" inputMode="email" autoComplete="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && sendLink()}
+            className={`${input} w-full`}
+            placeholder="you@example.com"
+            autoFocus
+          />
+          <button
+            onClick={sendLink}
+            disabled={status === 'sending' || !email.trim()}
+            className={`${btnPrimary} w-full mt-4 p-3 flex items-center justify-center gap-2 disabled:opacity-50`}
+          >
+            {status === 'sending' ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+            {status === 'sending' ? 'Sending…' : 'Send magic link'}
+          </button>
+          {status === 'error' && <p className="text-xs text-crit mt-2">Couldn't send the link. Check the email and try again.</p>}
+          <p className="text-xs text-faint mt-3">A one-time sign-in link lands in your inbox — no password.</p>
+        </div>
+      )}
+    </AuthShell>
+  );
+};
+
 // ─── GymTrackerApp ─────────────────────────────────────────────────────────────
 const GymTrackerApp = () => {
   const [currentScreen, setCurrentScreen]             = useState('home');
   const [workouts, setWorkouts]                       = useState<any[]>([]);
-  const [bodyWeightLog, setBodyWeightLog]             = useState<{ date: string; weight: number }[]>([]);
+  const [bodyWeightLog, setBodyWeightLog]             = useState<{ id: string; date: string; weight: number }[]>([]);
   const [weeklyGoal, setWeeklyGoal]                   = useState(4);
   const [currentWorkout, setCurrentWorkout]           = useState<any>(null);
   const [selectedWorkoutType, setSelectedWorkoutType] = useState<string | null>(null);
@@ -2216,6 +2326,17 @@ const GymTrackerApp = () => {
   // Set true once the mount load has run, so the active-session write effect can't
   // clobber stored data with the empty initial state before the load reads it.
   const loadedRef = useRef(false);
+
+  // ── Backend auth/sync state ──────────────────────────────────────────────────
+  // session   — the Supabase session (null = signed out). authReady gates the
+  //             pre-app render so we don't flash the login screen mid-check.
+  // hydrated  — the signed-in user's data has been pulled from Supabase (and any
+  //             one-time localStorage migration run). The settings write-back
+  //             effect waits on this so it can't upsert defaults over real data.
+  const [session, setSession]     = useState<any>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [hydrated, setHydrated]   = useState(false);
+  const clampGoal = (g: number) => Math.min(GOAL_MAX, Math.max(GOAL_MIN, g));
 
   const { theme, mode, setMode, toggle } = useTheme();
   const c = CHART[theme];
@@ -2253,7 +2374,10 @@ const GymTrackerApp = () => {
       const storedGoal = localStorage.getItem(GOAL_KEY);
       const storedPrefs = localStorage.getItem(PREFS_KEY);
 
-      const loadedWorkouts = stored ? JSON.parse(stored) : [];
+      // Back-fill a local id on cache entries that predate row ids, so the cached
+      // list is editable until hydrate swaps in the server rows.
+      const loadedWorkouts = (stored ? JSON.parse(stored) : [])
+        .map((w: any) => ({ ...w, id: w.id ?? crypto.randomUUID() }));
       if (loadedWorkouts.length > 0) setWorkouts(loadedWorkouts);
       // Clamp on read: a goal saved before the 7/week cap would otherwise survive it.
       if (storedGoal) {
@@ -2267,11 +2391,14 @@ const GymTrackerApp = () => {
         setPrefs({ ...DEFAULT_PREFS, ...p, hidden: Array.isArray(p?.hidden) ? p.hidden : [] });
       }
 
+      // Cache entries may predate row ids (old localStorage) — back-fill a local id
+      // so keys/edits work until hydrate replaces them with the server rows.
+      const withId = (e: any) => ({ id: e.id ?? crypto.randomUUID(), date: e.date, weight: e.weight });
       if (storedBW) {
-        setBodyWeightLog(JSON.parse(storedBW));
+        setBodyWeightLog(JSON.parse(storedBW).map(withId));
       } else if (loadedWorkouts.length > 0) {
         // Migrate existing workout body weights into the log
-        setBodyWeightLog(loadedWorkouts.map((w: any) => ({ date: w.date, weight: w.bodyWeight })));
+        setBodyWeightLog(loadedWorkouts.map((w: any) => withId({ date: w.date, weight: w.bodyWeight })));
       }
 
       // Resume an in-progress session if one was persisted (a refresh, phone lock,
@@ -2288,6 +2415,104 @@ const GymTrackerApp = () => {
       }
     } catch { /* ignore */ }
   }, []);
+
+  // ── Supabase: track the auth session ─────────────────────────────────────────
+  // getSession() resolves the persisted session on load; onAuthStateChange keeps
+  // us in step with sign-in (magic-link return) and sign-out.
+  useEffect(() => {
+    if (!supabaseEnabled) { setAuthReady(true); return; }
+    supabase.auth.getSession().then(({ data }: any) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e: any, s: any) => {
+      setSession(s);
+      if (!s) setHydrated(false);   // signed out → require a fresh hydrate next login
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // One-time lift of this device's localStorage snapshot into Supabase, run only
+  // when the account has no server data yet (first login on a device that has been
+  // used offline). Returns the inserted rows so hydrate can seed state from them.
+  const migrateLocalToServer = async (userId: string) => {
+    try {
+      const rawW     = localStorage.getItem(STORAGE_KEY);
+      const rawBW    = localStorage.getItem(BW_LOG_KEY);
+      const rawGoal  = localStorage.getItem(GOAL_KEY);
+      const rawPrefs = localStorage.getItem(PREFS_KEY);
+      const localWorkouts = rawW  ? JSON.parse(rawW)  : [];
+      const localBW       = rawBW ? JSON.parse(rawBW) : [];
+      if (localWorkouts.length === 0 && localBW.length === 0 && !rawGoal && !rawPrefs) return null;
+
+      let workoutRows: any[] = [];
+      if (localWorkouts.length) {
+        const { data, error } = await supabase.from('workouts').insert(localWorkouts.map(workoutToRow)).select();
+        if (error) throw error;
+        workoutRows = data ?? [];
+      }
+      let bwRows: any[] = [];
+      if (localBW.length) {
+        const { data, error } = await supabase.from('body_weight_log')
+          .insert(localBW.map((e: any) => ({ date: e.date, weight: e.weight }))).select();
+        if (error) throw error;
+        bwRows = data ?? [];
+      }
+      const goal     = rawGoal  ? clampGoal(parseInt(rawGoal, 10)) : null;
+      const prefsObj = rawPrefs ? JSON.parse(rawPrefs) : null;
+      let settingsRow: any = null;
+      if (goal != null || prefsObj) {
+        const { data, error } = await supabase.from('settings')
+          .upsert({ user_id: userId, weekly_goal: goal, prefs: prefsObj }).select().maybeSingle();
+        if (error) throw error;
+        settingsRow = data;
+      }
+      return { workoutRows, bwRows, settingsRow };
+    } catch (e) {
+      console.error('Migration failed', e);
+      return null;
+    }
+  };
+
+  // ── Supabase: hydrate state for the signed-in user ───────────────────────────
+  // Runs whenever a session appears. Server is the source of truth; the
+  // localStorage load above already painted the cache, so this replaces it. Only
+  // after this sets `hydrated` does the settings write-back effect start upserting.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [wRes, bwRes, sRes] = await Promise.all([
+          supabase.from('workouts').select('*').order('date', { ascending: true }),
+          supabase.from('body_weight_log').select('*').order('date', { ascending: true }),
+          supabase.from('settings').select('*').eq('user_id', session.user.id).maybeSingle(),
+        ]);
+        if (cancelled) return;
+        let workoutRows  = wRes.data ?? [];
+        let bwRows       = bwRes.data ?? [];
+        let settingsRow  = sRes.data ?? null;
+
+        if (workoutRows.length === 0 && bwRows.length === 0 && !settingsRow) {
+          const migrated = await migrateLocalToServer(session.user.id);
+          if (migrated) { workoutRows = migrated.workoutRows; bwRows = migrated.bwRows; settingsRow = migrated.settingsRow; }
+        }
+        if (cancelled) return;
+
+        setWorkouts(workoutRows.map(rowToWorkout));
+        setBodyWeightLog(bwRows.map(rowToBW));
+        if (settingsRow) {
+          if (Number.isFinite(settingsRow.weekly_goal)) setWeeklyGoal(clampGoal(settingsRow.weekly_goal));
+          if (settingsRow.prefs) setPrefs({ ...DEFAULT_PREFS, ...settingsRow.prefs, hidden: Array.isArray(settingsRow.prefs.hidden) ? settingsRow.prefs.hidden : [] });
+        }
+      } catch (e) {
+        console.error('Hydrate failed', e);   // keep the localStorage cache; app still usable offline
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session]);
 
   // Persist the active session on every change so it survives a reload. Skips the
   // first run (mount) so the empty initial state can't clear a just-loaded session
@@ -2318,6 +2543,19 @@ const GymTrackerApp = () => {
   useEffect(() => {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
   }, [prefs]);
+
+  // Sync weekly goal + prefs to Supabase (one row per user). Debounced so a slider
+  // drag or colour-picker sweep is one upsert, not dozens. Gated on `hydrated` so
+  // it can't fire with default values before the initial load lands.
+  useEffect(() => {
+    if (!hydrated || !session) return;
+    const t = setTimeout(() => {
+      supabase.from('settings')
+        .upsert({ user_id: session.user.id, weekly_goal: weeklyGoal, prefs, updated_at: new Date().toISOString() })
+        .then(({ error }: any) => { if (error) console.error('Settings save failed', error); });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [weeklyGoal, prefs, hydrated, session]);
 
   // ── Workout actions ──────────────────────────────────────────────────────────
   const startWorkout = (type: string) => {
@@ -2386,7 +2624,7 @@ const GymTrackerApp = () => {
     });
   };
 
-  const finishWorkout = () => {
+  const finishWorkout = async () => {
     // Drop exercises that never got a set — an empty card is nothing to log and
     // would just clutter history.
     const exercises = currentWorkout.exercises.filter((ex: any) => ex.sets.length > 0);
@@ -2402,16 +2640,32 @@ const GymTrackerApp = () => {
     // Strip the per-session timer bookkeeping from the permanent record.
     const { workoutTimer: _wt, restTimer: _rt, pausedMs: _pm, pausedAt: _pa, ...base } = currentWorkout;
     const completed = { ...base, exercises, notes: workoutNotes, ...(timerOn ? { duration } : {}) };
-    setWorkouts(prev => [...prev, completed]);
+
+    // Optimistic: show it immediately under a temp id, then swap in the row the
+    // server returns (with its real uuid). If the insert fails we keep the temp
+    // row — it stays in the localStorage cache, so the session isn't lost.
+    const tempId = crypto.randomUUID();
+    setWorkouts(prev => [...prev, { ...completed, id: tempId }]);
     // Only log a real weigh-in — a skipped (null) body weight isn't a data point.
-    if (completed.bodyWeight != null) {
-      setBodyWeightLog(prev => [...prev, { date: completed.date, weight: completed.bodyWeight }]);
+    const bwTempId = completed.bodyWeight != null ? crypto.randomUUID() : null;
+    if (bwTempId) {
+      setBodyWeightLog(prev => [...prev, { id: bwTempId, date: completed.date, weight: completed.bodyWeight }]);
     }
     setCurrentWorkout(null);
     setSelectedWorkoutType(null);
     setBodyWeight('');
     setWorkoutNotes('');
     setCurrentScreen('home');
+
+    const { data, error } = await supabase.from('workouts').insert(workoutToRow(completed)).select().single();
+    if (error) console.error('Save workout failed', error);
+    else setWorkouts(prev => prev.map(w => w.id === tempId ? rowToWorkout(data) : w));
+    if (bwTempId) {
+      const { data: bw, error: bwErr } = await supabase.from('body_weight_log')
+        .insert({ date: completed.date, weight: completed.bodyWeight }).select().single();
+      if (bwErr) console.error('Save weigh-in failed', bwErr);
+      else setBodyWeightLog(prev => prev.map(e => e.id === bwTempId ? rowToBW(bw) : e));
+    }
   };
 
   const cancelWorkout = () => {
@@ -2422,33 +2676,63 @@ const GymTrackerApp = () => {
     setCurrentScreen('home');
   };
 
-  const handleQuickBWLog = () => {
+  const handleQuickBWLog = async () => {
     if (!quickBWInput) return;
     const kg = fromInputWeight(quickBWInput, units);   // typed in display units → stored kg
     if (kg == null) return;
-    setBodyWeightLog(prev => [...prev, { date: new Date().toISOString(), weight: kg }]);
+    const temp = { id: crypto.randomUUID(), date: new Date().toISOString(), weight: kg };
+    setBodyWeightLog(prev => [...prev, temp]);
     setQuickBWInput('');
+    const { data, error } = await supabase.from('body_weight_log')
+      .insert({ date: temp.date, weight: kg }).select().single();
+    if (error) console.error('Save weigh-in failed', error);
+    else setBodyWeightLog(prev => prev.map(e => e.id === temp.id ? rowToBW(data) : e));
   };
 
-  const deleteWorkout = (i: number) => setWorkouts(w => w.filter((_, idx) => idx !== i));
+  // Identity is the row uuid now (not the array index): HistoryScreen resolves
+  // workouts[originalIndex].id and passes it here, so a sorted/filtered/calendar
+  // subset always routes to the right row.
+  const deleteWorkout = async (id: string) => {
+    const removed = workouts.find(w => w.id === id);
+    setWorkouts(w => w.filter(x => x.id !== id));   // optimistic
+    const { error } = await supabase.from('workouts').delete().eq('id', id);
+    if (error) { console.error('Delete workout failed', error); if (removed) setWorkouts(prev => [...prev, removed]); }
+  };
 
-  const updateWorkout = (i: number, updated: any) => {
-    setWorkouts(w => w.map((item, idx) => idx === i ? updated : item));
+  const updateWorkout = async (id: string, updated: any) => {
+    setWorkouts(w => w.map(item => item.id === id ? { ...updated, id } : item));   // optimistic
+    const { error } = await supabase.from('workouts').update(workoutToRow(updated)).eq('id', id);
+    if (error) console.error('Update workout failed', error);
+
     // Keep the body-weight log in step: the finish-time entry shares the workout's
     // date, so edit/clear it here too — otherwise the chart and readout keep the
     // old (or wrong) number the History edit was meant to fix.
-    setBodyWeightLog(prev => {
-      const at = prev.findIndex(e => e.date === updated.date);
-      if (updated.bodyWeight == null) return at >= 0 ? prev.filter((_, idx) => idx !== at) : prev;
-      if (at >= 0) return prev.map((e, idx) => idx === at ? { ...e, weight: updated.bodyWeight } : e);
-      return [...prev, { date: updated.date, weight: updated.bodyWeight }];
-    });
+    const existing = bodyWeightLog.find(e => e.date === updated.date);
+    if (updated.bodyWeight == null) {
+      if (existing) {
+        setBodyWeightLog(prev => prev.filter(e => e.id !== existing.id));
+        const { error: e2 } = await supabase.from('body_weight_log').delete().eq('id', existing.id);
+        if (e2) console.error('Delete weigh-in failed', e2);
+      }
+    } else if (existing) {
+      setBodyWeightLog(prev => prev.map(e => e.id === existing.id ? { ...e, weight: updated.bodyWeight } : e));
+      const { error: e2 } = await supabase.from('body_weight_log').update({ weight: updated.bodyWeight }).eq('id', existing.id);
+      if (e2) console.error('Update weigh-in failed', e2);
+    } else {
+      const { data, error: e2 } = await supabase.from('body_weight_log')
+        .insert({ date: updated.date, weight: updated.bodyWeight }).select().single();
+      if (e2) console.error('Add weigh-in failed', e2);
+      else setBodyWeightLog(prev => [...prev, rowToBW(data)]);
+    }
   };
 
-  // Remove a body-weight data point (a fat-fingered entry, say). Indexes into the
-  // unsorted log — the card tags each row with its original index before sorting.
-  const deleteBodyWeightEntry = (i: number) =>
-    setBodyWeightLog(log => log.filter((_, idx) => idx !== i));
+  // Remove a body-weight data point (a fat-fingered entry, say). Keyed by row uuid.
+  const deleteBodyWeightEntry = async (id: string) => {
+    const removed = bodyWeightLog.find(e => e.id === id);
+    setBodyWeightLog(log => log.filter(e => e.id !== id));   // optimistic
+    const { error } = await supabase.from('body_weight_log').delete().eq('id', id);
+    if (error) { console.error('Delete weigh-in failed', error); if (removed) setBodyWeightLog(prev => [...prev, removed]); }
+  };
 
   // Move an exercise up/down within the active session so it can be reordered.
   const moveExercise = (idx: number, dir: -1 | 1) => {
@@ -2487,28 +2771,77 @@ const GymTrackerApp = () => {
   const importData = (file: File): Promise<boolean> =>
     new Promise(resolve => {
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
           const d = JSON.parse(String(reader.result));
-          if (!Array.isArray(d.workouts)) { resolve(false); return; }
-          setWorkouts(d.workouts);
-          setBodyWeightLog(Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : []);
-          if (Number.isFinite(d.weeklyGoal)) setWeeklyGoal(Math.min(GOAL_MAX, Math.max(GOAL_MIN, d.weeklyGoal)));
-          if (d.prefs) setPrefs({ ...DEFAULT_PREFS, ...d.prefs, hidden: Array.isArray(d.prefs.hidden) ? d.prefs.hidden : [] });
+          if (!Array.isArray(d.workouts) || !session) { resolve(false); return; }
+          const uid = session.user.id;
+
+          // Replace the account's server data wholesale, then seed state from the
+          // rows we inserted (so every workout carries its new uuid).
+          await supabase.from('workouts').delete().eq('user_id', uid);
+          await supabase.from('body_weight_log').delete().eq('user_id', uid);
+
+          let wRows: any[] = [];
+          if (d.workouts.length) {
+            const { data, error } = await supabase.from('workouts').insert(d.workouts.map(workoutToRow)).select();
+            if (error) throw error;
+            wRows = data ?? [];
+          }
+          const bwIn = Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : [];
+          let bwRows: any[] = [];
+          if (bwIn.length) {
+            const { data, error } = await supabase.from('body_weight_log')
+              .insert(bwIn.map((e: any) => ({ date: e.date, weight: e.weight }))).select();
+            if (error) throw error;
+            bwRows = data ?? [];
+          }
+          const goal     = Number.isFinite(d.weeklyGoal) ? clampGoal(d.weeklyGoal) : 4;
+          const prefsObj = d.prefs
+            ? { ...DEFAULT_PREFS, ...d.prefs, hidden: Array.isArray(d.prefs.hidden) ? d.prefs.hidden : [] }
+            : DEFAULT_PREFS;
+          const { error: sErr } = await supabase.from('settings')
+            .upsert({ user_id: uid, weekly_goal: goal, prefs: prefsObj, updated_at: new Date().toISOString() });
+          if (sErr) throw sErr;
+
+          setWorkouts(wRows.map(rowToWorkout));
+          setBodyWeightLog(bwRows.map(rowToBW));
+          setWeeklyGoal(goal);
+          setPrefs(prefsObj);
           resolve(true);
-        } catch { resolve(false); }
+        } catch (e) { console.error('Import failed', e); resolve(false); }
       };
       reader.onerror = () => resolve(false);
       reader.readAsText(file);
     });
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
     setWorkouts([]);
     setBodyWeightLog([]);
     setWeeklyGoal(4);
     setPrefs(DEFAULT_PREFS);
     setCurrentWorkout(null);
     try { localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
+    if (session) {
+      const uid = session.user.id;
+      const results = await Promise.all([
+        supabase.from('workouts').delete().eq('user_id', uid),
+        supabase.from('body_weight_log').delete().eq('user_id', uid),
+        supabase.from('settings').delete().eq('user_id', uid),
+      ]);
+      results.forEach(({ error }: any) => { if (error) console.error('Clear data failed', error); });
+    }
+  };
+
+  // End the session and drop the in-memory data (the next sign-in re-hydrates).
+  const signOut = async () => {
+    try { await supabase.auth.signOut(); } catch (e) { console.error('Sign out failed', e); }
+    setWorkouts([]);
+    setBodyWeightLog([]);
+    setWeeklyGoal(4);
+    setPrefs(DEFAULT_PREFS);
+    setCurrentWorkout(null);
+    setCurrentScreen('home');
   };
 
   // ── Derived stats ────────────────────────────────────────────────────────────
@@ -2588,6 +2921,13 @@ const GymTrackerApp = () => {
   const goalMet    = goalPct >= 100;
   const streak     = getWorkoutStreak();
   const inSession  = currentScreen === 'workout' || currentScreen === 'enterBodyWeight';
+
+  // Auth/config gates. Every hook above runs on each render, so these early
+  // returns are safe. Missing env → config help; still checking → loader;
+  // signed out → magic-link login.
+  if (!supabaseEnabled) return <ConfigError />;
+  if (!authReady)       return <FullScreenLoader />;
+  if (!session)         return <LoginScreen />;
 
   return (
     <div className="min-h-screen bg-ground text-ink">
@@ -2751,18 +3091,17 @@ const GymTrackerApp = () => {
                 </button>
                 {manageBW && (
                   <ul className="mt-2 flex flex-col gap-1 max-h-48 overflow-y-auto">
-                    {bodyWeightLog
-                      .map((e, idx) => ({ ...e, idx }))
+                    {[...bodyWeightLog]
                       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                       .map(e => (
-                        <li key={e.idx} className="flex items-center justify-between gap-2 bg-raised rounded-ctl px-3 py-1.5">
+                        <li key={e.id} className="flex items-center justify-between gap-2 bg-raised rounded-ctl px-3 py-1.5">
                           <span className="text-xs text-muted tabular-nums">
                             {new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </span>
                           <span className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-ink tabular-nums">{trim1(toDisplayWeight(e.weight, units) as number)} {units}</span>
                             <button
-                              onClick={() => deleteBodyWeightEntry(e.idx)}
+                              onClick={() => deleteBodyWeightEntry(e.id)}
                               aria-label={`Delete body weight entry from ${new Date(e.date).toLocaleDateString()}`}
                               className="text-faint hover:text-crit transition-colors"
                             >
@@ -2894,6 +3233,7 @@ const GymTrackerApp = () => {
           prefs={prefs} updatePrefs={updatePrefs} toggleHidden={toggleHidden}
           theme={theme} themeMode={mode} setThemeMode={setMode}
           onExport={exportData} onImport={importData} onClearData={clearAllData}
+          onSignOut={signOut} userEmail={session?.user?.email}
           onDone={() => setCurrentScreen(settingsFrom)}
         />
       )}

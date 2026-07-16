@@ -1,0 +1,62 @@
+-- FitPulse — Supabase schema (Path A: real auth + Row Level Security).
+-- Run this in the Supabase SQL editor (or `supabase db` / the MCP apply_migration
+-- tool). Safe to re-run: guards are IF NOT EXISTS / drop-before-create.
+--
+-- Design notes:
+--   • `date` columns are TEXT, not timestamptz, on purpose. The app treats a
+--     workout's date as an opaque ISO string that also links a weigh-in to its
+--     session (body_weight_log.date == workouts.date). TEXT round-trips the exact
+--     string the client generated; timestamptz would re-normalise it and could
+--     break that string-equality correlation.
+--   • `exercises` is JSONB — a workout is one document (nested sets[] with a
+--     nullable weight = bodyweight). The app never queries inside it server-side.
+--   • user_id defaults to auth.uid() so inserts don't need to send it; RLS still
+--     enforces it via WITH CHECK.
+
+-- ── workouts ─────────────────────────────────────────────────────────────────
+create table if not exists public.workouts (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users on delete cascade,
+  type        text not null,
+  body_weight real,                       -- null = weigh-in skipped
+  exercises   jsonb not null default '[]'::jsonb,
+  date        text not null,              -- ISO string from the client
+  notes       text default '',
+  duration    integer,                    -- seconds; null when the session timer was off
+  created_at  timestamptz not null default now()
+);
+create index if not exists workouts_user_date_idx on public.workouts (user_id, date);
+
+-- ── body_weight_log ──────────────────────────────────────────────────────────
+create table if not exists public.body_weight_log (
+  id       uuid primary key default gen_random_uuid(),
+  user_id  uuid not null default auth.uid() references auth.users on delete cascade,
+  date     text not null,                 -- ISO string; matches a workout's date for finish-time weigh-ins
+  weight   real not null
+);
+create index if not exists bw_user_date_idx on public.body_weight_log (user_id, date);
+
+-- ── settings (one row per user) ──────────────────────────────────────────────
+create table if not exists public.settings (
+  user_id     uuid primary key default auth.uid() references auth.users on delete cascade,
+  weekly_goal integer,
+  prefs       jsonb,
+  updated_at  timestamptz not null default now()
+);
+
+-- ── Row Level Security: each user sees and writes only their own rows ─────────
+alter table public.workouts        enable row level security;
+alter table public.body_weight_log enable row level security;
+alter table public.settings        enable row level security;
+
+drop policy if exists "own workouts" on public.workouts;
+create policy "own workouts" on public.workouts
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "own body_weight_log" on public.body_weight_log;
+create policy "own body_weight_log" on public.body_weight_log
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "own settings" on public.settings;
+create policy "own settings" on public.settings
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
