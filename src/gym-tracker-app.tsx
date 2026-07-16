@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 // Vite hashes and copies these into dist/assets at build time.
@@ -269,6 +269,7 @@ const STORAGE_KEY = 'gym-workouts';
 const BW_LOG_KEY  = 'gym-bw-log';
 const GOAL_KEY    = 'gym-weekly-goal';
 const PREFS_KEY   = 'gym-prefs';
+const ACTIVE_KEY  = 'gym-active-session';   // in-progress workout, so a refresh can't lose it
 
 // Seven days in a week, and almost nobody trains twice in one.
 const GOAL_MIN = 1;
@@ -289,10 +290,12 @@ type Prefs = {
   semantics: string;             // SEMANTICS id (good/warn/crit set)
   restTimer: boolean;            // start a rest countdown after each set
   restSeconds: number;           // its default duration
+  workoutTimer: boolean;         // time the whole session and log its duration
 };
 const DEFAULT_PREFS: Prefs = {
   units: 'kg', hidden: [], muscleMetric: 'sets', bwChart: 'line',
   accent: 'blue', base: 'graphite', semantics: 'plates', restTimer: true, restSeconds: 90,
+  workoutTimer: true,
 };
 
 // Hideable stat widgets, keyed per screen so the same kind can be hidden on one
@@ -403,23 +406,23 @@ const BASES: Record<string, { label: string; light: BaseTone; dark: BaseTone }> 
     light: { tokens: { '--ground':'238 241 243','--surface':'255 255 255','--raised':'231 236 239','--line':'215 222 227','--ink':'13 18 21','--muted':'90 104 116','--faint':'147 161 172' }, chart: { surface:'#ffffff', line:'#d7dee3', grid:'#d7dee3', axis:'#5a6874', muted:'#5a6874' } },
     dark:  { tokens: { '--ground':'13 18 21','--surface':'21 28 33','--raised':'30 39 46','--line':'38 49 58','--ink':'230 237 243','--muted':'139 154 167','--faint':'90 104 116' }, chart: { surface:'#151c21', line:'#26313a', grid:'#26313a', axis:'#8b9aa7', muted:'#8b9aa7' } } },
   warm: { label: 'Warm',
-    light: { tokens: { '--ground':'242 240 239','--surface':'255 255 254','--raised':'236 235 233','--line':'222 220 218','--ink':'19 17 15','--muted':'106 101 96','--faint':'162 158 154' }, chart: { surface:'#fffffe', line:'#dedcda', grid:'#dedcda', axis:'#6a6560', muted:'#6a6560' } },
-    dark:  { tokens: { '--ground':'19 17 14','--surface':'29 26 24','--raised':'40 37 34','--line':'50 47 43','--ink':'237 236 233','--muted':'155 151 146','--faint':'107 101 95' }, chart: { surface:'#1d1a18', line:'#322f2b', grid:'#322f2b', axis:'#9b9792', muted:'#9b9792' } } },
+    light: { tokens: { '--ground':'253 239 219','--surface':'255 253 232','--raised':'251 233 207','--line':'239 219 189','--ink':'19 17 15','--muted':'106 101 96','--faint':'162 158 154' }, chart: { surface:'#fffde8', line:'#efdbbd', grid:'#efdbbd', axis:'#6a6560', muted:'#6a6560' } },
+    dark:  { tokens: { '--ground':'25 16 3','--surface':'36 26 11','--raised':'48 36 19','--line':'60 46 26','--ink':'237 236 233','--muted':'155 151 146','--faint':'107 101 95' }, chart: { surface:'#241a0b', line:'#3c2e1a', grid:'#3c2e1a', axis:'#9b9792', muted:'#9b9792' } } },
   slate: { label: 'Slate',
-    light: { tokens: { '--ground':'238 241 244','--surface':'253 255 255','--raised':'233 235 239','--line':'218 221 226','--ink':'14 17 22','--muted':'95 103 113','--faint':'153 159 167' }, chart: { surface:'#fdffff', line:'#dadde2', grid:'#dadde2', axis:'#5f6771', muted:'#5f6771' } },
-    dark:  { tokens: { '--ground':'14 17 22','--surface':'23 27 33','--raised':'33 38 45','--line':'42 48 55','--ink':'233 236 240','--muted':'146 153 162','--faint':'94 103 115' }, chart: { surface:'#171b21', line:'#2a3037', grid:'#2a3037', axis:'#9299a2', muted:'#9299a2' } } },
+    light: { tokens: { '--ground':'233 241 255','--surface':'247 255 255','--raised':'225 235 255','--line':'210 221 251','--ink':'14 17 22','--muted':'95 103 113','--faint':'153 159 167' }, chart: { surface:'#f7ffff', line:'#d2ddfb', grid:'#d2ddfb', axis:'#5f6771', muted:'#5f6771' } },
+    dark:  { tokens: { '--ground':'12 17 30','--surface':'21 27 42','--raised':'31 38 55','--line':'40 48 67','--ink':'233 236 240','--muted':'146 153 162','--faint':'94 103 115' }, chart: { surface:'#151b2a', line:'#283043', grid:'#283043', axis:'#9299a2', muted:'#9299a2' } } },
   carbon: { label: 'Carbon',
     light: { tokens: { '--ground':'240 240 240','--surface':'255 255 255','--raised':'235 235 235','--line':'221 221 221','--ink':'17 17 17','--muted':'102 102 102','--faint':'159 159 159' }, chart: { surface:'#ffffff', line:'#dddddd', grid:'#dddddd', axis:'#666666', muted:'#666666' } },
     dark:  { tokens: { '--ground':'17 17 17','--surface':'27 27 27','--raised':'38 38 38','--line':'47 47 47','--ink':'236 236 236','--muted':'152 152 152','--faint':'102 102 102' }, chart: { surface:'#1b1b1b', line:'#2f2f2f', grid:'#2f2f2f', axis:'#989898', muted:'#989898' } } },
   rose: { label: 'Rose',
-    light: { tokens: { '--ground':'242 240 240','--surface':'255 255 255','--raised':'237 234 234','--line':'223 220 220','--ink':'19 16 16','--muted':'108 100 100','--faint':'163 157 157' }, chart: { surface:'#ffffff', line:'#dfdcdc', grid:'#dfdcdc', axis:'#6c6464', muted:'#6c6464' } },
-    dark:  { tokens: { '--ground':'20 16 16','--surface':'30 26 26','--raised':'42 36 36','--line':'52 46 46','--ink':'238 235 235','--muted':'157 150 150','--faint':'109 99 100' }, chart: { surface:'#1e1a1a', line:'#342e2e', grid:'#342e2e', axis:'#9d9696', muted:'#9d9696' } } },
+    light: { tokens: { '--ground':'255 233 249','--surface':'255 247 255','--raised':'255 225 246','--line':'254 210 233','--ink':'19 16 16','--muted':'108 100 100','--faint':'163 157 157' }, chart: { surface:'#fff7ff', line:'#fed2e9', grid:'#fed2e9', axis:'#6c6464', muted:'#6c6464' } },
+    dark:  { tokens: { '--ground':'32 12 23','--surface':'43 21 33','--raised':'57 31 45','--line':'69 40 56','--ink':'238 235 235','--muted':'157 150 150','--faint':'109 99 100' }, chart: { surface:'#2b1521', line:'#452838', grid:'#452838', axis:'#9d9696', muted:'#9d9696' } } },
   sage: { label: 'Sage',
-    light: { tokens: { '--ground':'239 241 240','--surface':'254 255 254','--raised':'234 236 234','--line':'219 221 220','--ink':'16 18 16','--muted':'98 104 99','--faint':'156 160 157' }, chart: { surface:'#fefffe', line:'#dbdddc', grid:'#dbdddc', axis:'#626863', muted:'#626863' } },
-    dark:  { tokens: { '--ground':'15 18 16','--surface':'25 28 25','--raised':'35 39 36','--line':'44 49 45','--ink':'234 237 235','--muted':'148 153 149','--faint':'97 104 98' }, chart: { surface:'#191c19', line:'#2c312d', grid:'#2c312d', axis:'#949995', muted:'#949995' } } },
+    light: { tokens: { '--ground':'225 246 227','--surface':'238 255 240','--raised':'214 243 217','--line':'198 230 200','--ink':'16 18 16','--muted':'98 104 99','--faint':'156 160 157' }, chart: { surface:'#eefff0', line:'#c6e6c8', grid:'#c6e6c8', axis:'#626863', muted:'#626863' } },
+    dark:  { tokens: { '--ground':'7 21 8','--surface':'15 31 17','--raised':'24 43 26','--line':'32 53 34','--ink':'234 237 235','--muted':'148 153 149','--faint':'97 104 98' }, chart: { surface:'#0f1f11', line:'#203522', grid:'#203522', axis:'#949995', muted:'#949995' } } },
   ocean: { label: 'Ocean',
-    light: { tokens: { '--ground':'238 241 242','--surface':'253 255 255','--raised':'232 236 237','--line':'217 222 223','--ink':'14 18 19','--muted':'94 104 108','--faint':'153 160 163' }, chart: { surface:'#fdffff', line:'#d9dedf', grid:'#d9dedf', axis:'#5e686c', muted:'#5e686c' } },
-    dark:  { tokens: { '--ground':'13 18 20','--surface':'22 28 30','--raised':'32 39 41','--line':'41 49 52','--ink':'233 237 238','--muted':'144 154 157','--faint':'92 104 109' }, chart: { surface:'#161c1e', line:'#293134', grid:'#293134', axis:'#909a9d', muted:'#909a9d' } } },
+    light: { tokens: { '--ground':'226 244 252','--surface':'239 255 255','--raised':'216 239 250','--line':'199 226 237','--ink':'14 18 19','--muted':'94 104 108','--faint':'153 160 163' }, chart: { surface:'#efffff', line:'#c7e2ed', grid:'#c7e2ed', axis:'#5e686c', muted:'#5e686c' } },
+    dark:  { tokens: { '--ground':'8 19 24','--surface':'16 29 35','--raised':'25 40 47','--line':'33 50 58','--ink':'233 237 238','--muted':'144 154 157','--faint':'92 104 109' }, chart: { surface:'#101d23', line:'#21323a', grid:'#21323a', axis:'#909a9d', muted:'#909a9d' } } },
 };
 const BASE_IDS = Object.keys(BASES);
 
@@ -494,6 +497,28 @@ const fmtVolume = (kg: number, units: Units = 'kg') => {
   return kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)} kg`;
 };
 
+// A session length in seconds, as a clock: M:SS, or H:MM:SS once it passes an hour.
+const fmtDuration = (totalSeconds: number) => {
+  const s = Number.isFinite(totalSeconds) ? Math.max(0, Math.round(totalSeconds)) : 0;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    : `${m}:${String(sec).padStart(2, '0')}`;
+};
+
+// The same length in words — clearer than a colon clock in history, where "47:12"
+// next to a date reads like a time of day. e.g. "45s", "47 min", "1h 5m".
+const fmtDurationWords = (totalSeconds: number) => {
+  const s = Number.isFinite(totalSeconds) ? Math.max(0, Math.round(totalSeconds)) : 0;
+  if (s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h === 0) return `${m} min`;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+};
+
 // The donut's centre/tooltip/legend label for a metric value.
 const metricValueLabel = (metric: MuscleMetric, value: number, units: Units): string =>
   metric === 'volume'   ? fmtVolume(value, units)
@@ -507,44 +532,49 @@ type Theme = 'light' | 'dark';
 const prefersDark = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
 
+// 'system' follows the OS; 'light'/'dark' pin a side. Persisted in THEME_KEY —
+// index.html only stamps light/dark before paint, so 'system' (or absent) means
+// follow the media query, matching this hook.
+type ThemeMode = 'light' | 'dark' | 'system';
+
 const useTheme = () => {
-  const [pinned, setPinned] = useState<boolean>(() => {
+  const [mode, setModeState] = useState<ThemeMode>(() => {
     try {
       const saved = localStorage.getItem(THEME_KEY);
-      return saved === 'light' || saved === 'dark';
-    } catch { return false; }
-  });
-
-  const [theme, setTheme] = useState<Theme>(() => {
-    try {
-      const saved = localStorage.getItem(THEME_KEY);
-      if (saved === 'light' || saved === 'dark') return saved;
+      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
     } catch { /* ignore */ }
-    return prefersDark() ? 'dark' : 'light';
+    return 'system';
   });
 
-  // While unpinned the CSS media query already handles the paint; this keeps the
-  // chart colours in step with it.
+  const [systemTheme, setSystemTheme] = useState<Theme>(() => prefersDark() ? 'dark' : 'light');
+
+  // Track the OS preference always; it's only *used* while mode is 'system', but
+  // keeping it live means switching back to System resolves instantly.
   useEffect(() => {
-    if (pinned) return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const sync = () => setTheme(mq.matches ? 'dark' : 'light');
+    const sync = () => setSystemTheme(mq.matches ? 'dark' : 'light');
     mq.addEventListener('change', sync);
     return () => mq.removeEventListener('change', sync);
-  }, [pinned]);
+  }, []);
 
+  const theme: Theme = mode === 'system' ? systemTheme : mode;
+
+  // Pin the resolved side on the root while explicit; drop the stamp in System so
+  // the CSS media query governs again.
   useEffect(() => {
-    if (pinned) document.documentElement.dataset.theme = theme;
-  }, [theme, pinned]);
+    if (mode === 'system') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = mode;
+  }, [mode]);
 
-  const toggle = () => {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    setPinned(true);
-    try { localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
+  const setMode = (m: ThemeMode) => {
+    setModeState(m);
+    try { localStorage.setItem(THEME_KEY, m); } catch { /* ignore */ }
   };
 
-  return { theme, toggle };
+  // Header quick-toggle: flip to the opposite of whatever is showing.
+  const toggle = () => setMode(theme === 'dark' ? 'light' : 'dark');
+
+  return { theme, mode, setMode, toggle };
 };
 
 // ─── SetRow ────────────────────────────────────────────────────────────────────
@@ -579,7 +609,7 @@ const SetRow = ({ index, set, isTop, onRemove, units = 'kg' }: any) => {
 };
 
 // ─── ExerciseCard ──────────────────────────────────────────────────────────────
-const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExercise, updateExerciseNotes, units = 'kg' }: any) => {
+const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, units = 'kg' }: any) => {
   const [reps, setReps]     = useState('');
   const [weight, setWeight] = useState('');
 
@@ -613,13 +643,35 @@ const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExerci
                 (volume > 0 ? ` · ${fmtVolume(volume, units)} moved` : '')}
           </p>
         </div>
-        <button
-          onClick={() => removeExercise(exerciseIndex)}
-          aria-label={`Remove ${exercise.name}`}
-          className="p-1.5 -m-1.5 text-faint hover:text-crit transition-colors flex-shrink-0"
-        >
-          <Trash2 size={16} />
-        </button>
+        <div className="flex items-center gap-0.5 flex-shrink-0 -mr-1.5">
+          {moveExercise && exerciseCount > 1 && (
+            <>
+              <button
+                onClick={() => moveExercise(exerciseIndex, -1)}
+                disabled={exerciseIndex === 0}
+                aria-label={`Move ${exercise.name} up`}
+                className="p-1.5 text-faint hover:text-ink disabled:opacity-30 disabled:hover:text-faint transition-colors"
+              >
+                <ChevronUp size={16} />
+              </button>
+              <button
+                onClick={() => moveExercise(exerciseIndex, 1)}
+                disabled={exerciseIndex === exerciseCount - 1}
+                aria-label={`Move ${exercise.name} down`}
+                className="p-1.5 text-faint hover:text-ink disabled:opacity-30 disabled:hover:text-faint transition-colors"
+              >
+                <ChevronDown size={16} />
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => removeExercise(exerciseIndex)}
+            aria-label={`Remove ${exercise.name}`}
+            className="p-1.5 text-faint hover:text-crit transition-colors"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
       </div>
 
       {!noSets && (
@@ -673,35 +725,90 @@ const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExerci
 };
 
 // ─── WorkoutScreen ─────────────────────────────────────────────────────────────
-const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, units = 'kg', restTimer = false, restSeconds = 90 }: any) => {
+const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, units = 'kg', restTimer = false, restSeconds = 90, workoutTimer = false, setRestTimer, setWorkoutTimer }: any) => {
   const [showExerciseList, setShowExerciseList]     = useState(false);
   const [customExerciseName, setCustomExerciseName] = useState('');
   const [showCancelConfirm, setShowCancelConfirm]   = useState(false);
   const [openGroup, setOpenGroup]                   = useState<string | null>(null);
 
-  // Rest timer — a between-sets countdown. The one interval in the app; keep it
-  // session-level (not per card), and always clear the ref so it can't leak or
-  // double up. `rest` is seconds remaining, or null when idle.
-  const [rest, setRest]   = useState<number | null>(null);
-  const restRef           = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Session clock — counts up from when the workout was created (workout.date).
+  // Derived from wall-clock each tick, so it stays accurate through tab throttling.
+  const startMs = new Date(workout.date).getTime();
+  const [elapsed, setElapsed] = useState(() => Math.max(0, Math.round((Date.now() - startMs) / 1000)));
+  useEffect(() => {
+    if (!workoutTimer) return;
+    const id = setInterval(() => setElapsed(Math.max(0, Math.round((Date.now() - startMs) / 1000))), 1000);
+    return () => clearInterval(id);
+  }, [workoutTimer, startMs]);
+
+  // Rest timer — a between-sets countdown. The one countdown interval in the app;
+  // keep it session-level (not per card), and always clear the ref so it can't leak
+  // or double up. `rest` is seconds remaining, null when idle; `restPaused` freezes
+  // the count without discarding it (the interval is cleared while paused).
+  const [rest, setRest]         = useState<number | null>(null);
+  const [restPaused, setRestPaused] = useState(false);
+  const [restDone, setRestDone]     = useState(false);   // brief flash when rest ends
+  const restRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioRef                = useRef<any>(null);
   const clearRest = () => { if (restRef.current) { clearInterval(restRef.current); restRef.current = null; } };
-  const startRest = () => {
-    if (!restTimer) return;
+
+  // Desktop has no vibrate, so the countdown ending was silent — add a short chime
+  // via WebAudio and a visual flash. The context is created on the user gesture that
+  // starts the rest (browsers block audio created cold).
+  const primeAudio = () => {
+    try {
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      if (!audioRef.current) audioRef.current = new AC();
+      if (audioRef.current.state === 'suspended') audioRef.current.resume();
+    } catch { /* ignore */ }
+  };
+  const chime = () => {
+    try {
+      const ctx = audioRef.current;
+      if (!ctx) return;
+      const beep = (freq: number, at: number) => {
+        const osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq;
+        osc.connect(gain); gain.connect(ctx.destination);
+        const t = ctx.currentTime + at;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        osc.start(t); osc.stop(t + 0.24);
+      };
+      beep(880, 0); beep(1174, 0.12);   // two-tone "done"
+    } catch { /* ignore */ }
+  };
+  const onRestComplete = () => {
+    setRestPaused(false);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200);
+    chime();
+    setRestDone(true);
+    setTimeout(() => setRestDone(false), 1500);
+  };
+  // Drive the countdown; reused by start and resume so paused time picks up cleanly.
+  const runRest = () => {
     clearRest();
-    setRest(restSeconds);
     restRef.current = setInterval(() => {
       setRest(r => {
         if (r == null) return r;
-        if (r <= 1) { clearRest(); if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200); return null; }
+        if (r <= 1) { clearRest(); onRestComplete(); return null; }
         return r - 1;
       });
     }, 1000);
   };
-  const bumpRest = (delta: number) => setRest(r => (r == null ? r : Math.max(0, r + delta)));
+  const startRest  = (secs: number = restSeconds) => { primeAudio(); setRestDone(false); setRest(secs); setRestPaused(false); runRest(); };
+  const pauseRest  = () => { clearRest(); setRestPaused(true); };
+  const resumeRest = () => { primeAudio(); setRestPaused(false); runRest(); };
+  const skipRest   = () => { clearRest(); setRestPaused(false); setRest(null); };
+  const resetRest  = () => startRest();   // restart the countdown from the full duration
+  const bumpRest   = (delta: number) => setRest(r => (r == null ? r : Math.max(0, r + delta)));
   useEffect(() => clearRest, []);   // clear on unmount (leaving the workout)
 
-  // Logging a set starts the rest countdown.
-  const addSetAndRest = (...args: any[]) => { (addSet as any)(...args); startRest(); };
+  // Logging a set auto-starts the countdown, but only if the setting is on. Manual
+  // Start/Pause below stays available regardless, so you can rest off-schedule.
+  const addSetAndRest = (...args: any[]) => { (addSet as any)(...args); if (restTimer) startRest(); };
 
   const fmtClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
@@ -750,6 +857,23 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             <div className="flex items-baseline gap-1.5 mt-2">
               <span className={`${readout} text-4xl`}>{fmtVolume(totalVolume, units)}</span>
               <span className="text-xs font-semibold text-muted">moved</span>
+            </div>
+            {/* Session timer — total elapsed time, toggled here (not just in Settings). */}
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                role="switch" aria-checked={!!workoutTimer}
+                aria-label={`${workoutTimer ? 'Stop' : 'Start'} session timer`}
+                onClick={() => setWorkoutTimer && setWorkoutTimer(!workoutTimer)}
+                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${workoutTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${workoutTimer ? 'left-[18px]' : 'left-0.5'}`} />
+              </button>
+              <Timer size={13} className="text-muted" />
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Session</span>
+              <span className="text-[10px] text-faint hidden sm:inline">total time</span>
+              {workoutTimer
+                ? <span className="font-display font-semibold tabular-nums text-sm text-ink">{fmtDuration(elapsed)}</span>
+                : <span className="text-xs text-faint">off</span>}
             </div>
           </div>
           <div className="text-right">
@@ -845,9 +969,11 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             key={i}
             exercise={exercise}
             exerciseIndex={i}
+            exerciseCount={workout.exercises.length}
             addSet={addSetAndRest}
             removeSet={removeSet}
             removeExercise={removeExercise}
+            moveExercise={moveExercise}
             updateExerciseNotes={updateExerciseNotes}
             units={units}
           />
@@ -866,21 +992,51 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
       </div>
 
       {/* Sticky action bar — primary action sits in the thumb zone. The rest
-          countdown rides just above it while it's running. */}
+          controls ride just above it whenever resting is enabled: a Start button
+          while idle, and the running/paused countdown otherwise. */}
       <div className="fixed bottom-0 left-0 right-0 bg-surface border-t border-line pb-safe z-40">
-        {rest != null && (
-          <div className="border-b border-line">
-            <div className="max-w-3xl mx-auto flex items-center gap-3 px-3 py-2">
-              <span className={`${label} text-accent`}>Rest</span>
-              <span className={`${readout} text-xl text-accent tabular-nums`}>{fmtClock(rest)}</span>
-              <div className="ml-auto flex items-center gap-2">
-                <button onClick={() => bumpRest(-15)} className={`${btnSecondary} px-3 py-1.5 text-xs`}>−15s</button>
-                <button onClick={() => bumpRest(15)} className={`${btnSecondary} px-3 py-1.5 text-xs`}>+15s</button>
-                <button onClick={() => { clearRest(); setRest(null); }} className={`${btnSecondary} px-3 py-1.5 text-xs`}>Skip</button>
+        {/* Rest timer — the between-sets countdown, toggled here too. Always shown so
+            it can be switched on/off mid-workout without visiting Settings. */}
+        <div className={`border-b border-line transition-colors ${restDone ? 'bg-good/15' : ''}`}>
+          <div className="max-w-3xl mx-auto flex items-center gap-2.5 px-3 py-2">
+            <button
+              role="switch" aria-checked={!!restTimer}
+              aria-label={`${restTimer ? 'Disable' : 'Enable'} rest timer`}
+              onClick={() => setRestTimer && setRestTimer(!restTimer)}
+              className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${restTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
+            >
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${restTimer ? 'left-[18px]' : 'left-0.5'}`} />
+            </button>
+            <span className={`text-[11px] font-semibold uppercase tracking-wide ${restDone ? 'text-good' : restTimer && rest != null && !restPaused ? 'text-accent' : 'text-muted'}`}>Rest</span>
+            <span className="text-[10px] text-faint hidden sm:inline">between sets</span>
+            {!restTimer ? (
+              <span className="text-xs text-faint">off</span>
+            ) : rest != null ? (
+              <span className={`${readout} text-lg tabular-nums ${restPaused ? 'text-muted' : 'text-accent'}`}>{fmtClock(rest)}</span>
+            ) : restDone ? (
+              <span className="text-xs font-semibold text-good">Rest done</span>
+            ) : (
+              <span className="text-xs text-faint">idle</span>
+            )}
+            {restTimer && (
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {rest == null ? (
+                  <button onClick={() => startRest()} className={`${btnSecondary} px-3 py-1.5 text-xs flex items-center gap-1.5`}>
+                    <Timer size={13} /> Start rest
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={() => bumpRest(-15)} className={`${btnSecondary} px-3 py-1.5 text-xs`}>−15s</button>
+                    <button onClick={() => bumpRest(15)} className={`${btnSecondary} px-3 py-1.5 text-xs`}>+15s</button>
+                    <button onClick={restPaused ? resumeRest : pauseRest} className={`${btnSecondary} px-3 py-1.5 text-xs`}>{restPaused ? 'Resume' : 'Pause'}</button>
+                    <button onClick={resetRest} className={`${btnSecondary} px-3 py-1.5 text-xs`}>Reset</button>
+                    <button onClick={skipRest} className={`${btnSecondary} px-3 py-1.5 text-xs`}>Skip</button>
+                  </>
+                )}
               </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
         <div className="max-w-3xl mx-auto flex gap-2 p-3">
           {showCancelConfirm ? (
             <>
@@ -895,7 +1051,8 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             <>
               <button
                 onClick={finishWorkout}
-                disabled={workout.exercises.length === 0}
+                disabled={totalSets === 0}
+                title={totalSets === 0 ? 'Log at least one set to finish' : undefined}
                 className={`${btnPrimary} flex-1 p-3.5 disabled:bg-raised disabled:text-faint disabled:cursor-not-allowed disabled:brightness-100`}
               >
                 Finish workout
@@ -917,6 +1074,10 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   const [viewingNotes, setViewingNotes]       = useState<number | null>(null);
   const [editingWorkout, setEditingWorkout]   = useState<number | null>(null);
   const [editData, setEditData]               = useState<any>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
+  const [filterType, setFilterType]           = useState('all');
+  const [search, setSearch]                   = useState('');
+  const [addExerciseName, setAddExerciseName] = useState('');
 
   // Display order is newest-first, but the mutators index into the unsorted
   // array — so originalIndex has to survive the sort.
@@ -924,10 +1085,23 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
     .map((w: any, i: number) => ({ ...w, originalIndex: i }))
     .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  // Type + text filter. Search matches the type label, any exercise name, or notes.
+  // Render + mutators both index into `filtered`, so originalIndex still routes
+  // edits/deletes to the right stored workout.
+  const q = search.trim().toLowerCase();
+  const filtered = sortedWorkouts.filter((w: any) => {
+    if (filterType !== 'all' && w.type !== filterType) return false;
+    if (!q) return true;
+    return (TYPE_CONFIG[w.type]?.label ?? '').toLowerCase().includes(q)
+      || w.exercises.some((ex: any) => ex.name.toLowerCase().includes(q))
+      || (w.notes ?? '').toLowerCase().includes(q);
+  });
+
   const toggleWorkout = (i: number) => {
     setExpandedWorkout(expandedWorkout === i ? null : i);
     setViewingNotes(null);
     setEditingWorkout(null);
+    setConfirmingDelete(null);
   };
 
   const startEditing = (i: number, w: any) => {
@@ -938,26 +1112,38 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   const cancelEditing = () => { setEditingWorkout(null); setEditData(null); };
 
   const saveEditing = (i: number) => {
-    updateWorkout(sortedWorkouts[i].originalIndex, editData);
+    updateWorkout(filtered[i].originalIndex, editData);
     setEditingWorkout(null);
     setEditData(null);
   };
 
-  const handleDelete = (i: number) => {
-    if (window.confirm('Delete this workout?')) {
-      deleteWorkout(sortedWorkouts[i].originalIndex);
-      setExpandedWorkout(null);
-      setEditingWorkout(null);
-    }
+  const confirmDelete = (i: number) => {
+    deleteWorkout(filtered[i].originalIndex);
+    setExpandedWorkout(null);
+    setEditingWorkout(null);
+    setConfirmingDelete(null);
   };
 
   const updateSetValue = (exIdx: number, setIdx: number, field: string, val: string) => {
     const u = { ...editData };
     // Weight is typed in display units and stored in kg (blank → bodyweight/null);
-    // reps are just an integer.
+    // reps coerce to an integer, blank → 0 so a cleared field can't store NaN.
     u.exercises[exIdx].sets[setIdx][field] =
-      field === 'weight' ? fromInputWeight(val, units) : parseFloat(val);
+      field === 'weight' ? fromInputWeight(val, units) : (val === '' ? 0 : parseInt(val, 10) || 0);
     setEditData(u);
+  };
+
+  const addSetToEdit = (exIdx: number) => {
+    const u = { ...editData };
+    u.exercises[exIdx].sets = [...u.exercises[exIdx].sets, { reps: 0, weight: null }];
+    setEditData(u);
+  };
+
+  const addExerciseToEdit = () => {
+    const name = addExerciseName.trim();
+    if (!name) return;
+    setEditData({ ...editData, exercises: [...editData.exercises, { name, sets: [], notes: '' }] });
+    setAddExerciseName('');
   };
 
   const formatDate = (d: string) =>
@@ -972,13 +1158,37 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
     <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4">
       <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink mb-4">History</h2>
 
+      {/* Filter + search — hidden until there's enough history to warrant it. */}
+      {sortedWorkouts.length > 3 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          <select
+            value={filterType} onChange={e => { setFilterType(e.target.value); setExpandedWorkout(null); }}
+            aria-label="Filter by session type"
+            className={`${input} py-2 text-sm`}
+          >
+            <option value="all">All types</option>
+            {Object.keys(TYPE_CONFIG).map(t => <option key={t} value={t}>{TYPE_CONFIG[t].label}</option>)}
+          </select>
+          <input
+            type="text" value={search} onChange={e => { setSearch(e.target.value); setExpandedWorkout(null); }}
+            placeholder="Search exercise or notes…"
+            aria-label="Search sessions"
+            className={`${input} flex-1 min-w-[140px] py-2 text-sm`}
+          />
+        </div>
+      )}
+
       {sortedWorkouts.length === 0 ? (
         <div className={`${card} p-12 text-center`}>
           <p className="text-muted text-sm">No sessions logged yet.</p>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className={`${card} p-12 text-center`}>
+          <p className="text-muted text-sm">No sessions match that filter.</p>
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {sortedWorkouts.map((workout: any, index: number) => {
+          {filtered.map((workout: any, index: number) => {
             const isEditing      = editingWorkout === index;
             const displayWorkout = isEditing ? editData : workout;
             const typeCfg        = TYPE_CONFIG[workout.type] ?? TYPE_CONFIG.custom;
@@ -995,7 +1205,14 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                   <div className="flex justify-between items-center gap-3">
                     <div className="min-w-0">
                       <h3 className="font-semibold text-ink truncate">{typeCfg.label}</h3>
-                      <p className="text-xs text-faint mt-0.5">{formatDate(workout.date)}</p>
+                      <p className="text-xs text-faint mt-0.5 flex items-center gap-1.5">
+                        <span>{formatDate(workout.date)}</span>
+                        {workout.duration != null && (
+                          <span className="flex items-center gap-1 tabular-nums" title="Workout duration">
+                            <Timer size={11} /> {fmtDurationWords(workout.duration)}
+                          </span>
+                        )}
+                      </p>
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <div className="text-right">
@@ -1011,8 +1228,20 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
 
                 {isOpen && (
                   <div className="border-t border-line">
-                    <div className="p-3 border-b border-line flex gap-2 flex-wrap">
-                      {!isEditing ? (
+                    <div className="p-3 border-b border-line flex gap-2 flex-wrap items-center">
+                      {confirmingDelete === index ? (
+                        <>
+                          <span className="text-sm text-ink">Delete this session?</span>
+                          <div className="ml-auto flex gap-2">
+                            <button onClick={e => { e.stopPropagation(); confirmDelete(index); }} className={`${btnDanger} flex items-center gap-2 px-3 py-1.5 text-sm`}>
+                              <Trash2 size={13} /> Delete
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); setConfirmingDelete(null); }} className={`${btnSecondary} px-3 py-1.5 text-sm`}>
+                              Cancel
+                            </button>
+                          </div>
+                        </>
+                      ) : !isEditing ? (
                         <button
                           onClick={e => { e.stopPropagation(); startEditing(index, workout); }}
                           className={`${btnSecondary} flex items-center gap-2 px-3 py-1.5 text-sm`}
@@ -1027,7 +1256,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                           <button onClick={e => { e.stopPropagation(); cancelEditing(); }} className={`${btnSecondary} flex items-center gap-2 px-3 py-1.5 text-sm`}>
                             <X size={13} /> Cancel
                           </button>
-                          <button onClick={e => { e.stopPropagation(); handleDelete(index); }} className={`${btnDanger} flex items-center gap-2 px-3 py-1.5 text-sm ml-auto`}>
+                          <button onClick={e => { e.stopPropagation(); setConfirmingDelete(index); }} className={`${btnDanger} flex items-center gap-2 px-3 py-1.5 text-sm ml-auto`}>
                             <Trash2 size={13} /> Delete
                           </button>
                         </>
@@ -1047,7 +1276,17 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                       </div>
                     )}
 
-                    {displayWorkout.notes && (
+                    {isEditing ? (
+                      <div className="p-4 border-b border-line">
+                        <label className={`${label} block mb-2`}>Session notes</label>
+                        <textarea
+                          value={editData.notes || ''}
+                          onChange={e => setEditData({ ...editData, notes: e.target.value })}
+                          placeholder="How did it feel?"
+                          className={`${input} w-full min-h-20 resize-none text-sm`}
+                        />
+                      </div>
+                    ) : displayWorkout.notes ? (
                       <div className="p-4 border-b border-line">
                         <button
                           onClick={() => setViewingNotes(viewingNotes === index ? null : index)}
@@ -1057,19 +1296,11 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                           {viewingNotes === index ? 'Hide notes' : 'View notes'}
                           <ChevronDown size={13} className={`transition-transform ${viewingNotes === index ? 'rotate-180' : ''}`} />
                         </button>
-                        {(viewingNotes === index || isEditing) && (
-                          isEditing ? (
-                            <textarea
-                              value={editData.notes}
-                              onChange={e => setEditData({ ...editData, notes: e.target.value })}
-                              className={`${input} w-full mt-3 min-h-20 resize-none text-sm`}
-                            />
-                          ) : (
-                            <p className="mt-3 text-sm text-muted bg-raised rounded-ctl p-3">{displayWorkout.notes}</p>
-                          )
+                        {viewingNotes === index && (
+                          <p className="mt-3 text-sm text-muted bg-raised rounded-ctl p-3">{displayWorkout.notes}</p>
                         )}
                       </div>
-                    )}
+                    ) : null}
 
                     <div className="p-4 flex flex-col gap-5">
                       {displayWorkout.exercises.map((exercise: any, exIdx: number) => {
@@ -1130,17 +1361,25 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                               ))}
                             </div>
 
-                            {exercise.notes && (
-                              isEditing ? (
-                                <textarea
-                                  value={exercise.notes}
-                                  onChange={e => { const u = { ...editData }; u.exercises[exIdx].notes = e.target.value; setEditData(u); }}
-                                  className={`${input} w-full text-sm min-h-16 resize-none mt-2`}
-                                />
-                              ) : (
-                                <p className="text-xs text-faint mt-2 pl-1">{exercise.notes}</p>
-                              )
+                            {isEditing && (
+                              <button
+                                onClick={() => addSetToEdit(exIdx)}
+                                className={`${btnSecondary} mt-2 w-full py-1.5 text-xs flex items-center justify-center gap-1.5`}
+                              >
+                                <Plus size={13} /> Add set
+                              </button>
                             )}
+
+                            {isEditing ? (
+                              <textarea
+                                value={exercise.notes || ''}
+                                onChange={e => { const u = { ...editData }; u.exercises[exIdx].notes = e.target.value; setEditData(u); }}
+                                placeholder="Exercise notes (optional)"
+                                className={`${input} w-full text-sm min-h-16 resize-none mt-2`}
+                              />
+                            ) : exercise.notes ? (
+                              <p className="text-xs text-faint mt-2 pl-1">{exercise.notes}</p>
+                            ) : null}
 
                             {exIdx < displayWorkout.exercises.length - 1 && (
                               <div className="h-px bg-line mt-4" />
@@ -1148,6 +1387,29 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                           </div>
                         );
                       })}
+
+                      {/* Add a forgotten exercise back into a logged session. Free-text,
+                          like the workout picker's one-off — any name is valid. */}
+                      {isEditing && (
+                        <div className="flex gap-2 pt-1 border-t border-line">
+                          <input
+                            type="text" value={addExerciseName}
+                            onChange={e => setAddExerciseName(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && addExerciseToEdit()}
+                            placeholder="Add an exercise…"
+                            aria-label="Add an exercise to this session"
+                            className={`${input} flex-1 py-2 text-sm`}
+                          />
+                          <button
+                            onClick={addExerciseToEdit}
+                            disabled={!addExerciseName.trim()}
+                            aria-label="Add exercise"
+                            className={`${btnPrimary} px-3 disabled:opacity-40 disabled:cursor-not-allowed`}
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1194,6 +1456,14 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
   // map each legend group back to its slice position (folded groups get muted).
   const sliceIndexOf = (group: string) => slices.findIndex(s => s.group === group);
 
+  // Past four groups a single stacked column runs long and leaves the donut's
+  // right side empty, so split into two columns filled top-to-bottom (ranks 1..n
+  // down the first column, then the rest down the second) rather than row-wise.
+  const twoCols   = legendRows.length > 4;
+  const legendCss = twoCols
+    ? { gridTemplateRows: `repeat(${Math.ceil(legendRows.length / 2)}, minmax(0, 1fr))`, gridAutoFlow: 'column' as const, gridAutoColumns: 'minmax(0, 1fr)' }
+    : undefined;
+
   return (
     <div className="flex flex-col sm:flex-row items-center gap-4">
       <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
@@ -1222,7 +1492,7 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
         </div>
       </div>
 
-      <ul className="w-full flex flex-col gap-1.5">
+      <ul className="w-full grid gap-x-4 gap-y-1.5" style={legendCss}>
         {legendRows.map(d => {
           const si = sliceIndexOf(d.group);
           const swatch = si >= 0 ? colorAt(d.group, si) : c.muted;
@@ -1280,6 +1550,10 @@ const BodyWeightTrend = ({ data, theme, prefs, chartType = 'line', units = 'kg',
 };
 
 // ─── ProgressScreen ────────────────────────────────────────────────────────────
+// Sentinel the exercise select uses for the "every exercise" aggregate view.
+// Double underscore keeps it clear of any real exercise name.
+const ALL_EXERCISES = '__all__';
+
 const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   const { units = 'kg', muscleMetric = 'sets', bwChart = 'line', hidden = [] } = prefs ?? {};
   const accent = resolveChart(prefs, theme).accent;
@@ -1298,19 +1572,33 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
     const now = new Date();
     if (timeframe === 'custom') {
       if (!customStartDate || !customEndDate) return [];
-      const s = new Date(customStartDate), e = new Date(customEndDate);
+      // Parse as LOCAL day boundaries and make the end inclusive of its whole day —
+      // otherwise `new Date('2026-07-16')` is UTC midnight and drops that day's own
+      // afternoon sessions.
+      const [sy, sm, sd] = customStartDate.split('-').map(Number);
+      const [ey, em, ed] = customEndDate.split('-').map(Number);
+      const s = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+      const e = new Date(ey, em - 1, ed, 23, 59, 59, 999);
+      if (s > e) return [];   // backwards range → nothing (the UI flags why)
       return items.filter(i => { const d = new Date(i.date); return d >= s && d <= e; });
     }
+    if (timeframe === 'all') return items;
     const start = new Date();
     if (timeframe === '30days')  start.setDate(now.getDate() - 30);
     if (timeframe === '3months') start.setMonth(now.getMonth() - 3);
     return items.filter(i => new Date(i.date) >= start);
   };
 
-  const getExerciseData = () => {
-    if (!selectedExercise) return [];
-    return filterByDate(workouts).flatMap((w: any) => {
-      const ex = w.exercises.find((e: any) => e.name === selectedExercise);
+  // The exercise select carries this sentinel when the user wants every
+  // exercise at once. It can't collide with a real name (double underscore).
+  // The All-exercises view then renders the same top-set chart per exercise.
+  const isAllExercises = selectedExercise === ALL_EXERCISES;
+
+  // Top-set series (max weight per session, in display units) for one exercise —
+  // the data behind a single chart. Reused for the single- and all-exercise views.
+  const seriesForExercise = (name: string) =>
+    filterByDate(workouts).flatMap((w: any) => {
+      const ex = w.exercises.find((e: any) => e.name === name);
       if (!ex || ex.sets.length === 0) return [];
       // Bodyweight sets carry no load, so they count as 0 here rather than NaN.
       const maxWeight    = Math.max(...ex.sets.map((s: any) => s.weight ?? 0));
@@ -1321,7 +1609,27 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
         repsAtMaxWeight: maxWeightSet?.reps ?? 0,
       }];
     });
+
+  // Every logged exercise's series, bucketed by muscle group in the donut's order
+  // so the All-exercises view echoes the Muscle group balance card above it.
+  const getExercisesByGroup = () => {
+    const inWindow = filterByDate(workouts);
+    const names = [...new Set(inWindow.flatMap((w: any) => w.exercises.map((e: any) => e.name)))] as string[];
+    const order = muscleGroupBreakdown(inWindow, muscleMetric).map(d => d.group);
+    const rank  = (g: string) => { const i = order.indexOf(g); return i === -1 ? order.length : i; };
+    const groups: Record<string, { name: string; data: any[] }[]> = {};
+    for (const name of names) {
+      const data = seriesForExercise(name);
+      if (data.length === 0) continue;
+      const g = EXERCISE_GROUP_INDEX[name] ?? OTHER_GROUP;
+      (groups[g] ?? (groups[g] = [])).push({ name, data });
+    }
+    return Object.entries(groups)
+      .map(([group, items]) => ({ group, items: items.sort((a, b) => a.name.localeCompare(b.name)) }))
+      .sort((a, b) => rank(a.group) - rank(b.group));
   };
+
+  const getExerciseData = () => (!selectedExercise || isAllExercises ? [] : seriesForExercise(selectedExercise));
 
   const getBodyWeightData = () =>
     filterByDate(bodyWeightLog).map((e: any) => ({
@@ -1329,8 +1637,9 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
       bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
     }));
 
-  const exerciseData   = getExerciseData();
-  const bodyWeightData = getBodyWeightData();
+  const exerciseData     = getExerciseData();
+  const exercisesByGroup = isAllExercises ? getExercisesByGroup() : [];
+  const bodyWeightData   = getBodyWeightData();
 
   const tooltipStyle = {
     backgroundColor: c.surface,
@@ -1341,6 +1650,30 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   };
 
   const axis = { stroke: c.axis, style: { fontSize: '11px', fontFamily: 'Barlow, system-ui, sans-serif' } };
+
+  // One exercise's top-set chart card. Shared so the single-exercise view and
+  // every card in the All-exercises view are visually identical.
+  const topSetCard = (name: string, data: any[]) => (
+    <div key={name} className={`${card} p-4 mb-3`}>
+      <h3 className={`${label} mb-4`}>{name} — top set</h3>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={data} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
+          <XAxis dataKey="date" {...axis} tickLine={false} />
+          <YAxis {...axis} tickLine={false} width={44} unit={` ${units}`} />
+          <Tooltip
+            contentStyle={tooltipStyle}
+            labelStyle={{ color: c.muted }}
+            cursor={{ stroke: c.grid }}
+            formatter={(value: any, _name: string, props: any) =>
+              [`${value} ${units} × ${props.payload.repsAtMaxWeight} reps`, 'Top set']
+            }
+          />
+          <Line type="monotone" dataKey="maxWeight" stroke={accent} strokeWidth={2} dot={{ fill: accent, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
 
   return (
     <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4">
@@ -1353,6 +1686,7 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
             <select id="timeframe" value={timeframe} onChange={e => setTimeframe(e.target.value)} className={`${input} w-full`}>
               <option value="30days">Last 30 days</option>
               <option value="3months">Last 3 months</option>
+              <option value="all">All time</option>
               <option value="custom">Custom range</option>
             </select>
           </div>
@@ -1360,20 +1694,26 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
             <label htmlFor="exercise" className={`${label} block mb-2`}>Exercise</label>
             <select id="exercise" value={selectedExercise} onChange={e => setSelectedExercise(e.target.value)} className={`${input} w-full`}>
               <option value="">Choose an exercise…</option>
+              {allExercisesUsed.length > 0 && <option value={ALL_EXERCISES}>All exercises</option>}
               {allExercisesUsed.map(ex => <option key={ex} value={ex}>{ex}</option>)}
             </select>
           </div>
         </div>
         {timeframe === 'custom' && (
-          <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-line">
-            <div>
-              <label htmlFor="start" className={`${label} block mb-2`}>Start</label>
-              <input id="start" type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className={`${input} w-full text-sm`} />
+          <div className="mt-3 pt-3 border-t border-line">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="start" className={`${label} block mb-2`}>Start</label>
+                <input id="start" type="date" value={customStartDate} max={customEndDate || undefined} onChange={e => setCustomStartDate(e.target.value)} className={`${input} w-full text-sm`} />
+              </div>
+              <div>
+                <label htmlFor="end" className={`${label} block mb-2`}>End</label>
+                <input id="end" type="date" value={customEndDate} min={customStartDate || undefined} onChange={e => setCustomEndDate(e.target.value)} className={`${input} w-full text-sm`} />
+              </div>
             </div>
-            <div>
-              <label htmlFor="end" className={`${label} block mb-2`}>End</label>
-              <input id="end" type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className={`${input} w-full text-sm`} />
-            </div>
+            {customStartDate && customEndDate && new Date(customStartDate) > new Date(customEndDate) && (
+              <p className="text-xs text-warn mt-2">Start date is after the end date — nothing to show. Swap them to see results.</p>
+            )}
           </div>
         )}
       </div>
@@ -1390,34 +1730,33 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
             metric={muscleMetric}
             units={units}
             size={230}
+            sliceLimit={5}
+            legendLimit={6}
             emptyMessage="No sets logged in this timeframe."
           />
         </div>
       )}
 
-      {!hidden.includes('prog.exercise') && selectedExercise && exerciseData.length > 0 && (
-        <div className={`${card} p-4 mb-3`}>
-          <h3 className={`${label} mb-4`}>{selectedExercise} — top set</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={exerciseData} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
-              <XAxis dataKey="date" {...axis} tickLine={false} />
-              <YAxis {...axis} tickLine={false} width={44} unit={` ${units}`} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                labelStyle={{ color: c.muted }}
-                cursor={{ stroke: c.grid }}
-                formatter={(value: any, _name: string, props: any) =>
-                  [`${value} ${units} × ${props.payload.repsAtMaxWeight} reps`, 'Top set']
-                }
-              />
-              <Line type="monotone" dataKey="maxWeight" stroke={accent} strokeWidth={2} dot={{ fill: accent, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
-            </LineChart>
-          </ResponsiveContainer>
+      {/* All exercises — the same top-set chart as the single view, one per
+          exercise, grouped under muscle-group headings (donut order). */}
+      {!hidden.includes('prog.exercise') && isAllExercises && exercisesByGroup.length > 0 &&
+        exercisesByGroup.map(g => (
+          <div key={g.group} className="mb-3">
+            <h3 className={`${label} mb-2 px-1`}>{g.group}</h3>
+            {g.items.map(it => topSetCard(it.name, it.data))}
+          </div>
+        ))}
+
+      {!hidden.includes('prog.exercise') && isAllExercises && exercisesByGroup.length === 0 && (
+        <div className={`${card} p-8 mb-3 text-center`}>
+          <p className="text-muted text-sm">No sets logged in this timeframe.</p>
         </div>
       )}
 
-      {!hidden.includes('prog.exercise') && selectedExercise && exerciseData.length === 0 && (
+      {!hidden.includes('prog.exercise') && !isAllExercises && selectedExercise && exerciseData.length > 0 &&
+        topSetCard(selectedExercise, exerciseData)}
+
+      {!hidden.includes('prog.exercise') && !isAllExercises && selectedExercise && exerciseData.length === 0 && (
         <div className={`${card} p-8 mb-3 text-center`}>
           <p className="text-muted text-sm">No <span className="text-ink font-medium">{selectedExercise}</span> logged in this timeframe.</p>
         </div>
@@ -1456,9 +1795,19 @@ const Segmented = ({ value, onChange, options }: any) => (
   </div>
 );
 
-const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, onDone }: any) => {
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onDone }: any) => {
   const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
   const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [importMsg, setImportMsg]             = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';   // let the same file be picked again later
+    if (!file || !onImport) return;
+    onImport(file).then((ok: boolean) => setImportMsg(ok ? 'Backup restored.' : 'That file could not be read.'));
+  };
 
   // A show/hide toggle: checked = the widget is shown (i.e. not in `hidden`).
   const widgetRow = (k: string) => {
@@ -1489,6 +1838,14 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, onDone }: any
 
       {/* Appearance */}
       <div className={`${card} p-4`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-ink">Theme</span>
+          <Segmented value={themeMode} onChange={(v: ThemeMode) => setThemeMode && setThemeMode(v)}
+            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'System' }]} />
+        </div>
+        <p className="text-xs text-faint mt-2">System follows your device’s light/dark setting.</p>
+
+        <div className="h-px bg-line my-4" />
         <h3 className={`${label} mb-3`}>Accent colour</h3>
         <div className="flex flex-wrap gap-2.5">
           {ACCENT_IDS.map(id => {
@@ -1572,6 +1929,18 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, onDone }: any
       <div className={`${card} p-4`}>
         <h3 className={`${label} mb-3`}>Workout</h3>
         <div className="flex items-center justify-between gap-3 py-1">
+          <span className="text-sm text-ink">Session timer</span>
+          <button
+            role="switch" aria-checked={prefs.workoutTimer}
+            aria-label={`${prefs.workoutTimer ? 'Disable' : 'Enable'} session timer`}
+            onClick={() => updatePrefs({ workoutTimer: !prefs.workoutTimer })}
+            className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${prefs.workoutTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
+          >
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all ${prefs.workoutTimer ? 'left-[18px]' : 'left-0.5'}`} />
+          </button>
+        </div>
+        <p className="text-xs text-faint mb-1">Times each session and saves the length to your history.</p>
+        <div className="flex items-center justify-between gap-3 py-1">
           <span className="text-sm text-ink">Rest timer</span>
           <button
             role="switch" aria-checked={prefs.restTimer}
@@ -1599,6 +1968,40 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, onDone }: any
         <h3 className={`${label} mb-1`}>Progress widgets</h3>
         {progKeys.map(widgetRow)}
       </div>
+
+      {/* Data — everything lives in this browser only, so a backup is the only
+          safety net. Export writes a JSON file; import replaces the current data. */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Data</h3>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={onExport} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+            <Download size={14} /> Export backup
+          </button>
+          <button onClick={() => fileRef.current?.click()} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+            <Upload size={14} /> Import backup
+          </button>
+          <input ref={fileRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
+        </div>
+        {importMsg && <p className="text-xs text-muted mt-2">{importMsg}</p>}
+        <p className="text-xs text-faint mt-2">Your data is stored only in this browser. Export regularly — clearing site data wipes it.</p>
+
+        <div className="h-px bg-line my-4" />
+        {!confirmingClear ? (
+          <button onClick={() => setConfirmingClear(true)} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+            <Trash2 size={14} /> Clear all data
+          </button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-ink">Delete every workout, weight and setting?</span>
+            <div className="ml-auto flex gap-2">
+              <button onClick={() => { onClearData && onClearData(); setConfirmingClear(false); }} className={`${btnDanger} flex items-center gap-2 px-3 py-2 text-sm`}>
+                <Trash2 size={14} /> Delete everything
+              </button>
+              <button onClick={() => setConfirmingClear(false)} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -1614,9 +2017,15 @@ const GymTrackerApp = () => {
   const [bodyWeight, setBodyWeight]                   = useState('');
   const [workoutNotes, setWorkoutNotes]               = useState('');
   const [quickBWInput, setQuickBWInput]               = useState('');
+  const [manageBW, setManageBW]                       = useState(false);   // show the BW-entry editor
   const [prefs, setPrefs]                             = useState<Prefs>(DEFAULT_PREFS);
+  // The tab Settings was opened from, so Back returns there instead of always Home.
+  const [settingsFrom, setSettingsFrom]               = useState('home');
+  // Set true once the mount load has run, so the active-session write effect can't
+  // clobber stored data with the empty initial state before the load reads it.
+  const loadedRef = useRef(false);
 
-  const { theme, toggle } = useTheme();
+  const { theme, mode, setMode, toggle } = useTheme();
   const c = CHART[theme];
 
   const units = prefs.units;
@@ -1672,8 +2081,35 @@ const GymTrackerApp = () => {
         // Migrate existing workout body weights into the log
         setBodyWeightLog(loadedWorkouts.map((w: any) => ({ date: w.date, weight: w.bodyWeight })));
       }
+
+      // Resume an in-progress session if one was persisted (a refresh, phone lock,
+      // or tab reap mid-workout). Drop us straight back onto the workout screen.
+      const storedActive = localStorage.getItem(ACTIVE_KEY);
+      if (storedActive) {
+        const a = JSON.parse(storedActive);
+        if (a && a.workout && Array.isArray(a.workout.exercises)) {
+          setCurrentWorkout(a.workout);
+          setSelectedWorkoutType(a.type ?? a.workout.type ?? 'custom');
+          setWorkoutNotes(a.notes ?? '');
+          setCurrentScreen('workout');
+        }
+      }
     } catch { /* ignore */ }
   }, []);
+
+  // Persist the active session on every change so it survives a reload. Skips the
+  // first run (mount) so the empty initial state can't clear a just-loaded session
+  // before the load effect's restore re-renders.
+  useEffect(() => {
+    if (!loadedRef.current) { loadedRef.current = true; return; }
+    try {
+      if (currentWorkout) {
+        localStorage.setItem(ACTIVE_KEY, JSON.stringify({ workout: currentWorkout, type: selectedWorkoutType, notes: workoutNotes }));
+      } else {
+        localStorage.removeItem(ACTIVE_KEY);
+      }
+    } catch { /* ignore */ }
+  }, [currentWorkout, selectedWorkoutType, workoutNotes]);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(workouts)); } catch { /* ignore */ }
@@ -1698,7 +2134,8 @@ const GymTrackerApp = () => {
   };
 
   const confirmBodyWeight = () => {
-    if (!bodyWeight) return;
+    // Weigh-in is optional — a blank entry starts the session with bodyWeight null
+    // (fromInputWeight already maps blank → null), and finish won't log a null.
     setCurrentWorkout({
       type: selectedWorkoutType,
       bodyWeight: fromInputWeight(bodyWeight, units),   // typed in display units → stored kg
@@ -1749,9 +2186,20 @@ const GymTrackerApp = () => {
   };
 
   const finishWorkout = () => {
-    const completed = { ...currentWorkout, notes: workoutNotes };
+    // Drop exercises that never got a set — an empty card is nothing to log and
+    // would just clutter history.
+    const exercises = currentWorkout.exercises.filter((ex: any) => ex.sets.length > 0);
+    if (exercises.length === 0) return;   // the Finish button also guards this
+    // Record how long the session took, but only when the timer is on — off means
+    // no duration is stored, so history stays silent about it (as before the feature).
+    const startMs = new Date(currentWorkout.date).getTime();
+    const duration = Number.isFinite(startMs) ? Math.max(0, Math.round((Date.now() - startMs) / 1000)) : 0;
+    const completed = { ...currentWorkout, exercises, notes: workoutNotes, ...(prefs.workoutTimer ? { duration } : {}) };
     setWorkouts(prev => [...prev, completed]);
-    setBodyWeightLog(prev => [...prev, { date: completed.date, weight: completed.bodyWeight }]);
+    // Only log a real weigh-in — a skipped (null) body weight isn't a data point.
+    if (completed.bodyWeight != null) {
+      setBodyWeightLog(prev => [...prev, { date: completed.date, weight: completed.bodyWeight }]);
+    }
     setCurrentWorkout(null);
     setSelectedWorkoutType(null);
     setBodyWeight('');
@@ -1777,8 +2225,84 @@ const GymTrackerApp = () => {
 
   const deleteWorkout = (i: number) => setWorkouts(w => w.filter((_, idx) => idx !== i));
 
-  const updateWorkout = (i: number, updated: any) =>
+  const updateWorkout = (i: number, updated: any) => {
     setWorkouts(w => w.map((item, idx) => idx === i ? updated : item));
+    // Keep the body-weight log in step: the finish-time entry shares the workout's
+    // date, so edit/clear it here too — otherwise the chart and readout keep the
+    // old (or wrong) number the History edit was meant to fix.
+    setBodyWeightLog(prev => {
+      const at = prev.findIndex(e => e.date === updated.date);
+      if (updated.bodyWeight == null) return at >= 0 ? prev.filter((_, idx) => idx !== at) : prev;
+      if (at >= 0) return prev.map((e, idx) => idx === at ? { ...e, weight: updated.bodyWeight } : e);
+      return [...prev, { date: updated.date, weight: updated.bodyWeight }];
+    });
+  };
+
+  // Remove a body-weight data point (a fat-fingered entry, say). Indexes into the
+  // unsorted log — the card tags each row with its original index before sorting.
+  const deleteBodyWeightEntry = (i: number) =>
+    setBodyWeightLog(log => log.filter((_, idx) => idx !== i));
+
+  // Move an exercise up/down within the active session so it can be reordered.
+  const moveExercise = (idx: number, dir: -1 | 1) => {
+    setCurrentWorkout((w: any) => {
+      const to = idx + dir;
+      if (to < 0 || to >= w.exercises.length) return w;
+      const exercises = [...w.exercises];
+      [exercises[idx], exercises[to]] = [exercises[to], exercises[idx]];
+      return { ...w, exercises };
+    });
+  };
+
+  // Open Settings while remembering the tab we came from, so Back returns there.
+  const openSettings = () => { setSettingsFrom(currentScreen); setCurrentScreen('settings'); };
+
+  // ── Data management (export / import / wipe) ─────────────────────────────────
+  const exportData = () => {
+    try {
+      const payload = {
+        app: 'FitPulse', version: 1, exportedAt: new Date().toISOString(),
+        workouts, bodyWeightLog, weeklyGoal, prefs,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `fitpulse-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
+  };
+
+  // Returns a promise so Settings can report success/failure to the user.
+  const importData = (file: File): Promise<boolean> =>
+    new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const d = JSON.parse(String(reader.result));
+          if (!Array.isArray(d.workouts)) { resolve(false); return; }
+          setWorkouts(d.workouts);
+          setBodyWeightLog(Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : []);
+          if (Number.isFinite(d.weeklyGoal)) setWeeklyGoal(Math.min(GOAL_MAX, Math.max(GOAL_MIN, d.weeklyGoal)));
+          if (d.prefs) setPrefs({ ...DEFAULT_PREFS, ...d.prefs, hidden: Array.isArray(d.prefs.hidden) ? d.prefs.hidden : [] });
+          resolve(true);
+        } catch { resolve(false); }
+      };
+      reader.onerror = () => resolve(false);
+      reader.readAsText(file);
+    });
+
+  const clearAllData = () => {
+    setWorkouts([]);
+    setBodyWeightLog([]);
+    setWeeklyGoal(4);
+    setPrefs(DEFAULT_PREFS);
+    setCurrentWorkout(null);
+    try { localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
+  };
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const getWorkoutStreak = () => {
@@ -1811,6 +2335,15 @@ const GymTrackerApp = () => {
     const count = workouts.filter((w: any) => new Date(w.date) >= cutoff).length;
     return Math.min((count / weeklyGoal) * 100, 100);
   };
+
+  // The dashboard muscle-focus donut is scoped to the last 30 days — a rolling
+  // "what have I been hitting lately" read, distinct from Progress's selectable
+  // window. The heading carries the range so the number isn't mistaken for all-time.
+  const last30Workouts = (() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    return workouts.filter((w: any) => new Date(w.date) >= cutoff);
+  })();
 
   const getDaysSinceLastWorkout = () => {
     if (workouts.length === 0) return 'No workouts yet';
@@ -1870,14 +2403,18 @@ const GymTrackerApp = () => {
             >
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
             </button>
-            <button
-              onClick={() => setCurrentScreen('settings')}
-              className={`p-2 -mr-2 rounded-ctl transition-colors ${currentScreen === 'settings' ? 'text-accent' : 'text-muted hover:text-ink'}`}
-              aria-label="Settings"
-              aria-current={currentScreen === 'settings' ? 'page' : undefined}
-            >
-              <Settings size={17} />
-            </button>
+            {/* Hidden during a session — leaving to Settings mid-workout used to
+                strand the in-progress session with no way back. */}
+            {!inSession && (
+              <button
+                onClick={openSettings}
+                className={`p-2 -mr-2 rounded-ctl transition-colors ${currentScreen === 'settings' ? 'text-accent' : 'text-muted hover:text-ink'}`}
+                aria-label="Settings"
+                aria-current={currentScreen === 'settings' ? 'page' : undefined}
+              >
+                <Settings size={17} />
+              </button>
+            )}
           </div>
         </div>
         {/* Knurling — the grip band on a bar. */}
@@ -1948,12 +2485,12 @@ const GymTrackerApp = () => {
             </div>
           </div>
 
-          {/* Muscle focus — all-time split, so it reads as a stable overview rather
-              than jittering with a rolling window. Time-scoping lives on Progress. */}
+          {/* Muscle focus — scoped to the last 30 days, so it reads as a recent
+              training-balance snapshot. Progress carries the selectable window. */}
           {workouts.length > 0 && !prefs.hidden.includes('dash.muscle') && (
             <div className={`${card} p-4`}>
-              <h3 className={`${label} mb-3`}>Muscle focus</h3>
-              <MuscleGroupDonut workouts={workouts} theme={theme} prefs={prefs} metric={prefs.muscleMetric} units={units} size={150} sliceLimit={5} legendLimit={3} />
+              <h3 className={`${label} mb-3`}>Muscle focus · Last 30 days</h3>
+              <MuscleGroupDonut workouts={last30Workouts} theme={theme} prefs={prefs} metric={prefs.muscleMetric} units={units} size={150} sliceLimit={5} legendLimit={6} emptyMessage="No sets logged in the last 30 days." />
             </div>
           )}
 
@@ -1991,6 +2528,45 @@ const GymTrackerApp = () => {
               <BodyWeightTrend data={bwChartData} theme={theme} prefs={prefs} chartType={prefs.bwChart} units={units} height={140} compact />
             ) : (
               <p className="text-xs text-faint text-center py-6">Log two entries to see a trend.</p>
+            )}
+
+            {/* Manage entries — the only place to correct or remove a mistyped
+                weight, since a data point is otherwise permanent. */}
+            {bodyWeightLog.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-line">
+                <button
+                  onClick={() => setManageBW(v => !v)}
+                  aria-expanded={manageBW}
+                  className="flex items-center gap-2 text-muted hover:text-ink text-xs font-medium transition-colors"
+                >
+                  {manageBW ? 'Hide entries' : `Edit entries (${bodyWeightLog.length})`}
+                  <ChevronDown size={12} className={`transition-transform ${manageBW ? 'rotate-180' : ''}`} />
+                </button>
+                {manageBW && (
+                  <ul className="mt-2 flex flex-col gap-1 max-h-48 overflow-y-auto">
+                    {bodyWeightLog
+                      .map((e, idx) => ({ ...e, idx }))
+                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .map(e => (
+                        <li key={e.idx} className="flex items-center justify-between gap-2 bg-raised rounded-ctl px-3 py-1.5">
+                          <span className="text-xs text-muted tabular-nums">
+                            {new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-ink tabular-nums">{trim1(toDisplayWeight(e.weight, units) as number)} {units}</span>
+                            <button
+                              onClick={() => deleteBodyWeightEntry(e.idx)}
+                              aria-label={`Delete body weight entry from ${new Date(e.date).toLocaleDateString()}`}
+                              className="text-faint hover:text-crit transition-colors"
+                            >
+                              <X size={13} />
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
           )}
@@ -2041,11 +2617,11 @@ const GymTrackerApp = () => {
               </div>
               <div>
                 <h2 className="font-display text-xl font-bold uppercase tracking-wide text-ink leading-none">{entryTypeCfg.label}</h2>
-                <p className="text-xs text-faint mt-1.5">Weigh in to start</p>
+                <p className="text-xs text-faint mt-1.5">Weigh in, or skip to start</p>
               </div>
             </div>
 
-            <label htmlFor="entry-bw" className={`${label} block mb-2`}>Body weight ({units})</label>
+            <label htmlFor="entry-bw" className={`${label} block mb-2`}>Body weight ({units}) — optional</label>
             <input
               id="entry-bw"
               type="number" step="0.1" inputMode="decimal"
@@ -2060,10 +2636,9 @@ const GymTrackerApp = () => {
             <div className="flex gap-2 mt-5">
               <button
                 onClick={confirmBodyWeight}
-                disabled={!bodyWeight}
-                className={`${btnPrimary} flex-1 p-3.5 disabled:bg-raised disabled:text-faint disabled:cursor-not-allowed disabled:brightness-100`}
+                className={`${btnPrimary} flex-1 p-3.5`}
               >
-                Start session
+                {bodyWeight ? 'Start session' : 'Skip & start'}
               </button>
               <button onClick={cancelWorkout} className={`${btnSecondary} px-5 p-3.5`}>
                 Cancel
@@ -2082,6 +2657,7 @@ const GymTrackerApp = () => {
           addSet={addSet}
           removeSet={removeSet}
           removeExercise={removeExercise}
+          moveExercise={moveExercise}
           updateExerciseNotes={updateExerciseNotes}
           finishWorkout={finishWorkout}
           cancelWorkout={cancelWorkout}
@@ -2090,6 +2666,9 @@ const GymTrackerApp = () => {
           units={units}
           restTimer={prefs.restTimer}
           restSeconds={prefs.restSeconds}
+          workoutTimer={prefs.workoutTimer}
+          setRestTimer={(v: boolean) => updatePrefs({ restTimer: v })}
+          setWorkoutTimer={(v: boolean) => updatePrefs({ workoutTimer: v })}
         />
       )}
 
@@ -2105,7 +2684,12 @@ const GymTrackerApp = () => {
 
       {/* ── Settings ── */}
       {currentScreen === 'settings' && (
-        <SettingsScreen prefs={prefs} updatePrefs={updatePrefs} toggleHidden={toggleHidden} theme={theme} onDone={() => setCurrentScreen('home')} />
+        <SettingsScreen
+          prefs={prefs} updatePrefs={updatePrefs} toggleHidden={toggleHidden}
+          theme={theme} themeMode={mode} setThemeMode={setMode}
+          onExport={exportData} onImport={importData} onClearData={clearAllData}
+          onDone={() => setCurrentScreen(settingsFrom)}
+        />
       )}
 
       {/* ── Bottom Tab Bar ── */}
