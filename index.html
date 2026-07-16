@@ -7,11 +7,17 @@
     <meta name="theme-color" content="#EEF1F3" media="(prefers-color-scheme: light)" />
     <title>FitPulse — Gym Tracker</title>
     <script>
-      // Stamp the saved theme before first paint so the page never flashes the
-      // wrong ground. No saved choice means follow the OS.
+      // Stamp the saved theme + accent before first paint so the page never flashes
+      // the wrong ground or a default-blue accent. No saved theme means follow the OS.
       try {
         var t = localStorage.getItem('gym-theme');
         if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+        var resolved = (t === 'light' || t === 'dark') ? t
+          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        var vars = JSON.parse(localStorage.getItem('gym-theme-vars') || 'null');
+        if (vars && vars[resolved]) {
+          for (var k in vars[resolved]) document.documentElement.style.setProperty(k, vars[resolved][k]);
+        }
       } catch (e) {}
     </script>
   </head>

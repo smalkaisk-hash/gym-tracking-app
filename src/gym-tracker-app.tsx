@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 // Vite hashes and copies these into dist/assets at build time.
 import pushImg from '../Assets/pexels-tima-miroshnichenko-5327522.jpg';
@@ -228,14 +228,85 @@ const ALL_GROUPS: ExerciseGroup[] = [
   CARDIO,
 ];
 
+// Stored workouts keep only an exercise name, so to tally by muscle we need the
+// reverse of the catalogue: name → group. Built once at load. Names are unique
+// across ALL_GROUPS (they're React keys too), so there are no collisions.
+const EXERCISE_GROUP_INDEX: Record<string, string> = Object.fromEntries(
+  ALL_GROUPS.flatMap(g => g.items.map(name => [name, g.group]))
+);
+
+// A free-text exercise the user typed isn't in the catalogue — it lands here.
+const OTHER_GROUP = 'Other';
+
+// The muscle-group breakdown, by whichever metric the user picked, sorted
+// most-trained first. Pure and takes an already date-filtered list, so both the
+// Progress and Home cards reuse it — the caller decides the window.
+//   sets     — a plank set counts like a squat set; the even-handed default.
+//   volume   — reps × weight; heavy but zeroes bodyweight/cardio (no load logged).
+//   sessions — how many separate workouts touched the group (once each).
+type MuscleMetric = 'sets' | 'volume' | 'sessions';
+
+const muscleGroupBreakdown = (workouts: any[], metric: MuscleMetric): { group: string; value: number; pct: number }[] => {
+  const totals: Record<string, number> = {};
+  for (const w of workouts) {
+    const seen = new Set<string>();
+    for (const ex of w.exercises) {
+      const g = EXERCISE_GROUP_INDEX[ex.name] ?? OTHER_GROUP;
+      if (metric === 'sets')        totals[g] = (totals[g] ?? 0) + (ex.sets?.length ?? 0);
+      else if (metric === 'volume') totals[g] = (totals[g] ?? 0) + volumeOf(ex);
+      else                          seen.add(g); // sessions: tally once per workout, below
+    }
+    if (metric === 'sessions') for (const g of seen) totals[g] = (totals[g] ?? 0) + 1;
+  }
+  const sum = Object.values(totals).reduce((a, b) => a + b, 0);
+  return Object.entries(totals)
+    .filter(([, value]) => value > 0)
+    .map(([group, value]) => ({ group, value, pct: sum ? (value / sum) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value);
+};
+
 const STORAGE_KEY = 'gym-workouts';
 const BW_LOG_KEY  = 'gym-bw-log';
 const GOAL_KEY    = 'gym-weekly-goal';
+const PREFS_KEY   = 'gym-prefs';
 
 // Seven days in a week, and almost nobody trains twice in one.
 const GOAL_MIN = 1;
 const GOAL_MAX = 7;
 const THEME_KEY   = 'gym-theme';
+
+// User-chosen view settings, all set from the Settings screen. Persisted as one
+// JSON blob and merged over DEFAULT_PREFS on load, so adding a field later never
+// breaks data saved by an older build.
+type Units = 'kg' | 'lb';
+type Prefs = {
+  units: Units;
+  hidden: string[];              // widget keys the user hid (see WIDGET_LABELS)
+  muscleMetric: MuscleMetric;
+  bwChart: 'line' | 'bar';
+  accent: string;                // ACCENTS id
+  base: string;                  // BASES id (neutral palette)
+  semantics: string;             // SEMANTICS id (good/warn/crit set)
+  restTimer: boolean;            // start a rest countdown after each set
+  restSeconds: number;           // its default duration
+};
+const DEFAULT_PREFS: Prefs = {
+  units: 'kg', hidden: [], muscleMetric: 'sets', bwChart: 'line',
+  accent: 'blue', base: 'graphite', semantics: 'plates', restTimer: true, restSeconds: 90,
+};
+
+// Hideable stat widgets, keyed per screen so the same kind can be hidden on one
+// screen and shown on the other. Start-a-session and the Progress filter card are
+// not hideable. Labels drive the Settings checkboxes.
+const WIDGET_LABELS: Record<string, string> = {
+  'dash.stats':      'Stat tiles',
+  'dash.muscle':     'Muscle focus',
+  'dash.bodyweight': 'Body weight',
+  'dash.log':        'Log',
+  'prog.muscle':     'Muscle group balance',
+  'prog.bodyweight': 'Body weight chart',
+  'prog.exercise':   'Exercise progress',
+};
 
 // ─── Style constants ───────────────────────────────────────────────────────────
 // Colours come from tokens in index.css; nothing here names a raw hex.
@@ -276,16 +347,158 @@ const SESSION_TYPES: SessionType[] = [
 ];
 
 // Recharts takes colour strings, not classes, so the tokens are mirrored here.
+// `cat` is the donut's categorical sequence — assigned to slices in fixed order,
+// never cycled. The order is CVD-safe by adjacency (validated with the dataviz
+// palette checker in both themes: worst adjacent ΔE 9.1 light / 8.4 dark). Slot 0
+// is the app's accent blue, so the chart still reads as FitPulse. Don't reorder
+// or hand-edit these without re-running the validator.
 const CHART = {
-  dark:  { accent: '#2E7BD6', series2: '#E0A63C', grid: '#26313A', axis: '#5A6874', surface: '#151C21', line: '#26313A', muted: '#8B9AA7' },
-  light: { accent: '#1B5FBF', series2: '#A9741F', grid: '#D7DEE3', axis: '#93A1AC', surface: '#FFFFFF', line: '#D7DEE3', muted: '#5A6874' },
+  dark:  { accent: '#2E7BD6', series2: '#E0A63C', grid: '#26313A', axis: '#5A6874', surface: '#151C21', line: '#26313A', muted: '#8B9AA7',
+           cat: ['#3987e5', '#008300', '#d55181', '#c98500', '#199e70', '#d95926', '#9085e9'] },
+  light: { accent: '#1B5FBF', series2: '#A9741F', grid: '#D7DEE3', axis: '#93A1AC', surface: '#FFFFFF', line: '#D7DEE3', muted: '#5A6874',
+           cat: ['#2a78d6', '#008300', '#e87ba4', '#eda100', '#1baf7a', '#eb6834', '#4a3aa7'] },
+};
+
+// Accent presets. Each is a light+dark pair; the token strings are RGB triplets
+// (dropped straight into `--accent` / `--accent-ink`), `hex` mirrors the accent for
+// charts. Red and green are excluded so an accent never impersonates crit/good.
+// Every ink/accent contrast was checked against WCAG (worst ink-on-accent 4.23,
+// worst accent-on-surface 4.03) — don't hand-edit without re-checking. The donut's
+// categorical palette is deliberately NOT re-tinted (it's CVD-validated as a set);
+// only the single-series exercise line follows the accent.
+const WHITE_INK = '255 255 255';
+const DARK_INK  = '13 18 21';
+type AccentTone = { accent: string; ink: string; hex: string };
+const ACCENTS: Record<string, { label: string; light: AccentTone; dark: AccentTone }> = {
+  blue:    { label: 'Blue',    light: { accent: '27 95 191',  ink: WHITE_INK, hex: '#1B5FBF' }, dark: { accent: '46 123 214',  ink: WHITE_INK, hex: '#2E7BD6' } },
+  indigo:  { label: 'Indigo',  light: { accent: '67 56 202',  ink: WHITE_INK, hex: '#4338CA' }, dark: { accent: '129 140 248', ink: DARK_INK,  hex: '#818CF8' } },
+  violet:  { label: 'Violet',  light: { accent: '109 40 217', ink: WHITE_INK, hex: '#6D28D9' }, dark: { accent: '139 92 246',  ink: WHITE_INK, hex: '#8B5CF6' } },
+  magenta: { label: 'Magenta', light: { accent: '162 28 175', ink: WHITE_INK, hex: '#A21CAF' }, dark: { accent: '210 75 224',  ink: DARK_INK,  hex: '#D24BE0' } },
+  pink:    { label: 'Pink',    light: { accent: '190 24 93',  ink: WHITE_INK, hex: '#BE185D' }, dark: { accent: '244 114 182', ink: DARK_INK,  hex: '#F472B6' } },
+  rose:    { label: 'Rose',    light: { accent: '190 18 60',  ink: WHITE_INK, hex: '#BE123C' }, dark: { accent: '251 113 133', ink: DARK_INK,  hex: '#FB7185' } },
+  orange:  { label: 'Orange',  light: { accent: '194 65 12',  ink: WHITE_INK, hex: '#C2410C' }, dark: { accent: '251 146 60',  ink: DARK_INK,  hex: '#FB923C' } },
+  amber:   { label: 'Amber',   light: { accent: '180 83 9',   ink: WHITE_INK, hex: '#B45309' }, dark: { accent: '245 158 11',  ink: DARK_INK,  hex: '#F59E0B' } },
+  red:     { label: 'Red',     light: { accent: '220 38 38',  ink: WHITE_INK, hex: '#DC2626' }, dark: { accent: '248 113 113', ink: DARK_INK,  hex: '#F87171' } },
+  orange2: { label: 'Gold',    light: { accent: '161 98 7',   ink: WHITE_INK, hex: '#A16207' }, dark: { accent: '234 179 8',   ink: DARK_INK,  hex: '#EAB308' } },
+  lime:    { label: 'Lime',    light: { accent: '77 124 15',  ink: WHITE_INK, hex: '#4D7C0F' }, dark: { accent: '163 230 53',  ink: DARK_INK,  hex: '#A3E635' } },
+  green:   { label: 'Green',   light: { accent: '21 128 61',  ink: WHITE_INK, hex: '#15803D' }, dark: { accent: '34 197 94',   ink: DARK_INK,  hex: '#22C55E' } },
+  emerald: { label: 'Emerald', light: { accent: '4 120 87',   ink: WHITE_INK, hex: '#047857' }, dark: { accent: '52 211 153',  ink: DARK_INK,  hex: '#34D399' } },
+  teal:    { label: 'Teal',    light: { accent: '15 118 110', ink: WHITE_INK, hex: '#0F766E' }, dark: { accent: '20 184 166',  ink: DARK_INK,  hex: '#14B8A6' } },
+  cyan:    { label: 'Cyan',    light: { accent: '14 116 144', ink: WHITE_INK, hex: '#0E7490' }, dark: { accent: '34 211 238',  ink: DARK_INK,  hex: '#22D3EE' } },
+  sky:     { label: 'Sky',     light: { accent: '3 105 161',  ink: WHITE_INK, hex: '#0369A1' }, dark: { accent: '56 189 248',  ink: DARK_INK,  hex: '#38BDF8' } },
+  purple:  { label: 'Purple',  light: { accent: '126 34 206', ink: WHITE_INK, hex: '#7E22CE' }, dark: { accent: '168 85 247',  ink: WHITE_INK, hex: '#A855F7' } },
+  slate:   { label: 'Slate',   light: { accent: '71 85 105',  ink: WHITE_INK, hex: '#475569' }, dark: { accent: '124 139 160', ink: DARK_INK,  hex: '#7C8BA0' } },
+};
+const ACCENT_IDS = Object.keys(ACCENTS);
+const accentTone = (id: string, theme: Theme): AccentTone => (ACCENTS[id] ?? ACCENTS.blue)[theme];
+
+// Base (neutral) palettes. Each was generated by re-tinting the Graphite ramp at
+// CONSTANT OKLCH lightness — only hue/chroma shift — so every contrast ratio is
+// preserved by construction (verified: ink ≥ 18 / muted ≥ 5.7 / faint ≥ 2.6 on
+// surface, both themes). `tokens` override the neutral CSS vars; `chart` mirrors
+// the neutrals as hex for recharts. Don't hand-edit without re-generating.
+type BaseTone = { tokens: Record<string, string>; chart: { surface: string; line: string; grid: string; axis: string; muted: string } };
+const BASES: Record<string, { label: string; light: BaseTone; dark: BaseTone }> = {
+  graphite: { label: 'Graphite',
+    light: { tokens: { '--ground':'238 241 243','--surface':'255 255 255','--raised':'231 236 239','--line':'215 222 227','--ink':'13 18 21','--muted':'90 104 116','--faint':'147 161 172' }, chart: { surface:'#ffffff', line:'#d7dee3', grid:'#d7dee3', axis:'#5a6874', muted:'#5a6874' } },
+    dark:  { tokens: { '--ground':'13 18 21','--surface':'21 28 33','--raised':'30 39 46','--line':'38 49 58','--ink':'230 237 243','--muted':'139 154 167','--faint':'90 104 116' }, chart: { surface:'#151c21', line:'#26313a', grid:'#26313a', axis:'#8b9aa7', muted:'#8b9aa7' } } },
+  warm: { label: 'Warm',
+    light: { tokens: { '--ground':'242 240 239','--surface':'255 255 254','--raised':'236 235 233','--line':'222 220 218','--ink':'19 17 15','--muted':'106 101 96','--faint':'162 158 154' }, chart: { surface:'#fffffe', line:'#dedcda', grid:'#dedcda', axis:'#6a6560', muted:'#6a6560' } },
+    dark:  { tokens: { '--ground':'19 17 14','--surface':'29 26 24','--raised':'40 37 34','--line':'50 47 43','--ink':'237 236 233','--muted':'155 151 146','--faint':'107 101 95' }, chart: { surface:'#1d1a18', line:'#322f2b', grid:'#322f2b', axis:'#9b9792', muted:'#9b9792' } } },
+  slate: { label: 'Slate',
+    light: { tokens: { '--ground':'238 241 244','--surface':'253 255 255','--raised':'233 235 239','--line':'218 221 226','--ink':'14 17 22','--muted':'95 103 113','--faint':'153 159 167' }, chart: { surface:'#fdffff', line:'#dadde2', grid:'#dadde2', axis:'#5f6771', muted:'#5f6771' } },
+    dark:  { tokens: { '--ground':'14 17 22','--surface':'23 27 33','--raised':'33 38 45','--line':'42 48 55','--ink':'233 236 240','--muted':'146 153 162','--faint':'94 103 115' }, chart: { surface:'#171b21', line:'#2a3037', grid:'#2a3037', axis:'#9299a2', muted:'#9299a2' } } },
+  carbon: { label: 'Carbon',
+    light: { tokens: { '--ground':'240 240 240','--surface':'255 255 255','--raised':'235 235 235','--line':'221 221 221','--ink':'17 17 17','--muted':'102 102 102','--faint':'159 159 159' }, chart: { surface:'#ffffff', line:'#dddddd', grid:'#dddddd', axis:'#666666', muted:'#666666' } },
+    dark:  { tokens: { '--ground':'17 17 17','--surface':'27 27 27','--raised':'38 38 38','--line':'47 47 47','--ink':'236 236 236','--muted':'152 152 152','--faint':'102 102 102' }, chart: { surface:'#1b1b1b', line:'#2f2f2f', grid:'#2f2f2f', axis:'#989898', muted:'#989898' } } },
+  rose: { label: 'Rose',
+    light: { tokens: { '--ground':'242 240 240','--surface':'255 255 255','--raised':'237 234 234','--line':'223 220 220','--ink':'19 16 16','--muted':'108 100 100','--faint':'163 157 157' }, chart: { surface:'#ffffff', line:'#dfdcdc', grid:'#dfdcdc', axis:'#6c6464', muted:'#6c6464' } },
+    dark:  { tokens: { '--ground':'20 16 16','--surface':'30 26 26','--raised':'42 36 36','--line':'52 46 46','--ink':'238 235 235','--muted':'157 150 150','--faint':'109 99 100' }, chart: { surface:'#1e1a1a', line:'#342e2e', grid:'#342e2e', axis:'#9d9696', muted:'#9d9696' } } },
+  sage: { label: 'Sage',
+    light: { tokens: { '--ground':'239 241 240','--surface':'254 255 254','--raised':'234 236 234','--line':'219 221 220','--ink':'16 18 16','--muted':'98 104 99','--faint':'156 160 157' }, chart: { surface:'#fefffe', line:'#dbdddc', grid:'#dbdddc', axis:'#626863', muted:'#626863' } },
+    dark:  { tokens: { '--ground':'15 18 16','--surface':'25 28 25','--raised':'35 39 36','--line':'44 49 45','--ink':'234 237 235','--muted':'148 153 149','--faint':'97 104 98' }, chart: { surface:'#191c19', line:'#2c312d', grid:'#2c312d', axis:'#949995', muted:'#949995' } } },
+  ocean: { label: 'Ocean',
+    light: { tokens: { '--ground':'238 241 242','--surface':'253 255 255','--raised':'232 236 237','--line':'217 222 223','--ink':'14 18 19','--muted':'94 104 108','--faint':'153 160 163' }, chart: { surface:'#fdffff', line:'#d9dedf', grid:'#d9dedf', axis:'#5e686c', muted:'#5e686c' } },
+    dark:  { tokens: { '--ground':'13 18 20','--surface':'22 28 30','--raised':'32 39 41','--line':'41 49 52','--ink':'233 237 238','--muted':'144 154 157','--faint':'92 104 109' }, chart: { surface:'#161c1e', line:'#293134', grid:'#293134', axis:'#909a9d', muted:'#909a9d' } } },
+};
+const BASE_IDS = Object.keys(BASES);
+
+// Semantic-colour sets (good / warn / crit as RGB triplets). All validated on the
+// surfaces (good/warn as text ≥ 3, crit as button bg vs white text ≥ 3.5). `cvd`
+// is Wong-derived so good and crit stay distinct under red-green colour blindness.
+type SemTone = { good: string; warn: string; crit: string };
+const SEMANTICS: Record<string, { label: string; light: SemTone; dark: SemTone }> = {
+  plates: { label: 'Plates', light: { good:'47 125 58',  warn:'169 116 31', crit:'176 42 37' },  dark: { good:'63 163 77',  warn:'224 166 60', crit:'200 51 46' } },
+  vivid:  { label: 'Vivid',  light: { good:'21 128 61',  warn:'180 83 9',   crit:'220 38 38' },  dark: { good:'34 197 94',  warn:'245 158 11', crit:'240 68 68' } },
+  cvd:    { label: 'Colour-blind', light: { good:'4 120 87', warn:'180 83 9', crit:'194 65 12' }, dark: { good:'16 185 129', warn:'245 158 11', crit:'226 78 18' } },
+};
+const SEM_IDS = Object.keys(SEMANTICS);
+
+// Resolve every customizable CSS token for a theme, from the user's choices. One
+// place so the runtime effect and the pre-paint stamp stay in agreement.
+const resolveThemeVars = (accent: string, base: string, semantics: string, theme: Theme): Record<string, string> => {
+  const a = accentTone(accent, theme);
+  const b = (BASES[base] ?? BASES.graphite)[theme];
+  const s = (SEMANTICS[semantics] ?? SEMANTICS.plates)[theme];
+  return { ...b.tokens, '--accent': a.accent, '--accent-ink': a.ink, '--good': s.good, '--warn': s.warn, '--crit': s.crit };
+};
+
+// Recharts reads hex, not CSS tokens — so charts get their neutrals from the base
+// and their accent from the accent choice. series2 (bodyweight amber) and the
+// donut's CVD-validated `cat` palette are deliberately fixed.
+const resolveChart = (prefs: { accent: string; base: string } | undefined, theme: Theme) => {
+  const fixed = CHART[theme];
+  if (!prefs) return fixed;
+  const b = (BASES[prefs.base] ?? BASES.graphite)[theme].chart;
+  return { ...fixed, accent: accentTone(prefs.accent, theme).hex, surface: b.surface, line: b.line, grid: b.grid, axis: b.axis, muted: b.muted };
 };
 
 const volumeOf = (exercise: any) =>
   exercise.sets.reduce((sum: number, s: any) => sum + (s.reps || 0) * (s.weight || 0), 0);
 
-const fmtVolume = (kg: number) =>
-  kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)} kg`;
+// ─── Units ───────────────────────────────────────────────────────────────────
+// Everything is stored in kg. These convert only at the display and input edges,
+// so switching units never rewrites stored data. null weight = bodyweight and
+// must stay null through every conversion (never become 0 lb).
+const LB_PER_KG = 2.2046226218;
+const KG_PER_LB = 0.45359237;
+
+const toDisplayWeight = (kg: number | null, units: Units): number | null =>
+  kg == null ? null : units === 'lb' ? kg * LB_PER_KG : kg;
+
+// Parse a value the user typed in the current units and return kg to store.
+// Blank stays null (the bodyweight-optional rule).
+const fromInputWeight = (val: string, units: Units): number | null => {
+  if (val.trim() === '') return null;
+  const n = parseFloat(val);
+  if (Number.isNaN(n)) return null;
+  return units === 'lb' ? n * KG_PER_LB : n;
+};
+
+// Trim a display number to 1 dp, dropping a trailing .0.
+const trim1 = (n: number) => {
+  const r = Math.round(n * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+};
+
+// A stored kg weight, formatted for display. null → "Bodyweight".
+const fmtWeight = (kg: number | null, units: Units): string =>
+  kg == null ? 'Bodyweight' : `${trim1(toDisplayWeight(kg, units) as number)} ${units}`;
+
+// Total training volume (stored kg), in the display units. Tonnes only apply to kg.
+const fmtVolume = (kg: number, units: Units = 'kg') => {
+  if (units === 'lb') {
+    const lb = kg * LB_PER_KG;
+    return lb >= 100000 ? `${(lb / 1000).toFixed(1)}k lb` : `${Math.round(lb)} lb`;
+  }
+  return kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)} kg`;
+};
+
+// The donut's centre/tooltip/legend label for a metric value.
+const metricValueLabel = (metric: MuscleMetric, value: number, units: Units): string =>
+  metric === 'volume'   ? fmtVolume(value, units)
+  : metric === 'sessions' ? `${value} session${value !== 1 ? 's' : ''}`
+  : `${value} set${value !== 1 ? 's' : ''}`;
 
 // ─── useTheme ──────────────────────────────────────────────────────────────────
 // Follows the OS until the user picks a side, then stays pinned to their choice.
@@ -337,7 +550,7 @@ const useTheme = () => {
 // ─── SetRow ────────────────────────────────────────────────────────────────────
 // The scoreboard line. Weight is the number you look for, so it leads — unless
 // there wasn't one, in which case reps are the whole story.
-const SetRow = ({ index, set, isTop, onRemove }: any) => {
+const SetRow = ({ index, set, isTop, onRemove, units = 'kg' }: any) => {
   const bodyweight = set.weight == null;
 
   return (
@@ -348,8 +561,8 @@ const SetRow = ({ index, set, isTop, onRemove }: any) => {
           <span className="text-[11px] font-semibold text-faint mr-1">Bodyweight</span>
         ) : (
           <>
-            <span className={`${readout} text-2xl ${isTop ? 'text-accent' : ''}`}>{set.weight}</span>
-            <span className="text-[11px] font-semibold text-muted">kg</span>
+            <span className={`${readout} text-2xl ${isTop ? 'text-accent' : ''}`}>{trim1(toDisplayWeight(set.weight, units) as number)}</span>
+            <span className="text-[11px] font-semibold text-muted">{units}</span>
             <span className="mx-1 text-faint">×</span>
           </>
         )}
@@ -366,7 +579,7 @@ const SetRow = ({ index, set, isTop, onRemove }: any) => {
 };
 
 // ─── ExerciseCard ──────────────────────────────────────────────────────────────
-const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExercise, updateExerciseNotes }: any) => {
+const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExercise, updateExerciseNotes, units = 'kg' }: any) => {
   const [reps, setReps]     = useState('');
   const [weight, setWeight] = useState('');
 
@@ -397,7 +610,7 @@ const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExerci
               ? 'No sets yet'
               : `${exercise.sets.length} set${exercise.sets.length !== 1 ? 's' : ''}` +
                 // Unloaded sets move nothing, so "0 kg moved" would be noise.
-                (volume > 0 ? ` · ${fmtVolume(volume)} moved` : '')}
+                (volume > 0 ? ` · ${fmtVolume(volume, units)} moved` : '')}
           </p>
         </div>
         <button
@@ -416,6 +629,7 @@ const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExerci
               key={si}
               index={si}
               set={set}
+              units={units}
               isTop={exercise.sets.length > 1 && set.weight != null && set.weight === topWeight}
               onRemove={() => removeSet(exerciseIndex, si)}
             />
@@ -432,8 +646,8 @@ const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExerci
         />
         <input
           type="number" inputMode="decimal" step="0.1"
-          placeholder={weightOptional ? 'kg — optional' : 'kg'}
-          aria-label={weightOptional ? 'Weight in kilograms (optional — leave blank for bodyweight)' : 'Weight in kilograms'}
+          placeholder={weightOptional ? `${units} — optional` : units}
+          aria-label={weightOptional ? `Weight in ${units} (optional — leave blank for bodyweight)` : `Weight in ${units}`}
           value={weight} onChange={e => setWeight(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAddSet()}
           className={`${input} col-span-2 text-center text-sm`}
@@ -459,11 +673,37 @@ const ExerciseCard = ({ exercise, exerciseIndex, addSet, removeSet, removeExerci
 };
 
 // ─── WorkoutScreen ─────────────────────────────────────────────────────────────
-const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes }: any) => {
+const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, units = 'kg', restTimer = false, restSeconds = 90 }: any) => {
   const [showExerciseList, setShowExerciseList]     = useState(false);
   const [customExerciseName, setCustomExerciseName] = useState('');
   const [showCancelConfirm, setShowCancelConfirm]   = useState(false);
   const [openGroup, setOpenGroup]                   = useState<string | null>(null);
+
+  // Rest timer — a between-sets countdown. The one interval in the app; keep it
+  // session-level (not per card), and always clear the ref so it can't leak or
+  // double up. `rest` is seconds remaining, or null when idle.
+  const [rest, setRest]   = useState<number | null>(null);
+  const restRef           = useRef<ReturnType<typeof setInterval> | null>(null);
+  const clearRest = () => { if (restRef.current) { clearInterval(restRef.current); restRef.current = null; } };
+  const startRest = () => {
+    if (!restTimer) return;
+    clearRest();
+    setRest(restSeconds);
+    restRef.current = setInterval(() => {
+      setRest(r => {
+        if (r == null) return r;
+        if (r <= 1) { clearRest(); if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200); return null; }
+        return r - 1;
+      });
+    }, 1000);
+  };
+  const bumpRest = (delta: number) => setRest(r => (r == null ? r : Math.max(0, r + delta)));
+  useEffect(() => clearRest, []);   // clear on unmount (leaving the workout)
+
+  // Logging a set starts the rest countdown.
+  const addSetAndRest = (...args: any[]) => { (addSet as any)(...args); startRest(); };
+
+  const fmtClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   const cfg                = TYPE_CONFIG[workoutType] ?? TYPE_CONFIG.custom;
   const WorkoutIcon        = cfg.Icon;
@@ -508,13 +748,13 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
               <h2 className={label}>{cfg.label}</h2>
             </div>
             <div className="flex items-baseline gap-1.5 mt-2">
-              <span className={`${readout} text-4xl`}>{fmtVolume(totalVolume).replace(/ kg|t$/, '')}</span>
-              <span className="text-xs font-semibold text-muted">{totalVolume >= 1000 ? 'tonnes moved' : 'kg moved'}</span>
+              <span className={`${readout} text-4xl`}>{fmtVolume(totalVolume, units)}</span>
+              <span className="text-xs font-semibold text-muted">moved</span>
             </div>
           </div>
           <div className="text-right">
             <p className={label}>Body wt</p>
-            <p className={`${readout} text-xl mt-1`}>{workout.bodyWeight}<span className="text-[11px] font-semibold text-muted ml-1">kg</span></p>
+            <p className={`${readout} text-xl mt-1`}>{fmtWeight(workout.bodyWeight, units)}</p>
             <p className="text-xs text-faint mt-2 tabular-nums">{totalSets} set{totalSets !== 1 ? 's' : ''}</p>
           </div>
         </div>
@@ -605,10 +845,11 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             key={i}
             exercise={exercise}
             exerciseIndex={i}
-            addSet={addSet}
+            addSet={addSetAndRest}
             removeSet={removeSet}
             removeExercise={removeExercise}
             updateExerciseNotes={updateExerciseNotes}
+            units={units}
           />
         ))}
       </div>
@@ -624,9 +865,23 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
         />
       </div>
 
-      {/* Sticky action bar — primary action sits in the thumb zone. */}
-      <div className="fixed bottom-0 left-0 right-0 bg-surface border-t border-line p-3 pb-safe z-40">
-        <div className="max-w-3xl mx-auto flex gap-2">
+      {/* Sticky action bar — primary action sits in the thumb zone. The rest
+          countdown rides just above it while it's running. */}
+      <div className="fixed bottom-0 left-0 right-0 bg-surface border-t border-line pb-safe z-40">
+        {rest != null && (
+          <div className="border-b border-line">
+            <div className="max-w-3xl mx-auto flex items-center gap-3 px-3 py-2">
+              <span className={`${label} text-accent`}>Rest</span>
+              <span className={`${readout} text-xl text-accent tabular-nums`}>{fmtClock(rest)}</span>
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={() => bumpRest(-15)} className={`${btnSecondary} px-3 py-1.5 text-xs`}>−15s</button>
+                <button onClick={() => bumpRest(15)} className={`${btnSecondary} px-3 py-1.5 text-xs`}>+15s</button>
+                <button onClick={() => { clearRest(); setRest(null); }} className={`${btnSecondary} px-3 py-1.5 text-xs`}>Skip</button>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="max-w-3xl mx-auto flex gap-2 p-3">
           {showCancelConfirm ? (
             <>
               <button onClick={cancelWorkout} className={`${btnDanger} flex-1 p-3.5`}>
@@ -657,7 +912,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
 };
 
 // ─── HistoryScreen ─────────────────────────────────────────────────────────────
-const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
+const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }: any) => {
   const [expandedWorkout, setExpandedWorkout] = useState<number | null>(null);
   const [viewingNotes, setViewingNotes]       = useState<number | null>(null);
   const [editingWorkout, setEditingWorkout]   = useState<number | null>(null);
@@ -698,9 +953,10 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
 
   const updateSetValue = (exIdx: number, setIdx: number, field: string, val: string) => {
     const u = { ...editData };
-    // Clearing the weight field means bodyweight, not NaN.
+    // Weight is typed in display units and stored in kg (blank → bodyweight/null);
+    // reps are just an integer.
     u.exercises[exIdx].sets[setIdx][field] =
-      field === 'weight' && val.trim() === '' ? null : parseFloat(val);
+      field === 'weight' ? fromInputWeight(val, units) : parseFloat(val);
     setEditData(u);
   };
 
@@ -743,7 +999,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <div className="text-right">
-                        <p className={`${readout} text-lg`}>{fmtVolume(sessionVolume)}</p>
+                        <p className={`${readout} text-lg`}>{fmtVolume(sessionVolume, units)}</p>
                         <p className="text-xs text-faint mt-0.5 tabular-nums">
                           {workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''}
                         </p>
@@ -780,12 +1036,12 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
 
                     {isEditing && (
                       <div className="p-4 border-b border-line">
-                        <label htmlFor={`bw-${index}`} className={`${label} block mb-2`}>Body weight (kg)</label>
+                        <label htmlFor={`bw-${index}`} className={`${label} block mb-2`}>Body weight ({units})</label>
                         <input
                           id={`bw-${index}`}
                           type="number" step="0.1" inputMode="decimal"
-                          value={editData.bodyWeight}
-                          onChange={e => setEditData({ ...editData, bodyWeight: parseFloat(e.target.value) })}
+                          value={editData.bodyWeight == null ? '' : trim1(toDisplayWeight(editData.bodyWeight, units) as number)}
+                          onChange={e => setEditData({ ...editData, bodyWeight: fromInputWeight(e.target.value, units) })}
                           className={`${input} w-full`}
                         />
                       </div>
@@ -838,7 +1094,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
                                   <Trash2 size={14} />
                                 </button>
                               ) : (
-                                <span className="text-xs text-faint tabular-nums flex-shrink-0">{fmtVolume(volumeOf(exercise))}</span>
+                                <span className="text-xs text-faint tabular-nums flex-shrink-0">{fmtVolume(volumeOf(exercise), units)}</span>
                               )}
                             </div>
 
@@ -850,9 +1106,9 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
                                     <div className="flex gap-2 items-center">
                                       <input type="number" inputMode="numeric" aria-label="Reps" value={set.reps} onChange={e => updateSetValue(exIdx, si, 'reps', e.target.value)} className={`${editInput} w-14`} />
                                       <span className="text-faint text-sm">×</span>
-                                      {/* ?? '' keeps this controlled when the set is bodyweight. */}
-                                      <input type="number" inputMode="decimal" step="0.1" aria-label="Weight (blank for bodyweight)" placeholder="BW" value={set.weight ?? ''} onChange={e => updateSetValue(exIdx, si, 'weight', e.target.value)} className={`${editInput} w-16`} />
-                                      <span className="text-muted text-xs font-semibold">kg</span>
+                                      {/* '' keeps this controlled when the set is bodyweight; value shows display units. */}
+                                      <input type="number" inputMode="decimal" step="0.1" aria-label="Weight (blank for bodyweight)" placeholder="BW" value={set.weight == null ? '' : trim1(toDisplayWeight(set.weight, units) as number)} onChange={e => updateSetValue(exIdx, si, 'weight', e.target.value)} className={`${editInput} w-16`} />
+                                      <span className="text-muted text-xs font-semibold">{units}</span>
                                       <button
                                         onClick={() => { const u = { ...editData }; u.exercises[exIdx].sets.splice(si, 1); setEditData(u); }}
                                         aria-label={`Remove set ${si + 1}`}
@@ -867,6 +1123,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
                                     key={si}
                                     index={si}
                                     set={set}
+                                    units={units}
                                     isTop={exercise.sets.length > 1 && set.weight === topWeight}
                                   />
                                 )
@@ -903,14 +1160,135 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout }: any) => {
   );
 };
 
+// ─── MuscleGroupDonut ────────────────────────────────────────────────────────────
+// Shows where a lifter's sets go, as a share donut. Used on both the Progress tab
+// (full, honouring its timeframe) and Home (compact, all-time) — the caller
+// date-filters `workouts` and picks the size. The ring answers "what's my split"
+// at a glance; the legend beside it carries the exact numbers, since you can't
+// read a count off a slice. `theme` selects the CHART palette, like the charts.
+const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg', size = 220, sliceLimit = 6, legendLimit, emptyMessage = 'No sets logged yet.' }: any) => {
+  const c    = resolveChart(prefs, theme);
+  const data = muscleGroupBreakdown(workouts, metric);
+
+  if (data.length === 0) {
+    return <p className="text-xs text-faint text-center py-6">{emptyMessage}</p>;
+  }
+
+  // A ring of thirteen 2%-slivers is unreadable, so keep the top few and fold the
+  // rest (plus any real "Other") into a single trailing slice.
+  const top       = data.slice(0, sliceLimit).filter(d => d.group !== OTHER_GROUP);
+  const folded    = data.filter(d => !top.includes(d)).reduce((n, d) => n + d.value, 0);
+  const total     = data.reduce((n, d) => n + d.value, 0);
+  const slices    = folded > 0
+    ? [...top, { group: OTHER_GROUP, value: folded, pct: (folded / total) * 100 }]
+    : top;
+
+  // The catch-all recedes to the muted neutral; real groups take catalogue hues in
+  // fixed order. One helper feeds both the slices and the legend swatches, so a
+  // group's ring colour and its legend dot never drift apart.
+  const colorAt = (group: string, i: number) =>
+    group === OTHER_GROUP ? c.muted : c.cat[i % c.cat.length];
+
+  const legendRows = legendLimit ? data.slice(0, legendLimit) : data;
+  // The legend indexes the full ranked list, but colours must match the ring — so
+  // map each legend group back to its slice position (folded groups get muted).
+  const sliceIndexOf = (group: string) => slices.findIndex(s => s.group === group);
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-4">
+      <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={slices} dataKey="value" nameKey="group"
+              innerRadius="62%" outerRadius="88%" paddingAngle={1.5}
+              startAngle={90} endAngle={-270}
+              stroke={c.surface} strokeWidth={2} isAnimationActive={false}
+            >
+              {slices.map((d, i) => <Cell key={d.group} fill={colorAt(d.group, i)} />)}
+            </Pie>
+            <Tooltip
+              contentStyle={{ backgroundColor: c.surface, border: `1px solid ${c.line}`, borderRadius: '6px', fontFamily: 'Barlow, system-ui, sans-serif', fontSize: '12px' }}
+              labelStyle={{ color: c.muted }}
+              formatter={(v: any, _n: any, p: any) => [`${metricValueLabel(metric, v, units)} · ${Math.round(p.payload.pct)}%`, p.payload.group]}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        {/* Centre readout — the metric total in the hole. Overlay so it needs no
+            chart colour; pointer-events-none keeps slice hovers alive underneath. */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className={`${readout} text-2xl`}>{metric === 'volume' ? fmtVolume(total, units).replace(/ (kg|lb)$/, '') : total}</span>
+          <span className={`${label} text-[10px] mt-0.5`}>{metric === 'volume' ? units : metric}</span>
+        </div>
+      </div>
+
+      <ul className="w-full flex flex-col gap-1.5">
+        {legendRows.map(d => {
+          const si = sliceIndexOf(d.group);
+          const swatch = si >= 0 ? colorAt(d.group, si) : c.muted;
+          return (
+            <li key={d.group} className="flex items-center gap-2 text-sm">
+              <span className="w-2.5 h-2.5 rounded-chip flex-shrink-0" style={{ background: swatch }} />
+              <span className="text-ink truncate">{d.group}</span>
+              <span className="ml-auto tabular-nums text-muted flex-shrink-0">
+                {metric === 'volume' ? fmtVolume(d.value, units) : d.value}<span className="text-faint"> · {Math.round(d.pct)}%</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+};
+
+// ─── BodyWeightTrend ─────────────────────────────────────────────────────────────
+// The body-weight chart, as a line or bars per the user's choice. Shared by the
+// Home sparkline (compact) and the Progress card. `data` arrives already in display
+// units, so this only draws. Bars reuse the line's colour — no palette change.
+const BodyWeightTrend = ({ data, theme, prefs, chartType = 'line', units = 'kg', height = 220, compact = false }: any) => {
+  const c = resolveChart(prefs, theme);
+  const font = { fontSize: compact ? '10px' : '11px', fontFamily: 'Barlow, system-ui, sans-serif' };
+  const margin = { top: 4, right: compact ? 4 : 8, left: compact ? -20 : -12, bottom: 0 };
+  const chrome = (
+    <>
+      <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
+      <XAxis dataKey="date" stroke={c.axis} tickLine={false} style={font} />
+      <YAxis stroke={c.axis} tickLine={false} width={compact ? 38 : 44} domain={['dataMin - 1', 'dataMax + 1']} style={font} unit={compact ? undefined : ` ${units}`} />
+      <Tooltip
+        contentStyle={{ backgroundColor: c.surface, border: `1px solid ${c.line}`, borderRadius: '6px', fontFamily: 'Barlow, system-ui, sans-serif', fontSize: '12px' }}
+        labelStyle={{ color: c.muted }}
+        cursor={{ stroke: c.grid }}
+        formatter={(v: any) => [`${v} ${units}`, 'Body weight']}
+      />
+    </>
+  );
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      {chartType === 'bar' ? (
+        <BarChart data={data} margin={margin}>
+          {chrome}
+          <Bar dataKey="bodyWeight" fill={c.series2} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+        </BarChart>
+      ) : (
+        <LineChart data={data} margin={margin}>
+          {chrome}
+          <Line type="monotone" dataKey="bodyWeight" stroke={c.series2} strokeWidth={2} dot={{ fill: c.series2, r: compact ? 2.5 : 3, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+        </LineChart>
+      )}
+    </ResponsiveContainer>
+  );
+};
+
 // ─── ProgressScreen ────────────────────────────────────────────────────────────
-const ProgressScreen = ({ workouts, bodyWeightLog, theme }: any) => {
+const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
+  const { units = 'kg', muscleMetric = 'sets', bwChart = 'line', hidden = [] } = prefs ?? {};
+  const accent = resolveChart(prefs, theme).accent;
   const [timeframe, setTimeframe]               = useState('30days');
   const [selectedExercise, setSelectedExercise] = useState('');
   const [customStartDate, setCustomStartDate]   = useState('');
   const [customEndDate, setCustomEndDate]       = useState('');
 
-  const c = CHART[theme as Theme];
+  const c = resolveChart(prefs, theme);
 
   const allExercisesUsed = [...new Set(
     workouts.flatMap((w: any) => w.exercises.map((e: any) => e.name))
@@ -939,7 +1317,7 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme }: any) => {
       const maxWeightSet = ex.sets.find((s: any) => (s.weight ?? 0) === maxWeight);
       return [{
         date: new Date(w.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        maxWeight,
+        maxWeight: Math.round((toDisplayWeight(maxWeight, units) as number) * 10) / 10,
         repsAtMaxWeight: maxWeightSet?.reps ?? 0,
       }];
     });
@@ -948,7 +1326,7 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme }: any) => {
   const getBodyWeightData = () =>
     filterByDate(bodyWeightLog).map((e: any) => ({
       date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      bodyWeight: e.weight,
+      bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
     }));
 
   const exerciseData   = getExerciseData();
@@ -1000,46 +1378,55 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme }: any) => {
         )}
       </div>
 
-      {selectedExercise && exerciseData.length > 0 && (
+      {/* Where the sets went — the tab's overview, so it sits above the per-exercise
+          detail. filterByDate makes it honour the timeframe selector for free. */}
+      {workouts.length > 0 && !hidden.includes('prog.muscle') && (
+        <div className={`${card} p-4 mb-3`}>
+          <h3 className={`${label} mb-4`}>Muscle group balance</h3>
+          <MuscleGroupDonut
+            workouts={filterByDate(workouts)}
+            theme={theme}
+            prefs={prefs}
+            metric={muscleMetric}
+            units={units}
+            size={230}
+            emptyMessage="No sets logged in this timeframe."
+          />
+        </div>
+      )}
+
+      {!hidden.includes('prog.exercise') && selectedExercise && exerciseData.length > 0 && (
         <div className={`${card} p-4 mb-3`}>
           <h3 className={`${label} mb-4`}>{selectedExercise} — top set</h3>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={exerciseData} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
               <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
               <XAxis dataKey="date" {...axis} tickLine={false} />
-              <YAxis {...axis} tickLine={false} width={44} unit=" kg" />
+              <YAxis {...axis} tickLine={false} width={44} unit={` ${units}`} />
               <Tooltip
                 contentStyle={tooltipStyle}
                 labelStyle={{ color: c.muted }}
                 cursor={{ stroke: c.grid }}
                 formatter={(value: any, _name: string, props: any) =>
-                  [`${value} kg × ${props.payload.repsAtMaxWeight} reps`, 'Top set']
+                  [`${value} ${units} × ${props.payload.repsAtMaxWeight} reps`, 'Top set']
                 }
               />
-              <Line type="monotone" dataKey="maxWeight" stroke={c.accent} strokeWidth={2} dot={{ fill: c.accent, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="maxWeight" stroke={accent} strokeWidth={2} dot={{ fill: accent, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {selectedExercise && exerciseData.length === 0 && (
+      {!hidden.includes('prog.exercise') && selectedExercise && exerciseData.length === 0 && (
         <div className={`${card} p-8 mb-3 text-center`}>
           <p className="text-muted text-sm">No <span className="text-ink font-medium">{selectedExercise}</span> logged in this timeframe.</p>
         </div>
       )}
 
-      {bodyWeightData.length > 0 && (
+      {!hidden.includes('prog.bodyweight') && bodyWeightData.length > 0 && (
         <div className={`${card} p-4`}>
           <h3 className={`${label} mb-4`}>Body weight</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={bodyWeightData} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
-              <XAxis dataKey="date" {...axis} tickLine={false} />
-              <YAxis {...axis} tickLine={false} width={44} unit=" kg" domain={['dataMin - 1', 'dataMax + 1']} />
-              <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: c.muted }} cursor={{ stroke: c.grid }} formatter={(v: any) => [`${v} kg`, 'Body weight']} />
-              <Line type="monotone" dataKey="bodyWeight" stroke={c.series2} strokeWidth={2} dot={{ fill: c.series2, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <BodyWeightTrend data={bodyWeightData} theme={theme} prefs={prefs} chartType={bwChart} units={units} />
         </div>
       )}
 
@@ -1048,6 +1435,170 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme }: any) => {
           <p className="text-muted text-sm">Log a session to see progress.</p>
         </div>
       )}
+    </div>
+  );
+};
+
+// ─── Settings ──────────────────────────────────────────────────────────────────
+// A small segmented pill for the either/or choices, styled through tokens.
+const Segmented = ({ value, onChange, options }: any) => (
+  <div className="inline-flex bg-raised border border-line rounded-ctl p-0.5 gap-0.5">
+    {options.map((o: any) => (
+      <button
+        key={o.value}
+        onClick={() => onChange(o.value)}
+        aria-pressed={value === o.value}
+        className={`px-3 py-1.5 rounded-chip text-sm font-semibold transition-colors ${value === o.value ? 'bg-accent text-accent-ink' : 'text-muted hover:text-ink'}`}
+      >
+        {o.label}
+      </button>
+    ))}
+  </div>
+);
+
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, onDone }: any) => {
+  const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
+  const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
+
+  // A show/hide toggle: checked = the widget is shown (i.e. not in `hidden`).
+  const widgetRow = (k: string) => {
+    const shown = !prefs.hidden.includes(k);
+    return (
+      <div key={k} className="flex items-center justify-between gap-3 py-2">
+        <span className="text-sm text-ink">{WIDGET_LABELS[k]}</span>
+        <button
+          role="switch" aria-checked={shown}
+          aria-label={`${shown ? 'Hide' : 'Show'} ${WIDGET_LABELS[k]}`}
+          onClick={() => toggleHidden(k)}
+          className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${shown ? 'bg-accent' : 'bg-raised border border-line'}`}
+        >
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all ${shown ? 'left-[18px]' : 'left-0.5'}`} />
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 pb-24 flex flex-col gap-3">
+      <div className="flex items-center gap-1">
+        <button onClick={onDone} className="p-2 -ml-2 rounded-ctl text-muted hover:text-ink transition-colors" aria-label="Back">
+          <ChevronLeft size={18} />
+        </button>
+        <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">Settings</h2>
+      </div>
+
+      {/* Appearance */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Accent colour</h3>
+        <div className="flex flex-wrap gap-2.5">
+          {ACCENT_IDS.map(id => {
+            const on = prefs.accent === id;
+            return (
+              <button
+                key={id}
+                onClick={() => updatePrefs({ accent: id })}
+                aria-pressed={on}
+                aria-label={ACCENTS[id].label}
+                title={ACCENTS[id].label}
+                className={`w-9 h-9 rounded-full transition-transform ${on ? 'ring-2 ring-offset-2 ring-offset-surface ring-ink scale-105' : 'hover:scale-105'}`}
+                style={{ background: accentTone(id, theme).hex }}
+              />
+            );
+          })}
+        </div>
+
+        <div className="h-px bg-line my-4" />
+        <h3 className={`${label} mb-3`}>Background</h3>
+        <div className="flex flex-wrap gap-2">
+          {BASE_IDS.map(id => {
+            const on = prefs.base === id;
+            const b = BASES[id][theme];
+            return (
+              <button
+                key={id}
+                onClick={() => updatePrefs({ base: id })}
+                aria-pressed={on}
+                className={`flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-ctl border transition-colors ${on ? 'border-accent' : 'border-line hover:bg-raised'}`}
+              >
+                {/* A little surface/ink chip previews the palette. */}
+                <span className="w-5 h-5 rounded-chip border border-line grid place-items-center" style={{ background: `rgb(${b.tokens['--surface']})` }}>
+                  <span className="w-2 h-2 rounded-full" style={{ background: `rgb(${b.tokens['--ink']})` }} />
+                </span>
+                <span className="text-sm text-ink">{BASES[id].label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="h-px bg-line my-4" />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-ink">Status colours</span>
+          <Segmented value={prefs.semantics} onChange={(v: string) => updatePrefs({ semantics: v })}
+            options={SEM_IDS.map(id => ({ value: id, label: SEMANTICS[id].label }))} />
+        </div>
+        <p className="text-xs text-faint mt-2">The success / warning / danger colours. “Colour-blind” keeps success and danger distinct for red-green colour blindness.</p>
+      </div>
+
+      {/* Units */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Units</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-ink">Weight unit</span>
+          <Segmented value={prefs.units} onChange={(v: Units) => updatePrefs({ units: v })}
+            options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
+        </div>
+        <p className="text-xs text-faint mt-2">Changes the display only — your workouts stay stored in kilograms.</p>
+      </div>
+
+      {/* Display */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Display</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+          <span className="text-sm text-ink">Most-trained metric</span>
+          <Segmented value={prefs.muscleMetric} onChange={(v: MuscleMetric) => updatePrefs({ muscleMetric: v })}
+            options={[{ value: 'sets', label: 'Sets' }, { value: 'volume', label: 'Volume' }, { value: 'sessions', label: 'Sessions' }]} />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+          <span className="text-sm text-ink">Body-weight chart</span>
+          <Segmented value={prefs.bwChart} onChange={(v: 'line' | 'bar') => updatePrefs({ bwChart: v })}
+            options={[{ value: 'line', label: 'Line' }, { value: 'bar', label: 'Bar' }]} />
+        </div>
+        {prefs.muscleMetric === 'volume' && (
+          <p className="text-xs text-faint mt-2">Volume is reps × weight, so bodyweight and cardio work counts as zero.</p>
+        )}
+      </div>
+
+      {/* Workout */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Workout</h3>
+        <div className="flex items-center justify-between gap-3 py-1">
+          <span className="text-sm text-ink">Rest timer</span>
+          <button
+            role="switch" aria-checked={prefs.restTimer}
+            aria-label={`${prefs.restTimer ? 'Disable' : 'Enable'} rest timer`}
+            onClick={() => updatePrefs({ restTimer: !prefs.restTimer })}
+            className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${prefs.restTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
+          >
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all ${prefs.restTimer ? 'left-[18px]' : 'left-0.5'}`} />
+          </button>
+        </div>
+        {prefs.restTimer && (
+          <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+            <span className="text-sm text-ink">Rest duration</span>
+            <Segmented value={prefs.restSeconds} onChange={(v: number) => updatePrefs({ restSeconds: v })}
+              options={[{ value: 60, label: '60s' }, { value: 90, label: '90s' }, { value: 120, label: '2m' }, { value: 180, label: '3m' }]} />
+          </div>
+        )}
+      </div>
+
+      {/* Widgets */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-1`}>Dashboard widgets</h3>
+        {dashKeys.map(widgetRow)}
+        <div className="h-px bg-line my-3" />
+        <h3 className={`${label} mb-1`}>Progress widgets</h3>
+        {progKeys.map(widgetRow)}
+      </div>
     </div>
   );
 };
@@ -1063,9 +1614,34 @@ const GymTrackerApp = () => {
   const [bodyWeight, setBodyWeight]                   = useState('');
   const [workoutNotes, setWorkoutNotes]               = useState('');
   const [quickBWInput, setQuickBWInput]               = useState('');
+  const [prefs, setPrefs]                             = useState<Prefs>(DEFAULT_PREFS);
 
   const { theme, toggle } = useTheme();
   const c = CHART[theme];
+
+  const units = prefs.units;
+  const updatePrefs  = (patch: Partial<Prefs>) => setPrefs(p => ({ ...p, ...patch }));
+  const toggleHidden = (key: string) =>
+    setPrefs(p => ({ ...p, hidden: p.hidden.includes(key) ? p.hidden.filter(k => k !== key) : [...p.hidden, key] }));
+
+  // Colour choices → CSS tokens. One effect applies every override (accent, base
+  // neutrals, semantics) for the active theme; overriding the tokens cascades to
+  // every utility across the app.
+  useEffect(() => {
+    const vars = resolveThemeVars(prefs.accent, prefs.base, prefs.semantics, theme);
+    for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v);
+  }, [prefs.accent, prefs.base, prefs.semantics, theme]);
+
+  // Persist the resolved vars for BOTH themes so index.html can stamp them before
+  // first paint (no flash of the default palette on reload).
+  useEffect(() => {
+    try {
+      localStorage.setItem('gym-theme-vars', JSON.stringify({
+        light: resolveThemeVars(prefs.accent, prefs.base, prefs.semantics, 'light'),
+        dark:  resolveThemeVars(prefs.accent, prefs.base, prefs.semantics, 'dark'),
+      }));
+    } catch { /* ignore */ }
+  }, [prefs.accent, prefs.base, prefs.semantics]);
 
   // Load from localStorage. Reads synchronously before the write-back effects
   // below fire on mount — don't reorder or early-return past this.
@@ -1074,6 +1650,7 @@ const GymTrackerApp = () => {
       const stored     = localStorage.getItem(STORAGE_KEY);
       const storedBW   = localStorage.getItem(BW_LOG_KEY);
       const storedGoal = localStorage.getItem(GOAL_KEY);
+      const storedPrefs = localStorage.getItem(PREFS_KEY);
 
       const loadedWorkouts = stored ? JSON.parse(stored) : [];
       if (loadedWorkouts.length > 0) setWorkouts(loadedWorkouts);
@@ -1081,6 +1658,12 @@ const GymTrackerApp = () => {
       if (storedGoal) {
         const g = parseInt(storedGoal);
         if (!Number.isNaN(g)) setWeeklyGoal(Math.min(GOAL_MAX, Math.max(GOAL_MIN, g)));
+      }
+      // Merge over defaults so a blob saved by an older build (missing fields) still
+      // loads; guard hidden is an array in case of hand-edited/corrupt storage.
+      if (storedPrefs) {
+        const p = JSON.parse(storedPrefs);
+        setPrefs({ ...DEFAULT_PREFS, ...p, hidden: Array.isArray(p?.hidden) ? p.hidden : [] });
       }
 
       if (storedBW) {
@@ -1104,6 +1687,10 @@ const GymTrackerApp = () => {
     try { localStorage.setItem(GOAL_KEY, String(weeklyGoal)); } catch { /* ignore */ }
   }, [weeklyGoal]);
 
+  useEffect(() => {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
+  }, [prefs]);
+
   // ── Workout actions ──────────────────────────────────────────────────────────
   const startWorkout = (type: string) => {
     setSelectedWorkoutType(type);
@@ -1114,7 +1701,7 @@ const GymTrackerApp = () => {
     if (!bodyWeight) return;
     setCurrentWorkout({
       type: selectedWorkoutType,
-      bodyWeight: parseFloat(bodyWeight),
+      bodyWeight: fromInputWeight(bodyWeight, units),   // typed in display units → stored kg
       exercises: [],
       date: new Date().toISOString(),
       notes: ''
@@ -1127,9 +1714,9 @@ const GymTrackerApp = () => {
   };
 
   const addSet = (exIdx: number, reps: string, weight: string) => {
-    // A blank weight means bodyweight, stored as null — not 0, and never the NaN
-    // that parseFloat('') would give.
-    const load = weight.trim() === '' ? null : parseFloat(weight);
+    // Weight is typed in display units and stored in kg; blank = bodyweight (null),
+    // never the NaN that parseFloat('') would give.
+    const load = fromInputWeight(weight, units);
     setCurrentWorkout((w: any) => {
       const exercises = w.exercises.map((ex: any, i: number) =>
         i === exIdx ? { ...ex, sets: [...ex.sets, { reps: parseInt(reps), weight: load }] } : ex
@@ -1182,7 +1769,9 @@ const GymTrackerApp = () => {
 
   const handleQuickBWLog = () => {
     if (!quickBWInput) return;
-    setBodyWeightLog(prev => [...prev, { date: new Date().toISOString(), weight: parseFloat(quickBWInput) }]);
+    const kg = fromInputWeight(quickBWInput, units);   // typed in display units → stored kg
+    if (kg == null) return;
+    setBodyWeightLog(prev => [...prev, { date: new Date().toISOString(), weight: kg }]);
     setQuickBWInput('');
   };
 
@@ -1235,11 +1824,10 @@ const GymTrackerApp = () => {
     return `${diff} days ago`;
   };
 
-  const getLatestBodyWeight = () => {
-    if (bodyWeightLog.length === 0) return '—';
-    const sorted = [...bodyWeightLog].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return `${sorted[0].weight} kg`;
-  };
+  // Latest logged body weight in kg, or null. The card converts to display units.
+  const latestBodyWeightKg: number | null = bodyWeightLog.length === 0
+    ? null
+    : [...bodyWeightLog].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight;
 
   const getLatestWorkoutType = () => {
     if (workouts.length === 0) return '—';
@@ -1247,10 +1835,10 @@ const GymTrackerApp = () => {
     return cfg?.label ?? '—';
   };
 
-  // Body weight chart data for home (last 15 entries)
+  // Body weight chart data for home (last 15 entries), in display units.
   const bwChartData = bodyWeightLog.slice(-15).map(e => ({
     date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    bodyWeight: e.weight,
+    bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
   }));
 
   const entryTypeCfg  = TYPE_CONFIG[selectedWorkoutType ?? 'custom'] ?? TYPE_CONFIG.custom;
@@ -1274,13 +1862,23 @@ const GymTrackerApp = () => {
             </span>
             <span className="font-display text-xl font-bold uppercase tracking-[0.08em] text-ink">FitPulse</span>
           </div>
-          <button
-            onClick={toggle}
-            className="p-2 -mr-2 rounded-ctl text-muted hover:text-ink transition-colors"
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-          >
-            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
+          <div className="flex items-center">
+            <button
+              onClick={toggle}
+              className="p-2 rounded-ctl text-muted hover:text-ink transition-colors"
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+            >
+              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+            <button
+              onClick={() => setCurrentScreen('settings')}
+              className={`p-2 -mr-2 rounded-ctl transition-colors ${currentScreen === 'settings' ? 'text-accent' : 'text-muted hover:text-ink'}`}
+              aria-label="Settings"
+              aria-current={currentScreen === 'settings' ? 'page' : undefined}
+            >
+              <Settings size={17} />
+            </button>
+          </div>
         </div>
         {/* Knurling — the grip band on a bar. */}
         <div className="knurl h-[3px] opacity-70" aria-hidden="true" />
@@ -1291,6 +1889,7 @@ const GymTrackerApp = () => {
         <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 pb-24 flex flex-col gap-3">
 
           {/* Stat row */}
+          {!prefs.hidden.includes('dash.stats') && (
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
               { key: 'streak', caption: 'Streak',    value: streak,                  unit: streak === 1 ? 'day' : 'days', Icon: Flame },
@@ -1315,6 +1914,7 @@ const GymTrackerApp = () => {
               </div>
             ))}
           </div>
+          )}
 
           {/* Start a session — the reason the app is open. */}
           <div className={`${card} p-4`}>
@@ -1348,21 +1948,31 @@ const GymTrackerApp = () => {
             </div>
           </div>
 
+          {/* Muscle focus — all-time split, so it reads as a stable overview rather
+              than jittering with a rolling window. Time-scoping lives on Progress. */}
+          {workouts.length > 0 && !prefs.hidden.includes('dash.muscle') && (
+            <div className={`${card} p-4`}>
+              <h3 className={`${label} mb-3`}>Muscle focus</h3>
+              <MuscleGroupDonut workouts={workouts} theme={theme} prefs={prefs} metric={prefs.muscleMetric} units={units} size={150} sliceLimit={5} legendLimit={3} />
+            </div>
+          )}
+
           {/* Body weight */}
+          {!prefs.hidden.includes('dash.bodyweight') && (
           <div className={`${card} p-4`}>
             <div className="flex items-center justify-between gap-3 mb-3">
               <h3 className={label}>Body weight</h3>
               <div className="flex items-baseline gap-1">
-                <span className={`${readout} text-2xl`}>{getLatestBodyWeight().replace(' kg', '')}</span>
-                {bodyWeightLog.length > 0 && <span className="text-[11px] font-semibold text-muted">kg</span>}
+                <span className={`${readout} text-2xl`}>{latestBodyWeightKg == null ? '—' : trim1(toDisplayWeight(latestBodyWeightKg, units) as number)}</span>
+                {latestBodyWeightKg != null && <span className="text-[11px] font-semibold text-muted">{units}</span>}
               </div>
             </div>
 
             <div className="flex gap-2 mb-3">
               <input
                 type="number" step="0.1" inputMode="decimal"
-                placeholder="Log today's weight"
-                aria-label="Log today's body weight in kilograms"
+                placeholder={`Log today's weight (${units})`}
+                aria-label={`Log today's body weight in ${units}`}
                 value={quickBWInput}
                 onChange={e => setQuickBWInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleQuickBWLog()}
@@ -1378,26 +1988,15 @@ const GymTrackerApp = () => {
             </div>
 
             {bwChartData.length >= 2 ? (
-              <ResponsiveContainer width="100%" height={140}>
-                <LineChart data={bwChartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
-                  <XAxis dataKey="date" stroke={c.axis} tickLine={false} style={{ fontSize: '10px', fontFamily: 'Barlow, system-ui, sans-serif' }} />
-                  <YAxis stroke={c.axis} tickLine={false} width={38} domain={['dataMin - 1', 'dataMax + 1']} style={{ fontSize: '10px', fontFamily: 'Barlow, system-ui, sans-serif' }} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: c.surface, border: `1px solid ${c.line}`, borderRadius: '6px', fontFamily: 'Barlow, system-ui, sans-serif', fontSize: '12px' }}
-                    labelStyle={{ color: c.muted }}
-                    cursor={{ stroke: c.grid }}
-                    formatter={(v: any) => [`${v} kg`, 'Body weight']}
-                  />
-                  <Line type="monotone" dataKey="bodyWeight" stroke={c.series2} strokeWidth={2} dot={{ fill: c.series2, r: 2.5, strokeWidth: 0 }} activeDot={{ r: 5 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              <BodyWeightTrend data={bwChartData} theme={theme} prefs={prefs} chartType={prefs.bwChart} units={units} height={140} compact />
             ) : (
               <p className="text-xs text-faint text-center py-6">Log two entries to see a trend.</p>
             )}
           </div>
+          )}
 
           {/* Session log — quiet reference, so it sits last. */}
+          {!prefs.hidden.includes('dash.log') && (
           <div className={`${card} p-4`}>
             <h3 className={`${label} mb-3`}>Log</h3>
             <dl className="flex flex-col">
@@ -1428,6 +2027,7 @@ const GymTrackerApp = () => {
               </div>
             </dl>
           </div>
+          )}
         </div>
       )}
 
@@ -1445,7 +2045,7 @@ const GymTrackerApp = () => {
               </div>
             </div>
 
-            <label htmlFor="entry-bw" className={`${label} block mb-2`}>Body weight (kg)</label>
+            <label htmlFor="entry-bw" className={`${label} block mb-2`}>Body weight ({units})</label>
             <input
               id="entry-bw"
               type="number" step="0.1" inputMode="decimal"
@@ -1453,7 +2053,7 @@ const GymTrackerApp = () => {
               onChange={e => setBodyWeight(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && confirmBodyWeight()}
               className={`${input} w-full font-display text-3xl font-bold tabular-nums text-center py-4`}
-              placeholder="82.5"
+              placeholder={units === 'lb' ? '182' : '82.5'}
               autoFocus
             />
 
@@ -1487,17 +2087,25 @@ const GymTrackerApp = () => {
           cancelWorkout={cancelWorkout}
           workoutNotes={workoutNotes}
           setWorkoutNotes={setWorkoutNotes}
+          units={units}
+          restTimer={prefs.restTimer}
+          restSeconds={prefs.restSeconds}
         />
       )}
 
       {/* ── History ── */}
       {currentScreen === 'history' && (
-        <HistoryScreen workouts={workouts} deleteWorkout={deleteWorkout} updateWorkout={updateWorkout} />
+        <HistoryScreen workouts={workouts} deleteWorkout={deleteWorkout} updateWorkout={updateWorkout} units={units} />
       )}
 
       {/* ── Progress ── */}
       {currentScreen === 'progress' && (
-        <ProgressScreen workouts={workouts} bodyWeightLog={bodyWeightLog} theme={theme} />
+        <ProgressScreen workouts={workouts} bodyWeightLog={bodyWeightLog} theme={theme} prefs={prefs} />
+      )}
+
+      {/* ── Settings ── */}
+      {currentScreen === 'settings' && (
+        <SettingsScreen prefs={prefs} updatePrefs={updatePrefs} toggleHidden={toggleHidden} theme={theme} onDone={() => setCurrentScreen('home')} />
       )}
 
       {/* ── Bottom Tab Bar ── */}
