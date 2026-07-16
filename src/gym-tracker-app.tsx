@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 // Vite hashes and copies these into dist/assets at build time.
@@ -725,21 +725,42 @@ const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, remo
 };
 
 // ─── WorkoutScreen ─────────────────────────────────────────────────────────────
-const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, units = 'kg', restTimer = false, restSeconds = 90, workoutTimer = false, setRestTimer, setWorkoutTimer }: any) => {
+const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, patchWorkout, units = 'kg', restTimer = false, restSeconds = 90, workoutTimer = false }: any) => {
   const [showExerciseList, setShowExerciseList]     = useState(false);
   const [customExerciseName, setCustomExerciseName] = useState('');
   const [showCancelConfirm, setShowCancelConfirm]   = useState(false);
   const [openGroup, setOpenGroup]                   = useState<string | null>(null);
 
-  // Session clock — counts up from when the workout was created (workout.date).
-  // Derived from wall-clock each tick, so it stays accurate through tab throttling.
-  const startMs = new Date(workout.date).getTime();
-  const [elapsed, setElapsed] = useState(() => Math.max(0, Math.round((Date.now() - startMs) / 1000)));
+  // Per-session timer state lives on the workout object, seeded from the saved
+  // defaults but overridden only here — the in-workout toggles never write back to
+  // Settings, and the choice persists/resumes with the session. Fall back to the
+  // prop for sessions saved before these fields existed.
+  const sessionOn = workout.workoutTimer ?? workoutTimer;
+  const restOn    = workout.restTimer ?? restTimer;
+  const patch     = (p: any) => patchWorkout && patchWorkout(p);
+  const toggleSessionTimer = () => patch({ workoutTimer: !sessionOn });
+  const toggleRestTimer    = () => patch({ restTimer: !restOn });
+
+  // Session clock — counts up from the start, minus any paused time. Frozen while
+  // paused (pausedAt set); derived from wall-clock each tick otherwise, so it stays
+  // accurate through tab throttling. Pause bookkeeping lives on the workout too.
+  const startMs        = new Date(workout.date).getTime();
+  const pausedMs       = workout.pausedMs || 0;
+  const sessionPaused  = workout.pausedAt != null;
+  const computeElapsed = () => {
+    const end = sessionPaused ? new Date(workout.pausedAt).getTime() : Date.now();
+    return Math.max(0, Math.round((end - startMs - pausedMs) / 1000));
+  };
+  const [elapsed, setElapsed] = useState(computeElapsed);
   useEffect(() => {
-    if (!workoutTimer) return;
-    const id = setInterval(() => setElapsed(Math.max(0, Math.round((Date.now() - startMs) / 1000))), 1000);
+    setElapsed(computeElapsed());
+    if (!sessionOn || sessionPaused) return;
+    const id = setInterval(() => setElapsed(computeElapsed()), 1000);
     return () => clearInterval(id);
-  }, [workoutTimer, startMs]);
+  }, [sessionOn, sessionPaused, startMs, pausedMs, workout.pausedAt]);
+
+  const pauseSession  = () => patch({ pausedAt: new Date().toISOString() });
+  const resumeSession = () => patch({ pausedMs: pausedMs + (Date.now() - new Date(workout.pausedAt).getTime()), pausedAt: null });
 
   // Rest timer — a between-sets countdown. The one countdown interval in the app;
   // keep it session-level (not per card), and always clear the ref so it can't leak
@@ -808,7 +829,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
 
   // Logging a set auto-starts the countdown, but only if the setting is on. Manual
   // Start/Pause below stays available regardless, so you can rest off-schedule.
-  const addSetAndRest = (...args: any[]) => { (addSet as any)(...args); if (restTimer) startRest(); };
+  const addSetAndRest = (...args: any[]) => { (addSet as any)(...args); if (restOn) startRest(); };
 
   const fmtClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
@@ -858,27 +879,44 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
               <span className={`${readout} text-4xl`}>{fmtVolume(totalVolume, units)}</span>
               <span className="text-xs font-semibold text-muted">moved</span>
             </div>
-            {/* Session timer — total elapsed time, toggled here (not just in Settings). */}
+            {/* Session timer — total elapsed time. Toggle is a per-session override
+                (never touches Settings); pause/resume freezes the count. */}
             <div className="flex items-center gap-2 mt-3">
               <button
-                role="switch" aria-checked={!!workoutTimer}
-                aria-label={`${workoutTimer ? 'Stop' : 'Start'} session timer`}
-                onClick={() => setWorkoutTimer && setWorkoutTimer(!workoutTimer)}
-                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${workoutTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
+                role="switch" aria-checked={!!sessionOn}
+                aria-label={`${sessionOn ? 'Stop' : 'Start'} session timer`}
+                onClick={toggleSessionTimer}
+                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${sessionOn ? 'bg-accent' : 'bg-raised border border-line'}`}
               >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${workoutTimer ? 'left-[18px]' : 'left-0.5'}`} />
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${sessionOn ? 'left-[18px]' : 'left-0.5'}`} />
               </button>
               <Timer size={13} className="text-muted" />
               <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Session</span>
               <span className="text-[10px] text-faint hidden sm:inline">total time</span>
-              {workoutTimer
-                ? <span className="font-display font-semibold tabular-nums text-sm text-ink">{fmtDuration(elapsed)}</span>
-                : <span className="text-xs text-faint">off</span>}
+              {sessionOn ? (
+                <>
+                  <span className={`font-display font-semibold tabular-nums text-sm ${sessionPaused ? 'text-muted' : 'text-ink'}`}>{fmtDuration(elapsed)}</span>
+                  <button
+                    onClick={sessionPaused ? resumeSession : pauseSession}
+                    aria-label={sessionPaused ? 'Resume session timer' : 'Pause session timer'}
+                    className="p-1 -m-1 text-muted hover:text-ink transition-colors"
+                  >
+                    {sessionPaused ? <Play size={14} /> : <Pause size={14} />}
+                  </button>
+                  {sessionPaused && <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">paused</span>}
+                </>
+              ) : (
+                <span className="text-xs text-faint">off</span>
+              )}
             </div>
           </div>
           <div className="text-right">
             <p className={label}>Body wt</p>
-            <p className={`${readout} text-xl mt-1`}>{fmtWeight(workout.bodyWeight, units)}</p>
+            {/* A skipped weigh-in is null — show a dash, not "Bodyweight" (which
+                reads as a real reading and only makes sense for a set's load). */}
+            <p className={`${readout} text-xl mt-1`}>
+              {workout.bodyWeight == null ? '—' : fmtWeight(workout.bodyWeight, units)}
+            </p>
             <p className="text-xs text-faint mt-2 tabular-nums">{totalSets} set{totalSets !== 1 ? 's' : ''}</p>
           </div>
         </div>
@@ -1000,16 +1038,16 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
         <div className={`border-b border-line transition-colors ${restDone ? 'bg-good/15' : ''}`}>
           <div className="max-w-3xl mx-auto flex items-center gap-2.5 px-3 py-2">
             <button
-              role="switch" aria-checked={!!restTimer}
-              aria-label={`${restTimer ? 'Disable' : 'Enable'} rest timer`}
-              onClick={() => setRestTimer && setRestTimer(!restTimer)}
-              className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${restTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
+              role="switch" aria-checked={!!restOn}
+              aria-label={`${restOn ? 'Disable' : 'Enable'} rest timer`}
+              onClick={toggleRestTimer}
+              className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${restOn ? 'bg-accent' : 'bg-raised border border-line'}`}
             >
-              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${restTimer ? 'left-[18px]' : 'left-0.5'}`} />
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${restOn ? 'left-[18px]' : 'left-0.5'}`} />
             </button>
-            <span className={`text-[11px] font-semibold uppercase tracking-wide ${restDone ? 'text-good' : restTimer && rest != null && !restPaused ? 'text-accent' : 'text-muted'}`}>Rest</span>
+            <span className={`text-[11px] font-semibold uppercase tracking-wide ${restDone ? 'text-good' : restOn && rest != null && !restPaused ? 'text-accent' : 'text-muted'}`}>Rest</span>
             <span className="text-[10px] text-faint hidden sm:inline">between sets</span>
-            {!restTimer ? (
+            {!restOn ? (
               <span className="text-xs text-faint">off</span>
             ) : rest != null ? (
               <span className={`${readout} text-lg tabular-nums ${restPaused ? 'text-muted' : 'text-accent'}`}>{fmtClock(rest)}</span>
@@ -1018,7 +1056,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             ) : (
               <span className="text-xs text-faint">idle</span>
             )}
-            {restTimer && (
+            {restOn && (
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                 {rest == null ? (
                   <button onClick={() => startRest()} className={`${btnSecondary} px-3 py-1.5 text-xs flex items-center gap-1.5`}>
@@ -1078,6 +1116,15 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   const [filterType, setFilterType]           = useState('all');
   const [search, setSearch]                   = useState('');
   const [addExerciseName, setAddExerciseName] = useState('');
+  // List vs. calendar is a local view choice — both read the same `filtered`
+  // data, so the tab bar and currentScreen stay untouched.
+  const [viewMode, setViewMode]               = useState('list');
+  const [selectedDay, setSelectedDay]         = useState<number | null>(null);
+  const [calMonth, setCalMonth]               = useState(() => {
+    const newest = workouts.reduce((acc: number, w: any) => Math.max(acc, new Date(w.date).getTime()), 0);
+    const base = newest ? new Date(newest) : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
 
   // Display order is newest-first, but the mutators index into the unsorted
   // array — so originalIndex has to survive the sort.
@@ -1111,14 +1158,17 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
 
   const cancelEditing = () => { setEditingWorkout(null); setEditData(null); };
 
-  const saveEditing = (i: number) => {
-    updateWorkout(filtered[i].originalIndex, editData);
+  // Rows are keyed by originalIndex (see the map below), so edits/deletes route
+  // straight through it — no `filtered[i]` lookup, which would be wrong once the
+  // calendar renders a single day's subset instead of the whole list.
+  const saveEditing = (oi: number) => {
+    updateWorkout(oi, editData);
     setEditingWorkout(null);
     setEditData(null);
   };
 
-  const confirmDelete = (i: number) => {
-    deleteWorkout(filtered[i].originalIndex);
+  const confirmDelete = (oi: number) => {
+    deleteWorkout(oi);
     setExpandedWorkout(null);
     setEditingWorkout(null);
     setConfirmingDelete(null);
@@ -1154,11 +1204,59 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
 
   const editInput = 'bg-raised border border-line rounded-ctl px-2 py-1.5 text-ink text-center text-sm tabular-nums focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors';
 
+  // ── Calendar view: bucket the (already filtered, newest-first) sessions by
+  // local calendar day. The key is midday-safe local time — parsing the ISO
+  // date as UTC midnight would shove late-evening sessions onto the day before.
+  const dayKeyOf = (iso: string) => {
+    const d = new Date(iso);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  const daysMap = new Map<number, any[]>();
+  filtered.forEach((w: any) => {
+    const k = dayKeyOf(w.date);
+    if (!daysMap.has(k)) daysMap.set(k, []);
+    daysMap.get(k)!.push(w);
+  });
+
+  const calYear     = calMonth.getFullYear();
+  const calMon      = calMonth.getMonth();
+  const firstDow    = new Date(calYear, calMon, 1).getDay();
+  const daysInMonth = new Date(calYear, calMon + 1, 0).getDate();
+  const monthLabel  = calMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const now         = new Date();
+  const todayKey    = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const shiftMonth = (delta: number) => { setCalMonth(new Date(calYear, calMon + delta, 1)); setSelectedDay(null); };
+
+  // Until the user taps a day, the detail defaults to the month's latest
+  // session; navigating months clears the manual pick (via shiftMonth).
+  const monthDayKeys = [...daysMap.keys()].filter(k => {
+    const d = new Date(k); return d.getFullYear() === calYear && d.getMonth() === calMon;
+  });
+  const newestMonthDay = monthDayKeys.length ? Math.max(...monthDayKeys) : null;
+  const activeDay = selectedDay != null ? selectedDay : newestMonthDay;
+  const activeDayWorkouts = activeDay != null ? (daysMap.get(activeDay) ?? []) : [];
+  const activeDayLabel = activeDay != null
+    ? new Date(activeDay).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  // The row list draws from the whole filtered set in list mode, or just the
+  // selected day in calendar mode — same rows, keyed by originalIndex either way.
+  const rowsToShow = viewMode === 'list' ? filtered : activeDayWorkouts;
+
   return (
     <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4">
-      <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink mb-4">History</h2>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">History</h2>
+        {sortedWorkouts.length > 0 && (
+          <Segmented
+            value={viewMode}
+            onChange={(v: string) => { setViewMode(v); setExpandedWorkout(null); }}
+            options={[{ value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]}
+          />
+        )}
+      </div>
 
-      {/* Filter + search — hidden until there's enough history to warrant it. */}
+      {/* Filter + search — feeds both views; hidden until there's enough history. */}
       {sortedWorkouts.length > 3 && (
         <div className="flex flex-wrap gap-2 mb-3">
           <select
@@ -1182,13 +1280,88 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
         <div className={`${card} p-12 text-center`}>
           <p className="text-muted text-sm">No sessions logged yet.</p>
         </div>
-      ) : filtered.length === 0 ? (
-        <div className={`${card} p-12 text-center`}>
-          <p className="text-muted text-sm">No sessions match that filter.</p>
-        </div>
       ) : (
+        <>
+          {viewMode === 'calendar' && (
+            <div className={`${card} p-3 sm:p-4 mb-4`}>
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={() => shiftMonth(-1)} aria-label="Previous month" className={`${btnSecondary} w-8 h-8 grid place-items-center`}>
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="font-display text-lg font-bold uppercase tracking-wide text-ink">{monthLabel}</span>
+                <button onClick={() => shiftMonth(1)} aria-label="Next month" className={`${btnSecondary} w-8 h-8 grid place-items-center`}>
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1 mb-1">
+                {weekdayLabels.map((d, i) => (
+                  <div key={i} className="text-center font-display text-[11px] font-semibold uppercase tracking-[0.1em] text-faint">{d}</div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: firstDow }).map((_, i) => <div key={`pad-${i}`} />)}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const day = i + 1;
+                  const dayKey = new Date(calYear, calMon, day).getTime();
+                  const dayWorkouts = daysMap.get(dayKey) ?? [];
+                  const has = dayWorkouts.length > 0;
+                  const isToday = dayKey === todayKey;
+                  const isSel = dayKey === activeDay;
+                  const dots = Math.min(dayWorkouts.length, 3);
+                  const cellCls = [
+                    'aspect-square rounded-ctl flex flex-col items-center justify-center transition-colors',
+                    isSel ? 'bg-accent/10 ring-1 ring-accent' : has ? 'bg-raised' : '',
+                    !isSel && isToday ? 'ring-1 ring-accent/40' : '',
+                    has ? 'hover:ring-1 hover:ring-accent cursor-pointer' : '',
+                  ].join(' ');
+                  const inner = (
+                    <>
+                      <span className={`text-sm tabular-nums ${has ? 'text-ink font-semibold' : 'text-faint'}`}>{day}</span>
+                      <span className="flex items-center justify-center gap-0.5 h-2 mt-0.5">
+                        {Array.from({ length: dots }).map((_, di) => (
+                          <span key={di} className="w-1.5 h-1.5 rounded-full bg-accent" />
+                        ))}
+                        {dayWorkouts.length > 3 && (
+                          <span className="text-[9px] text-accent font-semibold leading-none">+{dayWorkouts.length - 3}</span>
+                        )}
+                      </span>
+                    </>
+                  );
+                  return has ? (
+                    <button
+                      key={dayKey}
+                      onClick={() => { setSelectedDay(dayKey); setExpandedWorkout(null); }}
+                      aria-label={`${dayWorkouts.length} session${dayWorkouts.length !== 1 ? 's' : ''} on ${new Date(dayKey).toLocaleDateString()}`}
+                      className={cellCls}
+                    >
+                      {inner}
+                    </button>
+                  ) : (
+                    <div key={dayKey} className={cellCls}>{inner}</div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {rowsToShow.length === 0 ? (
+            <div className={`${card} p-12 text-center`}>
+              <p className="text-muted text-sm">
+                {viewMode === 'calendar' ? 'No sessions this month.' : 'No sessions match that filter.'}
+              </p>
+            </div>
+          ) : (
         <div className="flex flex-col gap-2">
-          {filtered.map((workout: any, index: number) => {
+          {viewMode === 'calendar' && activeDay != null && (
+            <h3 className={`${label} mb-1`}>{activeDayLabel}</h3>
+          )}
+          {rowsToShow.map((workout: any) => {
+            // Key by originalIndex, not list position — the same row renders in
+            // the list and the calendar day-detail, and every expand/edit/delete
+            // keyed below routes to the right stored workout regardless of subset.
+            const index          = workout.originalIndex;
             const isEditing      = editingWorkout === index;
             const displayWorkout = isEditing ? editData : workout;
             const typeCfg        = TYPE_CONFIG[workout.type] ?? TYPE_CONFIG.custom;
@@ -1416,7 +1589,9 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
               </div>
             );
           })}
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -2141,10 +2316,19 @@ const GymTrackerApp = () => {
       bodyWeight: fromInputWeight(bodyWeight, units),   // typed in display units → stored kg
       exercises: [],
       date: new Date().toISOString(),
-      notes: ''
+      notes: '',
+      // Per-session timer state — seeded from the saved defaults but overridden only
+      // for this session. pausedMs/pausedAt track the session-clock pause.
+      workoutTimer: prefs.workoutTimer,
+      restTimer: prefs.restTimer,
+      pausedMs: 0,
+      pausedAt: null,
     });
     setCurrentScreen('workout');
   };
+
+  // Merge a patch into the active session (per-session timer toggles + pause state).
+  const patchCurrentWorkout = (p: any) => setCurrentWorkout((w: any) => (w ? { ...w, ...p } : w));
 
   const addExercise = (name: string) => {
     setCurrentWorkout((w: any) => ({ ...w, exercises: [...w.exercises, { name, sets: [], notes: '' }] }));
@@ -2190,11 +2374,17 @@ const GymTrackerApp = () => {
     // would just clutter history.
     const exercises = currentWorkout.exercises.filter((ex: any) => ex.sets.length > 0);
     if (exercises.length === 0) return;   // the Finish button also guards this
-    // Record how long the session took, but only when the timer is on — off means
-    // no duration is stored, so history stays silent about it (as before the feature).
-    const startMs = new Date(currentWorkout.date).getTime();
-    const duration = Number.isFinite(startMs) ? Math.max(0, Math.round((Date.now() - startMs) / 1000)) : 0;
-    const completed = { ...currentWorkout, exercises, notes: workoutNotes, ...(prefs.workoutTimer ? { duration } : {}) };
+    // Session length = wall-clock from start, minus any paused time (freeze at the
+    // pause point if still paused). Logged only when the session timer is on — read
+    // from the per-session override, not the saved default.
+    const startMs   = new Date(currentWorkout.date).getTime();
+    const pausedMs  = currentWorkout.pausedMs || 0;
+    const endMs     = currentWorkout.pausedAt != null ? new Date(currentWorkout.pausedAt).getTime() : Date.now();
+    const duration  = Number.isFinite(startMs) ? Math.max(0, Math.round((endMs - startMs - pausedMs) / 1000)) : 0;
+    const timerOn   = currentWorkout.workoutTimer ?? prefs.workoutTimer;
+    // Strip the per-session timer bookkeeping from the permanent record.
+    const { workoutTimer: _wt, restTimer: _rt, pausedMs: _pm, pausedAt: _pa, ...base } = currentWorkout;
+    const completed = { ...base, exercises, notes: workoutNotes, ...(timerOn ? { duration } : {}) };
     setWorkouts(prev => [...prev, completed]);
     // Only log a real weigh-in — a skipped (null) body weight isn't a data point.
     if (completed.bodyWeight != null) {
@@ -2663,12 +2853,11 @@ const GymTrackerApp = () => {
           cancelWorkout={cancelWorkout}
           workoutNotes={workoutNotes}
           setWorkoutNotes={setWorkoutNotes}
+          patchWorkout={patchCurrentWorkout}
           units={units}
           restTimer={prefs.restTimer}
           restSeconds={prefs.restSeconds}
           workoutTimer={prefs.workoutTimer}
-          setRestTimer={(v: boolean) => updatePrefs({ restTimer: v })}
-          setWorkoutTimer={(v: boolean) => updatePrefs({ workoutTimer: v })}
         />
       )}
 
