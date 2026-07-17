@@ -15,7 +15,7 @@ Nothing here is implemented yet. This is the plan, written down.
 
 ---
 
-## Phase 0 — Stop silent data loss (do first; ~1–2h; no lock-in)
+## Phase 0 — Stop silent data loss ✅ IMPLEMENTED (logic-verified; live browser test pending)
 
 **The bug.** Writes are optimistic and await a Supabase call whose failure only
 `console.error`s. On the next load, the **hydrate** effect fetches server rows and
@@ -42,6 +42,12 @@ it locks in nothing — no sync vendor, no schema decision. Pure downside protec
 
 **Done when:** logging a workout with the network offline, then reloading online, keeps the
 workout; and any write that fails is visible in the UI, not just the console.
+
+**Status:** implemented via a client-only `_sync` marker on rows + a merging hydrate.
+Verified with `tsc` and an isolated 5-case test of the merge semantics (offline insert
+survives, offline edit beats a stale server row, no duplication on resync, remote delete
+still propagates, mixed set reconciles). **Not yet exercised in a live browser** with the
+network actually throttled — that end-to-end pass is the remaining confirmation.
 
 ---
 
