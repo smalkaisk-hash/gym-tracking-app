@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound, CloudOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW } from './supabase';
 
@@ -1386,6 +1386,11 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                             <Timer size={11} /> {fmtDurationWords(workout.duration)}
                           </span>
                         )}
+                        {workout._sync === 'error' && (
+                          <span className="flex items-center gap-1 text-warn" title="Saved on this device only — not synced to the server yet">
+                            <CloudOff size={11} /> Not synced
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
@@ -2683,6 +2688,23 @@ const GymTrackerApp = () => {
   const [session, setSession]     = useState<any>(null);
   const [authReady, setAuthReady] = useState(false);
   const [hydrated, setHydrated]   = useState(false);
+  // ── Offline sync safety (roadmap Phase 0) ────────────────────────────────────
+  // Rows carry a client-only `_sync` marker: 'pending' (write in flight) or
+  // 'error' (write failed — saved on THIS device only). Absent = server-confirmed.
+  // It is never sent to Postgres (the mappers in supabase.ts pick only real
+  // columns) and it survives the localStorage cache across a reload, so `hydrate`
+  // can PRESERVE a not-yet-synced row instead of overwriting it with the server
+  // set. `notice` is a transient toast for self-healing failures (e.g. a delete
+  // that bounced back and got re-added).
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<any>(null);
+  const flash = (msg: string) => {
+    setNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 5000);
+  };
+  const markSync = (rows: any[], id: string, state: 'pending' | 'error' | null) =>
+    rows.map(r => (r.id === id ? { ...r, _sync: state ?? undefined } : r));
   // recovery — the user arrived via a password-reset link. That link returns a
   // real session, so without this flag the gate below would drop them straight
   // into the app; instead it pins them on ResetPasswordScreen until they set a
@@ -2744,8 +2766,10 @@ const GymTrackerApp = () => {
       }
 
       // Cache entries may predate row ids (old localStorage) — back-fill a local id
-      // so keys/edits work until hydrate replaces them with the server rows.
-      const withId = (e: any) => ({ id: e.id ?? crypto.randomUUID(), date: e.date, weight: e.weight });
+      // so keys/edits work until hydrate replaces them with the server rows. Carry
+      // `_sync` through: a weigh-in that failed to sync must keep its mark across a
+      // reload, or the hydrate merge would treat it as synced and drop it.
+      const withId = (e: any) => ({ id: e.id ?? crypto.randomUUID(), date: e.date, weight: e.weight, ...(e._sync ? { _sync: e._sync } : {}) });
       if (storedBW) {
         setBodyWeightLog(JSON.parse(storedBW).map(withId));
       } else if (loadedWorkouts.length > 0) {
@@ -2849,14 +2873,35 @@ const GymTrackerApp = () => {
         let bwRows       = bwRes.data ?? [];
         let settingsRow  = sRes.data ?? null;
 
+        let migrated = false;
         if (workoutRows.length === 0 && bwRows.length === 0 && !settingsRow) {
-          const migrated = await migrateLocalToServer(session.user.id);
-          if (migrated) { workoutRows = migrated.workoutRows; bwRows = migrated.bwRows; settingsRow = migrated.settingsRow; }
+          const m = await migrateLocalToServer(session.user.id);
+          if (m) { workoutRows = m.workoutRows; bwRows = m.bwRows; settingsRow = m.settingsRow; migrated = true; }
         }
         if (cancelled) return;
 
-        setWorkouts(workoutRows.map(rowToWorkout));
-        setBodyWeightLog(bwRows.map(rowToBW));
+        // Server is the source of truth, BUT a row that failed to sync (offline,
+        // maintenance window) lives only in local state/cache with a `_sync` mark.
+        // Merge rather than replace so hydrate can't silently drop it: prefer the
+        // local copy for an unsynced edit (id matches), and re-append an unsynced
+        // insert whose id never reached the server. On the migration path we plain-
+        // replace — migration already consumed the whole cache, so merging would
+        // duplicate every row.
+        const mergeUnsynced = (serverRows: any[], mapRow: (r: any) => any, prev: any[]) => {
+          const unsynced = prev.filter(r => r._sync);
+          const byId = new Map(unsynced.map(r => [r.id, r]));
+          const serverIds = new Set(serverRows.map(r => r.id));
+          const merged  = serverRows.map(r => byId.get(r.id) ?? mapRow(r));
+          const orphans = unsynced.filter(r => !serverIds.has(r.id));
+          return [...merged, ...orphans];
+        };
+        if (migrated) {
+          setWorkouts(workoutRows.map(rowToWorkout));
+          setBodyWeightLog(bwRows.map(rowToBW));
+        } else {
+          setWorkouts(prev => mergeUnsynced(workoutRows, rowToWorkout, prev));
+          setBodyWeightLog(prev => mergeUnsynced(bwRows, rowToBW, prev));
+        }
         if (settingsRow) {
           if (Number.isFinite(settingsRow.weekly_goal)) setWeeklyGoal(clampGoal(settingsRow.weekly_goal));
           if (settingsRow.prefs) setPrefs({ ...DEFAULT_PREFS, ...settingsRow.prefs, hidden: Array.isArray(settingsRow.prefs.hidden) ? settingsRow.prefs.hidden : [] });
@@ -2997,15 +3042,16 @@ const GymTrackerApp = () => {
     const { workoutTimer: _wt, restTimer: _rt, pausedMs: _pm, pausedAt: _pa, ...base } = currentWorkout;
     const completed = { ...base, exercises, notes: workoutNotes, ...(timerOn ? { duration } : {}) };
 
-    // Optimistic: show it immediately under a temp id, then swap in the row the
-    // server returns (with its real uuid). If the insert fails we keep the temp
-    // row — it stays in the localStorage cache, so the session isn't lost.
+    // Optimistic: show it immediately under a temp id and `_sync: 'pending'`, then
+    // swap in the row the server returns (with its real uuid, unmarked = synced).
+    // If the insert fails we mark the temp row `_sync: 'error'` — it stays in state
+    // and the localStorage cache, and hydrate now preserves it, so it isn't lost.
     const tempId = crypto.randomUUID();
-    setWorkouts(prev => [...prev, { ...completed, id: tempId }]);
+    setWorkouts(prev => [...prev, { ...completed, id: tempId, _sync: 'pending' }]);
     // Only log a real weigh-in — a skipped (null) body weight isn't a data point.
     const bwTempId = completed.bodyWeight != null ? crypto.randomUUID() : null;
     if (bwTempId) {
-      setBodyWeightLog(prev => [...prev, { id: bwTempId, date: completed.date, weight: completed.bodyWeight }]);
+      setBodyWeightLog(prev => [...prev, { id: bwTempId, date: completed.date, weight: completed.bodyWeight, _sync: 'pending' }]);
     }
     setCurrentWorkout(null);
     setSelectedWorkoutType(null);
@@ -3014,12 +3060,12 @@ const GymTrackerApp = () => {
     setCurrentScreen('home');
 
     const { data, error } = await supabase.from('workouts').insert(workoutToRow(completed)).select().single();
-    if (error) console.error('Save workout failed', error);
+    if (error) { console.error('Save workout failed', error); setWorkouts(prev => markSync(prev, tempId, 'error')); }
     else setWorkouts(prev => prev.map(w => w.id === tempId ? rowToWorkout(data) : w));
     if (bwTempId) {
       const { data: bw, error: bwErr } = await supabase.from('body_weight_log')
         .insert({ date: completed.date, weight: completed.bodyWeight }).select().single();
-      if (bwErr) console.error('Save weigh-in failed', bwErr);
+      if (bwErr) { console.error('Save weigh-in failed', bwErr); setBodyWeightLog(prev => markSync(prev, bwTempId, 'error')); }
       else setBodyWeightLog(prev => prev.map(e => e.id === bwTempId ? rowToBW(bw) : e));
     }
   };
@@ -3036,12 +3082,12 @@ const GymTrackerApp = () => {
     if (!quickBWInput) return;
     const kg = fromInputWeight(quickBWInput, units);   // typed in display units → stored kg
     if (kg == null) return;
-    const temp = { id: crypto.randomUUID(), date: new Date().toISOString(), weight: kg };
+    const temp = { id: crypto.randomUUID(), date: new Date().toISOString(), weight: kg, _sync: 'pending' };
     setBodyWeightLog(prev => [...prev, temp]);
     setQuickBWInput('');
     const { data, error } = await supabase.from('body_weight_log')
       .insert({ date: temp.date, weight: kg }).select().single();
-    if (error) console.error('Save weigh-in failed', error);
+    if (error) { console.error('Save weigh-in failed', error); setBodyWeightLog(prev => markSync(prev, temp.id, 'error')); }
     else setBodyWeightLog(prev => prev.map(e => e.id === temp.id ? rowToBW(data) : e));
   };
 
@@ -3052,13 +3098,16 @@ const GymTrackerApp = () => {
     const removed = workouts.find(w => w.id === id);
     setWorkouts(w => w.filter(x => x.id !== id));   // optimistic
     const { error } = await supabase.from('workouts').delete().eq('id', id);
-    if (error) { console.error('Delete workout failed', error); if (removed) setWorkouts(prev => [...prev, removed]); }
+    if (error) { console.error('Delete workout failed', error); if (removed) setWorkouts(prev => [...prev, removed]); flash("Couldn't delete — you may be offline. The workout is still saved."); }
   };
 
   const updateWorkout = async (id: string, updated: any) => {
-    setWorkouts(w => w.map(item => item.id === id ? { ...updated, id } : item));   // optimistic
+    setWorkouts(w => w.map(item => item.id === id ? { ...updated, id, _sync: 'pending' } : item));   // optimistic
     const { error } = await supabase.from('workouts').update(workoutToRow(updated)).eq('id', id);
-    if (error) console.error('Update workout failed', error);
+    // Mark 'error' so the merge in hydrate prefers this local edit over the stale
+    // server row (same id); clear the mark on success so it reads as synced.
+    if (error) { console.error('Update workout failed', error); setWorkouts(prev => markSync(prev, id, 'error')); }
+    else setWorkouts(prev => markSync(prev, id, null));
 
     // Keep the body-weight log in step: the finish-time entry shares the workout's
     // date, so edit/clear it here too — otherwise the chart and readout keep the
@@ -3087,7 +3136,7 @@ const GymTrackerApp = () => {
     const removed = bodyWeightLog.find(e => e.id === id);
     setBodyWeightLog(log => log.filter(e => e.id !== id));   // optimistic
     const { error } = await supabase.from('body_weight_log').delete().eq('id', id);
-    if (error) { console.error('Delete weigh-in failed', error); if (removed) setBodyWeightLog(prev => [...prev, removed]); }
+    if (error) { console.error('Delete weigh-in failed', error); if (removed) setBodyWeightLog(prev => [...prev, removed]); flash("Couldn't delete — you may be offline. The entry is still saved."); }
   };
 
   // Move an exercise up/down within the active session so it can be reordered.
@@ -3296,6 +3345,12 @@ const GymTrackerApp = () => {
   if (recovery)         return <ResetPasswordScreen onDone={() => setRecovery(false)} onSignOut={signOut} />;
   if (!session)         return <LoginScreen />;
 
+  // Any row saved on this device but not confirmed by the server (a failed write).
+  // Drives the persistent banner below — it clears itself when a retry succeeds.
+  const unsyncedCount =
+    workouts.filter((w: any) => w._sync === 'error').length +
+    bodyWeightLog.filter((e: any) => e._sync === 'error').length;
+
   return (
     <div className="min-h-screen bg-ground text-ink">
 
@@ -3334,6 +3389,19 @@ const GymTrackerApp = () => {
         {/* Knurling — the grip band on a bar. */}
         <div className="knurl h-[3px] opacity-70" aria-hidden="true" />
       </header>
+
+      {/* Persistent sync warning — shown whenever a write is saved on this device
+          but hasn't reached the server. Clears itself once a retry succeeds. */}
+      {unsyncedCount > 0 && (
+        <div role="status" className="bg-warn/15 border-b border-warn/30">
+          <div className="max-w-3xl mx-auto px-4 py-2 flex items-center gap-2 text-warn">
+            <CloudOff size={15} className="flex-shrink-0" />
+            <span className="text-xs font-medium">
+              {unsyncedCount} change{unsyncedCount !== 1 ? 's' : ''} saved on this device only — not synced yet. They'll upload when you're back online.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── Home ── */}
       {currentScreen === 'home' && (
@@ -3633,6 +3701,17 @@ const GymTrackerApp = () => {
             })}
           </div>
         </nav>
+      )}
+
+      {/* Transient toast — self-healing failures (a delete that bounced back).
+          Auto-clears after a few seconds via `flash`. */}
+      {notice && (
+        <div className="fixed inset-x-0 bottom-20 z-[60] flex justify-center px-4 pointer-events-none">
+          <div role="status" className="pointer-events-auto flex items-center gap-2 rounded-ctl bg-raised border border-line px-3 py-2 shadow-lg">
+            <CloudOff size={15} className="flex-shrink-0 text-warn" />
+            <span className="text-xs font-medium text-ink">{notice}</span>
+          </div>
+        </div>
       )}
     </div>
   );
