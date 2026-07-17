@@ -50,10 +50,12 @@ On mount: a load effect paints the cache synchronously; then, once a Supabase se
 
 ```
 workout       { id: uuid, type, bodyWeight, exercises[], date: ISO string, notes, duration? }
-exercise      { name, sets[], notes }               // name is the identity — see "Never rename"
+exercise      { name, exerciseId, sets[], notes }   // exerciseId (slug) is the identity; name is display
 set           { reps: int, weight: float | null }   // null = bodyweight, never 0
 bodyWeightLog [{ id: uuid, date: ISO string, weight }]
 ```
+
+`exerciseId` is a stable slug stamped at write time (`idForName`); rows logged before it existed have only `name`, and reads derive the same id via `exerciseIdOf` (`ex.exerciseId ?? idForName(ex.name)`), so legacy and new rows unify without a backfill.
 
 `duration` (seconds) is present only when the session timer was on. A weigh-in links to its session by exact `date` string equality (`body_weight_log.date === workouts.date`) — the client still relies on this in `updateWorkout`/`deleteWorkout`. A real `body_weight_log.workout_id` FK is prepared (migration `0001`, not yet applied; the app doesn't read/write it yet). `deleteWorkout` now removes the paired finish-time weigh-in (local + server) so it isn't orphaned — matched by date, which the FK cascade will also enforce once `0001` is live.
 
@@ -64,7 +66,7 @@ bodyWeightLog [{ id: uuid, date: ISO string, weight }]
 ## Conventions
 
 - **Exercise catalogue**: `EXERCISES` maps each workout type (`push` / `pull` / `legs`) to an ordered list of `{ group, items }` — the groups are muscle groups, and they're the picker's structure. `CORE` and `CARDIO` are shared: they're appended to all three days, since neither belongs to one. `ALL_GROUPS` (used by `custom`) strips the shared groups out and re-appends them last, rather than deduping in place — dedupe-in-place would leave them at push's position, mid-list. Exercise names must stay unique across all groups: `ALL_GROUPS` flattens them and they're used as React keys.
-- **Never rename or remove an exercise.** The name string is the identity used in stored workouts and in `ProgressScreen`'s dropdown, so renaming one orphans it from every session logged under the old name. Add freely; leave existing names alone (this is why the generic `Leg Curl` still sits beside `Seated Leg Curl`).
+- **Renaming an exercise is now safe if you pin its id.** Identity is the stable `exerciseId` (slug of the *original* name), not the display string — stamped into stored workouts and used to key `ProgressScreen`'s dropdown/series and the muscle grouping (`groupForExercise`). To rename: change the name in the catalogue **and** add an `EXERCISE_ID_OVERRIDES` entry pinning the new name to the *original* slug (e.g. `{ 'Side Lateral Raise': 'lateral-raises' }`), so old and new sessions share one identity. Renaming the string *without* pinning still orphans history — the override is the supported path. Removing an exercise still orphans its history (nothing maps the id). Adding is always free. `node tests/exercise-identity.test.mjs` guards against a new name slug-colliding with an existing one.
 - The picker's one input does triple duty: it matches a **muscle group** (typing "chest" opens the whole Chest group), otherwise filters **exercise names**, and the **+** button commits whatever was typed as a one-off. Groups with no match drop out rather than leaving a bare heading.
 - **`TYPE_CONFIG`** maps workout type → `{ label, Icon, color, iconBg }` and is the single place that decides how a type is labeled and rendered. Add a workout type here, not in scattered conditionals. Lookups fall back to `TYPE_CONFIG.custom`.
 - Charts are recharts (`LineChart`), icons are lucide-react. Both are already imported at the top.

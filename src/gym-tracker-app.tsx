@@ -239,6 +239,43 @@ const EXERCISE_GROUP_INDEX: Record<string, string> = Object.fromEntries(
 // A free-text exercise the user typed isn't in the catalogue — it lands here.
 const OTHER_GROUP = 'Other';
 
+// ── Stable exercise identity (roadmap Phase 1, option A) ──────────────────────
+// The display name is no longer the identity. Each exercise has a stable `id` — the
+// slug of its ORIGINAL name — stamped onto every logged exercise. Because the slug is
+// deterministic, sessions logged before ids existed unify for free: their id is
+// recomputed as slug(name), the same value the write path stores now, so no backfill
+// is needed. Verified: the catalogue's 267 names slug to 267 distinct ids (see
+// tests/exercise-identity.test.mjs).
+const slug = (name: string) =>
+  name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+// To RENAME an exercise safely, change its name string in the catalogue AND pin its
+// id here to the slug of its ORIGINAL name — old and new sessions then share one
+// identity. e.g. after renaming 'Lateral Raises' -> 'Side Lateral Raise':
+//   { 'Side Lateral Raise': 'lateral-raises' }
+// This replaces the old "never rename an exercise" rule.
+const EXERCISE_ID_OVERRIDES: Record<string, string> = {};
+
+// Stable id for a catalogue/typed name. Falls back to the name itself if it somehow
+// slugs to empty (an all-symbol custom), so an id is never blank.
+const idForName = (name: string) => EXERCISE_ID_OVERRIDES[name] || slug(name) || name;
+
+// The stable id of a LOGGED exercise: its stored id, or derived from its name for
+// rows written before ids existed (the same value the write path would have stored).
+const exerciseIdOf = (ex: any) => ex.exerciseId ?? idForName(ex.name);
+
+// Catalogue lookups keyed by stable id.
+const EXERCISE_GROUP_BY_ID: Record<string, string> = Object.fromEntries(
+  ALL_GROUPS.flatMap(g => g.items.map(name => [idForName(name), g.group]))
+);
+const EXERCISE_NAME_BY_ID: Record<string, string> = Object.fromEntries(
+  ALL_GROUPS.flatMap(g => g.items.map(name => [idForName(name), name]))
+);
+
+// Muscle group for a logged exercise: by id, then legacy name, then Other.
+const groupForExercise = (ex: any) =>
+  EXERCISE_GROUP_BY_ID[exerciseIdOf(ex)] ?? EXERCISE_GROUP_INDEX[ex.name] ?? OTHER_GROUP;
+
 // The muscle-group breakdown, by whichever metric the user picked, sorted
 // most-trained first. Pure and takes an already date-filtered list, so both the
 // Progress and Home cards reuse it — the caller decides the window.
@@ -252,7 +289,7 @@ const muscleGroupBreakdown = (workouts: any[], metric: MuscleMetric): { group: s
   for (const w of workouts) {
     const seen = new Set<string>();
     for (const ex of w.exercises) {
-      const g = EXERCISE_GROUP_INDEX[ex.name] ?? OTHER_GROUP;
+      const g = groupForExercise(ex);
       if (metric === 'sets')        totals[g] = (totals[g] ?? 0) + (ex.sets?.length ?? 0);
       else if (metric === 'volume') totals[g] = (totals[g] ?? 0) + volumeOf(ex);
       else                          seen.add(g); // sessions: tally once per workout, below
@@ -1193,7 +1230,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   const addExerciseToEdit = () => {
     const name = addExerciseName.trim();
     if (!name) return;
-    setEditData({ ...editData, exercises: [...editData.exercises, { name, sets: [], notes: '' }] });
+    setEditData({ ...editData, exercises: [...editData.exercises, { name, exerciseId: idForName(name), sets: [], notes: '' }] });
     setAddExerciseName('');
   };
 
@@ -1763,9 +1800,17 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
 
   const c = resolveChart(prefs, theme);
 
-  const allExercisesUsed = [...new Set(
-    workouts.flatMap((w: any) => w.exercises.map((e: any) => e.name))
-  )].sort() as string[];
+  // Exercises used in history, identified by stable id so a display-name rename
+  // doesn't split one exercise into two entries. Labelled with the current catalogue
+  // name when known, else the most recent name it was logged under.
+  const exerciseOptions = (() => {
+    const lastName: Record<string, string> = {};
+    for (const w of workouts) for (const e of w.exercises) lastName[exerciseIdOf(e)] = e.name;
+    return Object.keys(lastName)
+      .map(id => ({ id, label: EXERCISE_NAME_BY_ID[id] ?? lastName[id] }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  })();
+  const labelForId = (id: string) => exerciseOptions.find(o => o.id === id)?.label ?? id;
 
   const filterByDate = <T extends { date: string }>(items: T[]): T[] => {
     const now = new Date();
@@ -1793,11 +1838,12 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   // The All-exercises view then renders the same top-set chart per exercise.
   const isAllExercises = selectedExercise === ALL_EXERCISES;
 
-  // Top-set series (max weight per session, in display units) for one exercise —
-  // the data behind a single chart. Reused for the single- and all-exercise views.
-  const seriesForExercise = (name: string) =>
+  // Top-set series (max weight per session, in display units) for one exercise,
+  // keyed by stable id — the data behind a single chart. Reused for the single- and
+  // all-exercise views.
+  const seriesForExercise = (id: string) =>
     filterByDate(workouts).flatMap((w: any) => {
-      const ex = w.exercises.find((e: any) => e.name === name);
+      const ex = w.exercises.find((e: any) => exerciseIdOf(e) === id);
       if (!ex || ex.sets.length === 0) return [];
       // Bodyweight sets carry no load, so they count as 0 here rather than NaN.
       const maxWeight    = Math.max(...ex.sets.map((s: any) => s.weight ?? 0));
@@ -1812,16 +1858,18 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   // Every logged exercise's series, bucketed by muscle group in the donut's order
   // so the All-exercises view echoes the Muscle group balance card above it.
   const getExercisesByGroup = () => {
-    const inWindow = filterByDate(workouts);
-    const names = [...new Set(inWindow.flatMap((w: any) => w.exercises.map((e: any) => e.name)))] as string[];
+    const inWindow: any[] = filterByDate(workouts);
+    const lastName: Record<string, string> = {};
+    for (const w of inWindow) for (const e of w.exercises) lastName[exerciseIdOf(e)] = e.name;
     const order = muscleGroupBreakdown(inWindow, muscleMetric).map(d => d.group);
     const rank  = (g: string) => { const i = order.indexOf(g); return i === -1 ? order.length : i; };
-    const groups: Record<string, { name: string; data: any[] }[]> = {};
-    for (const name of names) {
-      const data = seriesForExercise(name);
+    const groups: Record<string, { id: string; name: string; data: any[] }[]> = {};
+    for (const id of Object.keys(lastName)) {
+      const data = seriesForExercise(id);
       if (data.length === 0) continue;
-      const g = EXERCISE_GROUP_INDEX[name] ?? OTHER_GROUP;
-      (groups[g] ?? (groups[g] = [])).push({ name, data });
+      const g    = EXERCISE_GROUP_BY_ID[id] ?? EXERCISE_GROUP_INDEX[lastName[id]] ?? OTHER_GROUP;
+      const name = EXERCISE_NAME_BY_ID[id] ?? lastName[id];
+      (groups[g] ?? (groups[g] = [])).push({ id, name, data });
     }
     return Object.entries(groups)
       .map(([group, items]) => ({ group, items: items.sort((a, b) => a.name.localeCompare(b.name)) }))
@@ -1893,8 +1941,8 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
             <label htmlFor="exercise" className={`${label} block mb-2`}>Exercise</label>
             <select id="exercise" value={selectedExercise} onChange={e => setSelectedExercise(e.target.value)} className={`${input} w-full`}>
               <option value="">Choose an exercise…</option>
-              {allExercisesUsed.length > 0 && <option value={ALL_EXERCISES}>All exercises</option>}
-              {allExercisesUsed.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+              {exerciseOptions.length > 0 && <option value={ALL_EXERCISES}>All exercises</option>}
+              {exerciseOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </div>
         </div>
@@ -1952,11 +2000,11 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
       )}
 
       {!hidden.includes('prog.exercise') && !isAllExercises && selectedExercise && exerciseData.length > 0 &&
-        topSetCard(selectedExercise, exerciseData)}
+        topSetCard(labelForId(selectedExercise), exerciseData)}
 
       {!hidden.includes('prog.exercise') && !isAllExercises && selectedExercise && exerciseData.length === 0 && (
         <div className={`${card} p-8 mb-3 text-center`}>
-          <p className="text-muted text-sm">No <span className="text-ink font-medium">{selectedExercise}</span> logged in this timeframe.</p>
+          <p className="text-muted text-sm">No <span className="text-ink font-medium">{labelForId(selectedExercise)}</span> logged in this timeframe.</p>
         </div>
       )}
 
@@ -1993,7 +2041,7 @@ const Segmented = ({ value, onChange, options }: any) => (
   </div>
 );
 
-const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, userEmail, onDone }: any) => {
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, onDeleteAccount, userEmail, onDone }: any) => {
   const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
   const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -2022,6 +2070,20 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
     setNewPw(''); setConfirmPw(''); setShowPw(false);
     setPwMsg({ ok: true, text: 'Password updated.' });
     setPwOpen(false);
+  };
+
+  // Delete account — a two-step confirm because it's irreversible (wipes the
+  // login itself, not just the data). On success the app signs out, so this
+  // screen unmounts and we only ever return here on failure.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy]             = useState(false);
+  const [deleteMsg, setDeleteMsg]               = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (deleteBusy) return;
+    setDeleteBusy(true); setDeleteMsg(null);
+    const err = await onDeleteAccount();
+    if (err) { setDeleteBusy(false); setConfirmingDelete(false); setDeleteMsg(err); }
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2247,6 +2309,30 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
           </form>
         )}
         {pwMsg && <p className={`text-xs mt-2 ${pwMsg.ok ? 'text-muted' : 'text-crit'}`}>{pwMsg.text}</p>}
+
+        {/* Delete account — irreversible: removes the login and every synced row. */}
+        <div className="h-px bg-line my-4" />
+        {!confirmingDelete ? (
+          <button onClick={() => { setConfirmingDelete(true); setDeleteMsg(null); }} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+            <Trash2 size={14} /> Delete account
+          </button>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-ink">Permanently delete your account and all its data? This can't be undone.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteBusy}
+                className={`${btnDanger} flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50`}
+              >
+                {deleteBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {deleteBusy ? 'Deleting…' : 'Delete permanently'}
+              </button>
+              <button onClick={() => setConfirmingDelete(false)} disabled={deleteBusy} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {deleteMsg && <p className="text-xs text-crit mt-2">{deleteMsg}</p>}
       </div>
 
       {/* Data — backups. Export writes a JSON file; import replaces the account's
@@ -2987,7 +3073,9 @@ const GymTrackerApp = () => {
   const patchCurrentWorkout = (p: any) => setCurrentWorkout((w: any) => (w ? { ...w, ...p } : w));
 
   const addExercise = (name: string) => {
-    setCurrentWorkout((w: any) => ({ ...w, exercises: [...w.exercises, { name, sets: [], notes: '' }] }));
+    // Stamp the stable id at write time (see idForName) so a later display-name
+    // rename doesn't orphan this session. name is kept for display + legacy reads.
+    setCurrentWorkout((w: any) => ({ ...w, exercises: [...w.exercises, { name, exerciseId: idForName(name), sets: [], notes: '' }] }));
   };
 
   const addSet = (exIdx: number, reps: string, weight: string) => {
@@ -3168,7 +3256,13 @@ const GymTrackerApp = () => {
   };
 
   // Open Settings while remembering the tab we came from, so Back returns there.
-  const openSettings = () => { setSettingsFrom(currentScreen); setCurrentScreen('settings'); };
+  // Guard against re-entry: opening Settings *from* Settings would set
+  // settingsFrom='settings' and trap Back (it'd navigate to itself).
+  const openSettings  = () => { if (currentScreen !== 'settings') { setSettingsFrom(currentScreen); setCurrentScreen('settings'); } };
+  const closeSettings = () => setCurrentScreen(settingsFrom);
+  // The header gear toggles Settings: a second press closes it (back to where it
+  // was opened from), matching the Back arrow.
+  const toggleSettings = () => (currentScreen === 'settings' ? closeSettings() : openSettings());
 
   // ── Data management (export / import / wipe) ─────────────────────────────────
   const exportData = () => {
@@ -3272,6 +3366,21 @@ const GymTrackerApp = () => {
   const changePassword = async (newPassword: string): Promise<string | null> => {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     return error ? authErrorText(error) : null;
+  };
+
+  // Permanently delete the signed-in user's account. The server-side
+  // delete_account() RPC (see schema.sql) removes their auth.users row; the
+  // cascade FKs wipe every workout/weigh-in/setting. Returns null on success or
+  // friendly error copy. On success we sign out — which drops us to the login
+  // gate and clears the in-memory + cached state.
+  const deleteAccount = async (): Promise<string | null> => {
+    const { error } = await supabase.rpc('delete_account');
+    if (error) { console.error('Delete account failed', error); return 'Could not delete your account. Please try again.'; }
+    // Drop the local cache so a later signup on this device can't re-migrate the
+    // deleted account's data, then sign out.
+    try { [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY].forEach(k => localStorage.removeItem(k)); } catch { /* ignore */ }
+    await signOut();
+    return null;
   };
 
   // ── Derived stats ────────────────────────────────────────────────────────────
@@ -3393,9 +3502,9 @@ const GymTrackerApp = () => {
                 strand the in-progress session with no way back. */}
             {!inSession && (
               <button
-                onClick={openSettings}
+                onClick={toggleSettings}
                 className={`p-2 -mr-2 rounded-ctl transition-colors ${currentScreen === 'settings' ? 'text-accent' : 'text-muted hover:text-ink'}`}
-                aria-label="Settings"
+                aria-label={currentScreen === 'settings' ? 'Close settings' : 'Settings'}
                 aria-current={currentScreen === 'settings' ? 'page' : undefined}
               >
                 <Settings size={17} />
@@ -3685,8 +3794,8 @@ const GymTrackerApp = () => {
           prefs={prefs} updatePrefs={updatePrefs} toggleHidden={toggleHidden}
           theme={theme} themeMode={mode} setThemeMode={setMode}
           onExport={exportData} onImport={importData} onClearData={clearAllData}
-          onSignOut={signOut} onChangePassword={changePassword} userEmail={session?.user?.email}
-          onDone={() => setCurrentScreen(settingsFrom)}
+          onSignOut={signOut} onChangePassword={changePassword} onDeleteAccount={deleteAccount} userEmail={session?.user?.email}
+          onDone={closeSettings}
         />
       )}
 

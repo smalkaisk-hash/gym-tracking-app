@@ -61,16 +61,17 @@ with many. This is the phase where "now vs. later" is a real, one-way cost diffe
 > migration files under `supabase/migrations/` and applied by hand (see that folder's
 > README). Backfills were validated with read-only `SELECT`s against production first.
 
-1. **Exercise names are the primary key** — 🔲 **OPEN, needs a design decision from you.**
-   The string IS the identity in every stored workout, which is why CLAUDE.md carries a
-   standing rule to *never rename or remove an exercise* — and why generic `Leg Curl` still
-   sits beside `Seated Leg Curl` (neither can be touched). No typo fixes, no localization,
-   no merging duplicates, ever. This is the highest-value Phase 1 item AND the highest blast
-   radius (the catalogue is code, keyed by name, used as React keys and in the Progress
-   dropdown). **The fork:** keep the catalogue code-owned and just add stable ids
-   (additive, lower-risk), or make the DB the catalogue's source of truth so users can
-   create/edit exercises (a real product feature). I did not blind-rewrite this — see
-   "Exercise identity — the open decision" below.
+1. **Exercise names were the primary key** — ✅ **DONE (option A).** Identity is now a
+   stable `exerciseId` (the slug of the original name), stamped into each logged exercise
+   and used to key the Progress dropdown/series and muscle grouping (`groupForExercise`).
+   The catalogue stays code-owned; the id lives in the workout JSONB, so no DB write was
+   needed (suits the read-only MCP) and the 2 legacy rows unify for free (their id is
+   derived as `slug(name)`, the same value the write path stores). Renaming is now safe via
+   `EXERCISE_ID_OVERRIDES` (pin the new name to the original slug). Verified: `tsc`, and
+   `tests/exercise-identity.test.mjs` (7 cases incl. a catalogue slug-collision guard —
+   267 names, 0 collisions). **Not yet driven in a live browser** (Progress dropdown /
+   All-exercises view) — the remaining confirmation. Option B (DB-owned catalogue so users
+   create/edit exercises) stays available later if user-defined exercises become a feature.
 
 2. **The workout ↔ weigh-in join is string equality on a formatted date** — ✅ **migration
    ready (`0001`), pending manual apply.** `body_weight_log.workout_id` FK added, backfill
@@ -90,9 +91,10 @@ with many. This is the phase where "now vs. later" is a real, one-way cost diffe
 **Why before Phase 2:** the sync engine syncs whatever schema exists. Fix the schema first,
 then choose the engine.
 
-### Exercise identity — the open decision (blocks completing item 1)
+### Exercise identity — the decision (resolved: A, implemented)
 
-Two viable shapes, and it's your call because it's hard to walk back:
+Two viable shapes were on the table; you chose **A**, now implemented. Kept here for the
+rationale and the path to B if it's ever wanted:
 
 - **A — Code-owned catalogue + stable ids (recommended first step).** Keep `EXERCISES` in
   code as the picker's structure; give each entry a stable id; store `exerciseId` alongside
