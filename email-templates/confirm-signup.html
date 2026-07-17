@@ -1,0 +1,42 @@
+<!--
+  FitPulse — "Confirm signup" email template.
+  Paste the whole block below into: Supabase dashboard → Authentication → Emails
+  → Confirm signup → Message body (Source/HTML). Then Save.
+  Suggested Subject line:  Confirm your FitPulse account
+  Keep {{ .ConfirmationURL }} exactly as-is — it's the real link.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0D1215;padding:32px 0;font-family:Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:420px;background:#151C21;border:1px solid #263139;border-radius:10px;padding:32px;">
+        <tr>
+          <td align="center" style="padding-bottom:20px;">
+            <span style="display:inline-block;background:#2E7CE4;color:#0D1215;font-weight:700;font-size:18px;letter-spacing:1px;text-transform:uppercase;padding:8px 14px;border-radius:6px;">FitPulse</span>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="color:#E6EDF2;font-size:20px;font-weight:700;padding-bottom:8px;">
+            Confirm your account
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="color:#8A99A5;font-size:14px;line-height:22px;padding-bottom:24px;">
+            Tap the button below to confirm your email and start logging workouts.
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding-bottom:24px;">
+            <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#2E7CE4;color:#0D1215;font-weight:700;font-size:15px;text-decoration:none;padding:12px 28px;border-radius:6px;">
+              Confirm email
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="color:#5C6B75;font-size:12px;line-height:20px;">
+            If you didn't create a FitPulse account, you can ignore this email.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

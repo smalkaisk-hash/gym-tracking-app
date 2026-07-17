@@ -318,7 +318,10 @@ const THEME_KEY   = 'gym-theme';
 // JSON blob and merged over DEFAULT_PREFS on load, so adding a field later never
 // breaks data saved by an older build.
 type Units = 'kg' | 'lb';
+type Gender = 'male' | 'female' | 'other' | '';   // '' = not set / left blank
 type Prefs = {
+  name: string;                  // display name, '' = not set (collected at onboarding)
+  gender: Gender;                // '' = not set / left blank
   units: Units;
   hidden: string[];              // widget keys the user hid (see WIDGET_LABELS)
   muscleMetric: MuscleMetric;
@@ -331,6 +334,7 @@ type Prefs = {
   workoutTimer: boolean;         // time the whole session and log its duration
 };
 const DEFAULT_PREFS: Prefs = {
+  name: '', gender: '',
   units: 'kg', hidden: [], muscleMetric: 'sets', bwChart: 'line',
   accent: 'blue', base: 'graphite', semantics: 'plates', restTimer: true, restSeconds: 90,
   workoutTimer: true,
@@ -2031,6 +2035,7 @@ const Segmented = ({ value, onChange, options }: any) => (
     {options.map((o: any) => (
       <button
         key={o.value}
+        type="button"
         onClick={() => onChange(o.value)}
         aria-pressed={value === o.value}
         className={`px-3 py-1.5 rounded-chip text-sm font-semibold transition-colors ${value === o.value ? 'bg-accent text-accent-ink' : 'text-muted hover:text-ink'}`}
@@ -2051,23 +2056,25 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
   // Change-password, inline in the Account card (the "Clear all data" confirm
   // pattern, not a sub-screen — auth isn't part of the router).
   const [pwOpen, setPwOpen]         = useState(false);
+  const [currentPw, setCurrentPw]   = useState('');
   const [newPw, setNewPw]           = useState('');
   const [confirmPw, setConfirmPw]   = useState('');
   const [showPw, setShowPw]         = useState(false);
   const [pwBusy, setPwBusy]         = useState(false);
   const [pwMsg, setPwMsg]           = useState<{ ok: boolean; text: string } | null>(null);
 
-  const closePw = () => { setPwOpen(false); setNewPw(''); setConfirmPw(''); setShowPw(false); setPwMsg(null); };
+  const closePw = () => { setPwOpen(false); setCurrentPw(''); setNewPw(''); setConfirmPw(''); setShowPw(false); setPwMsg(null); };
 
   const savePassword = async () => {
     if (pwBusy) return;
+    if (!currentPw)                  { setPwMsg({ ok: false, text: 'Enter your current password.' }); return; }
     if (newPw.length < MIN_PASSWORD) { setPwMsg({ ok: false, text: `Password must be at least ${MIN_PASSWORD} characters.` }); return; }
     if (newPw !== confirmPw)         { setPwMsg({ ok: false, text: "Passwords don't match." }); return; }
     setPwBusy(true); setPwMsg(null);
-    const err = await onChangePassword(newPw);
+    const err = await onChangePassword(currentPw, newPw);
     setPwBusy(false);
     if (err) { setPwMsg({ ok: false, text: err }); return; }
-    setNewPw(''); setConfirmPw(''); setShowPw(false);
+    setCurrentPw(''); setNewPw(''); setConfirmPw(''); setShowPw(false);
     setPwMsg({ ok: true, text: 'Password updated.' });
     setPwOpen(false);
   };
@@ -2253,9 +2260,31 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         {progKeys.map(widgetRow)}
       </div>
 
-      {/* Account — the signed-in identity; data syncs to this account. */}
+      {/* Account — profile + the signed-in identity; data syncs to this account. */}
       <div className={`${card} p-4`}>
         <h3 className={`${label} mb-3`}>Account</h3>
+
+        {/* Profile */}
+        <div className="mb-3">
+          <label htmlFor="settings-name" className="text-sm text-ink block mb-2">Name</label>
+          <input
+            id="settings-name"
+            type="text"
+            value={prefs.name}
+            onChange={e => updatePrefs({ name: e.target.value })}
+            placeholder="Your name"
+            autoComplete="given-name"
+            className={`${input} w-full`}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-ink">Gender</span>
+          <Segmented value={prefs.gender} onChange={(v: Gender) => updatePrefs({ gender: v })}
+            options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }]} />
+        </div>
+
+        <div className="h-px bg-line my-4" />
+
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <p className="text-sm text-ink truncate">{userEmail ?? 'Signed in'}</p>
@@ -2274,6 +2303,16 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         {pwOpen && (
           <form className="mt-4 pt-4 border-t border-line flex flex-col gap-3" onSubmit={e => { e.preventDefault(); savePassword(); }}>
             <PasswordField
+              id="settings-current-password"
+              label="Current password"
+              value={currentPw}
+              onChange={setCurrentPw}
+              autoComplete="current-password"
+              show={showPw}
+              onToggleShow={() => setShowPw(s => !s)}
+              autoFocus
+            />
+            <PasswordField
               id="settings-new-password"
               label="New password"
               value={newPw}
@@ -2281,7 +2320,6 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
               autoComplete="new-password"
               show={showPw}
               onToggleShow={() => setShowPw(s => !s)}
-              autoFocus
             />
             <div>
               <PasswordField
@@ -2298,7 +2336,7 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={pwBusy || !newPw || (confirmPw.length > 0 && newPw !== confirmPw)}
+                disabled={pwBusy || !currentPw || !newPw || (confirmPw.length > 0 && newPw !== confirmPw)}
                 className={`${btnPrimary} flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50`}
               >
                 {pwBusy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -2377,7 +2415,7 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
 // error), so they match the app chrome instead of flashing bare.
 const AuthShell = ({ children }: any) => (
   <div className="min-h-screen bg-ground text-ink flex flex-col items-center justify-center px-6">
-    <div className="w-full max-w-sm">{children}</div>
+    <div className="w-full max-w-sm animate-fade-rise">{children}</div>
   </div>
 );
 
@@ -2413,7 +2451,8 @@ const authErrorText = (error: any): string => {
   if (error?.status === 429 || /rate limit/i.test(msg)) return 'Too many attempts. Wait a minute and try again.';
   if (/invalid login credentials/i.test(msg))            return 'Email or password is incorrect.';
   if (/email not confirmed/i.test(msg))                  return 'Please confirm your email first — check your inbox for the link.';
-  if (/different from the old password/i.test(msg))      return 'Choose a password different from your previous one.';
+  if (/different from the old password|should be different/i.test(msg)) return 'Choose a password different from your current one.';
+  if (error?.code === 'current_password_required' || /current password/i.test(msg)) return 'Your current password is incorrect.';
   if (/reauthentication|session/i.test(msg))             return 'Please sign out and back in, then try again.';
   if (/password should be at least|password.*short|at least \d+ characters/i.test(msg)) return msg; // surface the length rule as-is
   return 'Something went wrong. Please try again.';
@@ -2746,6 +2785,61 @@ const ResetPasswordScreen = ({ onDone, onSignOut }: any) => {
   );
 };
 
+// Shown once, right after the first login on a brand-new account (see the
+// `needsOnboarding` gate). Collects a display name, weight unit and gender —
+// all optional; one "Get started" commits whatever's set and drops the gate.
+// `loading` renders the exact same card while the post-signup hydrate is still in
+// flight — inputs disabled, button spinning — so the onboarding frame stays on
+// screen continuously from signup onward instead of flashing a bare loader.
+const OnboardingScreen = ({ initialPrefs, onDone, loading = false }: any) => {
+  const [name, setName]     = useState('');
+  const [units, setUnits]   = useState<Units>(initialPrefs?.units ?? 'kg');
+  const [gender, setGender] = useState<Gender>(initialPrefs?.gender ?? '');
+
+  return (
+    <AuthShell>
+      <AuthHeader />
+      <form className={`${card} p-6`} onSubmit={e => { e.preventDefault(); if (!loading && name.trim() && gender) onDone({ name: name.trim(), units, gender }); }}>
+        <p className="text-sm text-ink font-medium text-center mb-1">Welcome to FitPulse</p>
+        <p className="text-xs text-muted text-center mb-5">Set up your profile. You can change any of this later in Settings.</p>
+
+        <fieldset disabled={loading} className="contents">
+          <div className="mb-4">
+            <label htmlFor="onboard-name" className={`${label} block mb-2`}>Name</label>
+            <input
+              id="onboard-name"
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="What should we call you?"
+              autoComplete="given-name"
+              autoFocus={!loading}
+              className={`${input} w-full`}
+            />
+          </div>
+
+          <div className="mb-4">
+            <span className={`${label} block mb-2`}>Weight unit</span>
+            <Segmented value={units} onChange={(v: Units) => setUnits(v)}
+              options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
+          </div>
+
+          <div className="mb-5">
+            <span className={`${label} block mb-2`}>Gender</span>
+            <Segmented value={gender} onChange={(v: Gender) => setGender(v)}
+              options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }]} />
+          </div>
+        </fieldset>
+
+        <button type="submit" disabled={loading || !name.trim() || !gender} className={`${btnPrimary} w-full p-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}>
+          {loading && <Loader2 size={16} className="animate-spin" />}
+          {loading ? 'Setting up…' : 'Get started'}
+        </button>
+      </form>
+    </AuthShell>
+  );
+};
+
 // ─── GymTrackerApp ─────────────────────────────────────────────────────────────
 const GymTrackerApp = () => {
   const [currentScreen, setCurrentScreen]             = useState('home');
@@ -2774,6 +2868,7 @@ const GymTrackerApp = () => {
   const [session, setSession]     = useState<any>(null);
   const [authReady, setAuthReady] = useState(false);
   const [hydrated, setHydrated]   = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);  // first login on a brand-new account
   // ── Offline sync safety (roadmap Phase 0) ────────────────────────────────────
   // Rows carry a client-only `_sync` marker: 'pending' (write in flight) or
   // 'error' (write failed — saved on THIS device only). Absent = server-confirmed.
@@ -2893,7 +2988,7 @@ const GymTrackerApp = () => {
       // supabase-js parses the URL hash) — catch it so the gate shows the
       // set-new-password screen instead of the app.
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
-      if (!s) setHydrated(false);   // signed out → require a fresh hydrate next login
+      if (!s) { setHydrated(false); setNeedsOnboarding(false); }   // signed out → fresh hydrate/onboarding check next login
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -2959,6 +3054,10 @@ const GymTrackerApp = () => {
         let bwRows       = bwRes.data ?? [];
         let settingsRow  = sRes.data ?? null;
 
+        // No server settings row yet = first login on this account → onboard once.
+        // Captured before migration reassigns settingsRow below.
+        const isFirstLogin = !settingsRow;
+
         let migrated = false;
         if (workoutRows.length === 0 && bwRows.length === 0 && !settingsRow) {
           const m = await migrateLocalToServer(session.user.id);
@@ -2992,6 +3091,7 @@ const GymTrackerApp = () => {
           if (Number.isFinite(settingsRow.weekly_goal)) setWeeklyGoal(clampGoal(settingsRow.weekly_goal));
           if (settingsRow.prefs) setPrefs({ ...DEFAULT_PREFS, ...settingsRow.prefs, hidden: Array.isArray(settingsRow.prefs.hidden) ? settingsRow.prefs.hidden : [] });
         }
+        if (isFirstLogin) setNeedsOnboarding(true);   // greet the new account for name/units/gender
       } catch (e) {
         console.error('Hydrate failed', e);   // keep the localStorage cache; app still usable offline
       } finally {
@@ -3363,8 +3463,15 @@ const GymTrackerApp = () => {
 
   // Change the signed-in user's password (from Settings). Returns null on
   // success or friendly error copy — the component stays presentational.
-  const changePassword = async (newPassword: string): Promise<string | null> => {
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
+  const changePassword = async (currentPassword: string, newPassword: string): Promise<string | null> => {
+    // The project enforces "Require current password when changing password", so
+    // updateUser must carry current_password — without it Supabase 400s with
+    // current_password_required. (current_password isn't in supabase-js's typed
+    // attributes yet, hence the cast.)
+    const { error } = await supabase.auth.updateUser({
+      current_password: currentPassword,
+      password: newPassword,
+    } as any);
     return error ? authErrorText(error) : null;
   };
 
@@ -3470,6 +3577,19 @@ const GymTrackerApp = () => {
   if (!authReady)       return <FullScreenLoader />;
   if (recovery)         return <ResetPasswordScreen onDone={() => setRecovery(false)} onSignOut={signOut} />;
   if (!session)         return <LoginScreen />;
+  // Brand-new account: `needsOnboarding` is set asynchronously by the hydrate
+  // effect (after it learns there's no server settings row), so until hydrate
+  // resolves the render would fall through to the dashboard and flash it for a
+  // moment before onboarding appears. Render the onboarding card in its `loading`
+  // state during that window — same frame, inputs locked — so the transition into
+  // the interactive form is seamless instead of flashing a bare loader. Gate on
+  // `!prefs.name` (the un-onboarded default) so a returning user — who has a
+  // cached name — keeps their instant cache-painted dashboard.
+  if (!hydrated && !prefs.name) return <OnboardingScreen initialPrefs={prefs} loading />;
+  // First login on a brand-new account: greet once for name/units/gender. Set in
+  // the hydrate effect, so prefs are already loaded (units prefill). updatePrefs
+  // persists via the existing localStorage + debounced Supabase write-backs.
+  if (needsOnboarding)  return <OnboardingScreen initialPrefs={prefs} onDone={(patch: any) => { updatePrefs(patch); setNeedsOnboarding(false); }} />;
 
   // Any row saved on this device but not confirmed by the server (a failed write).
   // Drives the persistent banner below — it clears itself when a retry succeeds.
@@ -3532,6 +3652,11 @@ const GymTrackerApp = () => {
       {/* ── Home ── */}
       {currentScreen === 'home' && (
         <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 pb-24 flex flex-col gap-3">
+
+          {/* Greeting — only once the user has set a name at onboarding. */}
+          {prefs.name && (
+            <h2 className="font-display text-2xl font-bold text-ink -mb-1">Hi, {prefs.name}</h2>
+          )}
 
           {/* Stat row */}
           {!prefs.hidden.includes('dash.stats') && (

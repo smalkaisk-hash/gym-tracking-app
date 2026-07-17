@@ -112,6 +112,16 @@
       repeating-linear-gradient(45deg,  rgb(var(--faint) / 0.55) 0 1px, transparent 1px 4px),
       repeating-linear-gradient(-45deg, rgb(var(--faint) / 0.55) 0 1px, transparent 1px 4px);
   }
+
+  /* Gentle fade+rise for auth cards, so screens ease in instead of snapping.
+     Reduced-motion is neutralised by the global rule below. */
+  @keyframes fade-rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-rise {
+    animation: fade-rise 0.6s ease-out both;
+  }
 }
 
 * {
