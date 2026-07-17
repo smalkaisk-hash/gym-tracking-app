@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2 } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW } from './supabase';
 
@@ -1988,12 +1988,36 @@ const Segmented = ({ value, onChange, options }: any) => (
   </div>
 );
 
-const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onSignOut, userEmail, onDone }: any) => {
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, userEmail, onDone }: any) => {
   const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
   const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [importMsg, setImportMsg]             = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Change-password, inline in the Account card (the "Clear all data" confirm
+  // pattern, not a sub-screen — auth isn't part of the router).
+  const [pwOpen, setPwOpen]         = useState(false);
+  const [newPw, setNewPw]           = useState('');
+  const [confirmPw, setConfirmPw]   = useState('');
+  const [showPw, setShowPw]         = useState(false);
+  const [pwBusy, setPwBusy]         = useState(false);
+  const [pwMsg, setPwMsg]           = useState<{ ok: boolean; text: string } | null>(null);
+
+  const closePw = () => { setPwOpen(false); setNewPw(''); setConfirmPw(''); setShowPw(false); setPwMsg(null); };
+
+  const savePassword = async () => {
+    if (pwBusy) return;
+    if (newPw.length < MIN_PASSWORD) { setPwMsg({ ok: false, text: `Password must be at least ${MIN_PASSWORD} characters.` }); return; }
+    if (newPw !== confirmPw)         { setPwMsg({ ok: false, text: "Passwords don't match." }); return; }
+    setPwBusy(true); setPwMsg(null);
+    const err = await onChangePassword(newPw);
+    setPwBusy(false);
+    if (err) { setPwMsg({ ok: false, text: err }); return; }
+    setNewPw(''); setConfirmPw(''); setShowPw(false);
+    setPwMsg({ ok: true, text: 'Password updated.' });
+    setPwOpen(false);
+  };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2170,10 +2194,54 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             <p className="text-sm text-ink truncate">{userEmail ?? 'Signed in'}</p>
             <p className="text-xs text-faint mt-0.5">Your workouts sync to this account.</p>
           </div>
-          <button onClick={() => onSignOut && onSignOut()} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
-            <LogOut size={14} /> Sign out
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => (pwOpen ? closePw() : setPwOpen(true))} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+              <KeyRound size={14} /> Change password
+            </button>
+            <button onClick={() => onSignOut && onSignOut()} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+              <LogOut size={14} /> Sign out
+            </button>
+          </div>
         </div>
+
+        {pwOpen && (
+          <form className="mt-4 pt-4 border-t border-line flex flex-col gap-3" onSubmit={e => { e.preventDefault(); savePassword(); }}>
+            <PasswordField
+              id="settings-new-password"
+              label="New password"
+              value={newPw}
+              onChange={setNewPw}
+              autoComplete="new-password"
+              show={showPw}
+              onToggleShow={() => setShowPw(s => !s)}
+              autoFocus
+            />
+            <div>
+              <PasswordField
+                id="settings-confirm-password"
+                label="Confirm password"
+                value={confirmPw}
+                onChange={setConfirmPw}
+                autoComplete="new-password"
+                show={showPw}
+                onToggleShow={() => setShowPw(s => !s)}
+              />
+              <p className="text-xs text-faint mt-2">At least {MIN_PASSWORD} characters.</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={pwBusy || !newPw || (confirmPw.length > 0 && newPw !== confirmPw)}
+                className={`${btnPrimary} flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50`}
+              >
+                {pwBusy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {pwBusy ? 'Saving…' : 'Save password'}
+              </button>
+              <button type="button" onClick={closePw} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
+            </div>
+          </form>
+        )}
+        {pwMsg && <p className={`text-xs mt-2 ${pwMsg.ok ? 'text-muted' : 'text-crit'}`}>{pwMsg.text}</p>}
       </div>
 
       {/* Data — backups. Export writes a JSON file; import replaces the account's
@@ -2246,64 +2314,343 @@ const ConfigError = () => (
   </AuthShell>
 );
 
-// Magic-link sign in. Supabase emails a one-time link; clicking it returns here
-// with a session, which onAuthStateChange picks up. No passwords to store.
-const LoginScreen = () => {
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+// Map a Supabase auth error to friendly, anti-enumeration copy. Supabase returns
+// the same "Invalid login credentials" for a wrong password and an unknown email
+// on purpose — we keep that ambiguity rather than leaking which was wrong.
+const authErrorText = (error: any): string => {
+  const msg = String(error?.message ?? '');
+  if (error?.status === 429 || /rate limit/i.test(msg)) return 'Too many attempts. Wait a minute and try again.';
+  if (/invalid login credentials/i.test(msg))            return 'Email or password is incorrect.';
+  if (/email not confirmed/i.test(msg))                  return 'Please confirm your email first — check your inbox for the link.';
+  if (/different from the old password/i.test(msg))      return 'Choose a password different from your previous one.';
+  if (/reauthentication|session/i.test(msg))             return 'Please sign out and back in, then try again.';
+  if (/password should be at least|password.*short|at least \d+ characters/i.test(msg)) return msg; // surface the length rule as-is
+  return 'Something went wrong. Please try again.';
+};
 
-  const sendLink = async () => {
-    const addr = email.trim();
-    if (!addr) return;
-    setStatus('sending');
-    const { error } = await supabase.auth.signInWithOtp({
-      email: addr,
-      options: { emailRedirectTo: window.location.origin },
-    });
-    setStatus(error ? 'error' : 'sent');
+const MIN_PASSWORD = 6;   // Supabase's default minimum; the server is the real gate
+
+// A password input with a show/hide toggle. `id` keeps the label association and
+// lets password managers tell fields apart; `autoComplete` must be
+// 'current-password' for sign-in and 'new-password' for signup/reset/change.
+const PasswordField = ({ id, label: fieldLabel, value, onChange, autoComplete, show, onToggleShow, autoFocus }: any) => (
+  <>
+    <label htmlFor={id} className={`${label} block mb-2`}>{fieldLabel}</label>
+    <div className="relative">
+      <input
+        id={id}
+        type={show ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`${input} w-full pr-11`}
+        placeholder="••••••••"
+        autoFocus={autoFocus}
+      />
+      <button
+        type="button"
+        onClick={onToggleShow}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        className="absolute inset-y-0 right-0 px-3 flex items-center text-muted hover:text-ink transition-colors"
+      >
+        {show ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  </>
+);
+
+// The FitPulse mark + wordmark, shared by every auth screen.
+const AuthHeader = () => (
+  <div className="flex items-center gap-2 justify-center mb-6">
+    <div className="w-10 h-10 rounded-ctl bg-accent grid place-items-center">
+      <Dumbbell size={22} className="text-accent-ink" />
+    </div>
+    <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">FitPulse</h1>
+  </div>
+);
+
+// Password sign-in + open signup, with an inline forgot-password panel. Success
+// is handled by onAuthStateChange (which sets the session and drops the gate),
+// so there's no local "signed in" state — only the signup-confirm and
+// reset-sent panels need one.
+const LoginScreen = () => {
+  const [mode, setMode]       = useState<'signin' | 'signup'>('signin');
+  const [forgot, setForgot]   = useState(false);
+  const [email, setEmail]     = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [show, setShow]       = useState(false);
+  // idle → working → (sent = a confirm/reset email went out) | error
+  const [status, setStatus]   = useState<'idle' | 'working' | 'sent' | 'error'>('idle');
+  const [errMsg, setErrMsg]   = useState('');
+  const [sentKind, setSentKind] = useState<'confirm' | 'reset'>('confirm');
+
+  const addr = email.trim();
+  const busy = status === 'working';
+  const mismatch = mode === 'signup' && confirm.length > 0 && password !== confirm;
+
+  const reset = () => { setStatus('idle'); setErrMsg(''); setPassword(''); setConfirm(''); setShow(false); };
+  const switchMode = (m: 'signin' | 'signup') => { setMode(m); setForgot(false); reset(); };
+
+  const signIn = async () => {
+    const { error } = await supabase.auth.signInWithPassword({ email: addr, password });
+    if (error) { setStatus('error'); setErrMsg(authErrorText(error)); }
+    // success → onAuthStateChange sets the session and the gate falls through.
   };
 
-  return (
-    <AuthShell>
-      <div className="flex items-center gap-2 justify-center mb-6">
-        <div className="w-10 h-10 rounded-ctl bg-accent grid place-items-center">
-          <Dumbbell size={22} className="text-accent-ink" />
-        </div>
-        <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">FitPulse</h1>
-      </div>
+  const signUp = async () => {
+    const { data, error } = await supabase.auth.signUp({
+      email: addr,
+      password,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) { setStatus('error'); setErrMsg(authErrorText(error)); return; }
+    // Already-registered email: Supabase returns an obfuscated user with an empty
+    // identities[] and NO error (anti-enumeration). Detect and steer to sign-in.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      setStatus('error'); setErrMsg('That email is already registered. Try signing in instead.'); return;
+    }
+    // data.session present → "Confirm email" is off, onAuthStateChange logs us in.
+    if (data.session) return;
+    // Otherwise confirmation is on: no session yet, tell them to check their inbox.
+    setSentKind('confirm'); setStatus('sent');
+  };
 
-      {status === 'sent' ? (
+  const submit = () => {
+    if (!addr || !password || busy) return;
+    if (mode === 'signup' && (password !== confirm || password.length < MIN_PASSWORD)) {
+      setStatus('error');
+      setErrMsg(password !== confirm ? "Passwords don't match." : `Password must be at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
+    setStatus('working'); setErrMsg('');
+    (mode === 'signin' ? signIn : signUp)();
+  };
+
+  const sendReset = async () => {
+    if (!addr || busy) return;
+    setStatus('working'); setErrMsg('');
+    const { error } = await supabase.auth.resetPasswordForEmail(addr, { redirectTo: window.location.origin });
+    // Neutral copy regardless of whether the email exists — except a rate limit,
+    // which is worth telling them about.
+    if (error && error.status === 429) { setStatus('error'); setErrMsg(authErrorText(error)); return; }
+    setSentKind('reset'); setStatus('sent');
+  };
+
+  // ── Sent confirmation (signup-confirm or reset-link) ──
+  if (status === 'sent') {
+    return (
+      <AuthShell>
+        <AuthHeader />
         <div className={`${card} p-6 text-center`}>
           <Mail size={28} className="text-accent mx-auto mb-3" />
           <p className="text-sm text-ink font-medium mb-1">Check your email</p>
-          <p className="text-xs text-muted">We sent a sign-in link to {email.trim()}. Open it on this device.</p>
-          <button onClick={() => setStatus('idle')} className={`${btnSecondary} mt-4 px-4 py-2 text-sm`}>Use a different email</button>
+          <p className="text-xs text-muted">
+            {sentKind === 'confirm'
+              ? <>We sent a confirmation link to {addr}. Click it, then sign in.</>
+              : <>If an account exists for {addr}, we've sent a password reset link.</>}
+          </p>
+          <button
+            onClick={() => { setForgot(false); setMode('signin'); reset(); }}
+            className={`${btnSecondary} mt-4 px-4 py-2 text-sm`}
+          >
+            Back to sign in
+          </button>
         </div>
-      ) : (
-        <div className={`${card} p-6`}>
-          <label htmlFor="login-email" className={`${label} block mb-2`}>Email</label>
+      </AuthShell>
+    );
+  }
+
+  // ── Forgot-password request ──
+  if (forgot) {
+    return (
+      <AuthShell>
+        <AuthHeader />
+        <form className={`${card} p-6`} onSubmit={e => { e.preventDefault(); sendReset(); }}>
+          <label htmlFor="reset-email" className={`${label} block mb-2`}>Email</label>
           <input
-            id="login-email"
+            id="reset-email"
             type="email" inputMode="email" autoComplete="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && sendLink()}
             className={`${input} w-full`}
             placeholder="you@example.com"
             autoFocus
           />
           <button
-            onClick={sendLink}
-            disabled={status === 'sending' || !email.trim()}
+            type="submit"
+            disabled={busy || !addr}
             className={`${btnPrimary} w-full mt-4 p-3 flex items-center justify-center gap-2 disabled:opacity-50`}
           >
-            {status === 'sending' ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
-            {status === 'sending' ? 'Sending…' : 'Send magic link'}
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+            {busy ? 'Sending…' : 'Send reset link'}
           </button>
-          {status === 'error' && <p className="text-xs text-crit mt-2">Couldn't send the link. Check the email and try again.</p>}
-          <p className="text-xs text-faint mt-3">A one-time sign-in link lands in your inbox — no password.</p>
+          {status === 'error' && <p className="text-xs text-crit mt-2">{errMsg}</p>}
+          <button
+            type="button"
+            onClick={() => { setForgot(false); reset(); }}
+            className="text-xs text-muted hover:text-ink transition-colors mt-3 block mx-auto"
+          >
+            Back to sign in
+          </button>
+        </form>
+      </AuthShell>
+    );
+  }
+
+  // ── Sign in / create account ──
+  return (
+    <AuthShell>
+      <AuthHeader />
+      <form className={`${card} p-6`} onSubmit={e => { e.preventDefault(); submit(); }}>
+        <label htmlFor="login-email" className={`${label} block mb-2`}>Email</label>
+        <input
+          id="login-email"
+          type="email" inputMode="email" autoComplete="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          className={`${input} w-full mb-4`}
+          placeholder="you@example.com"
+          autoFocus
+        />
+
+        <PasswordField
+          id="login-password"
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+          show={show}
+          onToggleShow={() => setShow(s => !s)}
+        />
+
+        {mode === 'signup' && (
+          <div className="mt-4">
+            <PasswordField
+              id="login-confirm"
+              label="Confirm password"
+              value={confirm}
+              onChange={setConfirm}
+              autoComplete="new-password"
+              show={show}
+              onToggleShow={() => setShow(s => !s)}
+            />
+            {mismatch && <p className="text-xs text-crit mt-2">Passwords don't match.</p>}
+            <p className="text-xs text-faint mt-2">At least {MIN_PASSWORD} characters.</p>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={busy || !addr || !password || mismatch}
+          className={`${btnPrimary} w-full mt-4 p-3 flex items-center justify-center gap-2 disabled:opacity-50`}
+        >
+          {busy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+          {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+        </button>
+
+        {status === 'error' && <p className="text-xs text-crit mt-2">{errMsg}</p>}
+
+        {mode === 'signin' && (
+          <button
+            type="button"
+            onClick={() => { setForgot(true); reset(); }}
+            className="text-xs text-muted hover:text-ink transition-colors mt-3 block"
+          >
+            Forgot password?
+          </button>
+        )}
+
+        <div className="h-px bg-line my-4" />
+        <p className="text-xs text-muted text-center">
+          {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
+          <button
+            type="button"
+            onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
+            className="text-accent font-semibold hover:brightness-110 transition-all"
+          >
+            {mode === 'signin' ? 'Create one' : 'Sign in'}
+          </button>
+        </p>
+      </form>
+    </AuthShell>
+  );
+};
+
+// Shown when the user follows a password-reset link — they already hold a real
+// (recovery) session, so we only collect the new password. There's no way out
+// except setting one or explicitly signing out, so a half-finished reset can't
+// strand them in the app with an unknown password.
+const ResetPasswordScreen = ({ onDone, onSignOut }: any) => {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm]   = useState('');
+  const [show, setShow]         = useState(false);
+  const [status, setStatus]     = useState<'idle' | 'working' | 'error'>('idle');
+  const [errMsg, setErrMsg]     = useState('');
+
+  const busy = status === 'working';
+  const mismatch = confirm.length > 0 && password !== confirm;
+
+  const submit = async () => {
+    if (busy) return;
+    if (password.length < MIN_PASSWORD) { setStatus('error'); setErrMsg(`Password must be at least ${MIN_PASSWORD} characters.`); return; }
+    if (password !== confirm)           { setStatus('error'); setErrMsg("Passwords don't match."); return; }
+    setStatus('working'); setErrMsg('');
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) { setStatus('error'); setErrMsg(authErrorText(error)); return; }
+    onDone();   // clears the recovery flag → gate falls through to the app
+  };
+
+  return (
+    <AuthShell>
+      <AuthHeader />
+      <form className={`${card} p-6`} onSubmit={e => { e.preventDefault(); submit(); }}>
+        <KeyRound size={28} className="text-accent mx-auto mb-3" />
+        <p className="text-sm text-ink font-medium text-center mb-1">Set a new password</p>
+        <p className="text-xs text-muted text-center mb-4">Choose a new password for your account.</p>
+
+        <PasswordField
+          id="reset-password"
+          label="New password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          show={show}
+          onToggleShow={() => setShow(s => !s)}
+          autoFocus
+        />
+        <div className="mt-4">
+          <PasswordField
+            id="reset-confirm"
+            label="Confirm password"
+            value={confirm}
+            onChange={setConfirm}
+            autoComplete="new-password"
+            show={show}
+            onToggleShow={() => setShow(s => !s)}
+          />
+          {mismatch && <p className="text-xs text-crit mt-2">Passwords don't match.</p>}
+          <p className="text-xs text-faint mt-2">At least {MIN_PASSWORD} characters.</p>
         </div>
-      )}
+
+        <button
+          type="submit"
+          disabled={busy || !password || mismatch}
+          className={`${btnPrimary} w-full mt-4 p-3 flex items-center justify-center gap-2 disabled:opacity-50`}
+        >
+          {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          {busy ? 'Saving…' : 'Save new password'}
+        </button>
+        {status === 'error' && <p className="text-xs text-crit mt-2">{errMsg}</p>}
+
+        <button
+          type="button"
+          onClick={() => onSignOut && onSignOut()}
+          className="text-xs text-muted hover:text-ink transition-colors mt-3 block mx-auto"
+        >
+          Sign out instead
+        </button>
+      </form>
     </AuthShell>
   );
 };
@@ -2336,6 +2683,11 @@ const GymTrackerApp = () => {
   const [session, setSession]     = useState<any>(null);
   const [authReady, setAuthReady] = useState(false);
   const [hydrated, setHydrated]   = useState(false);
+  // recovery — the user arrived via a password-reset link. That link returns a
+  // real session, so without this flag the gate below would drop them straight
+  // into the app; instead it pins them on ResetPasswordScreen until they set a
+  // new password (or explicitly sign out).
+  const [recovery, setRecovery]   = useState(false);
   const clampGoal = (g: number) => Math.min(GOAL_MAX, Math.max(GOAL_MIN, g));
 
   const { theme, mode, setMode, toggle } = useTheme();
@@ -2425,8 +2777,12 @@ const GymTrackerApp = () => {
       setSession(data.session);
       setAuthReady(true);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e: any, s: any) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event: any, s: any) => {
       setSession(s);
+      // A reset link returns a genuine session AND fires PASSWORD_RECOVERY (after
+      // supabase-js parses the URL hash) — catch it so the gate shows the
+      // set-new-password screen instead of the app.
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       if (!s) setHydrated(false);   // signed out → require a fresh hydrate next login
     });
     return () => sub.subscription.unsubscribe();
@@ -2842,6 +3198,14 @@ const GymTrackerApp = () => {
     setPrefs(DEFAULT_PREFS);
     setCurrentWorkout(null);
     setCurrentScreen('home');
+    setRecovery(false);   // signing out from the reset screen must clear the flag, or it re-pins us there
+  };
+
+  // Change the signed-in user's password (from Settings). Returns null on
+  // success or friendly error copy — the component stays presentational.
+  const changePassword = async (newPassword: string): Promise<string | null> => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    return error ? authErrorText(error) : null;
   };
 
   // ── Derived stats ────────────────────────────────────────────────────────────
@@ -2924,9 +3288,12 @@ const GymTrackerApp = () => {
 
   // Auth/config gates. Every hook above runs on each render, so these early
   // returns are safe. Missing env → config help; still checking → loader;
-  // signed out → magic-link login.
+  // reset link in progress → set-new-password (checked before !session because
+  // a recovery link carries a real session we must not let through); signed out
+  // → login.
   if (!supabaseEnabled) return <ConfigError />;
   if (!authReady)       return <FullScreenLoader />;
+  if (recovery)         return <ResetPasswordScreen onDone={() => setRecovery(false)} onSignOut={signOut} />;
   if (!session)         return <LoginScreen />;
 
   return (
@@ -3233,7 +3600,7 @@ const GymTrackerApp = () => {
           prefs={prefs} updatePrefs={updatePrefs} toggleHidden={toggleHidden}
           theme={theme} themeMode={mode} setThemeMode={setMode}
           onExport={exportData} onImport={importData} onClearData={clearAllData}
-          onSignOut={signOut} userEmail={session?.user?.email}
+          onSignOut={signOut} onChangePassword={changePassword} userEmail={session?.user?.email}
           onDone={() => setCurrentScreen(settingsFrom)}
         />
       )}
