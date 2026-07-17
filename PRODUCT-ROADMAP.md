@@ -56,40 +56,70 @@ network actually throttled — that end-to-end pass is the remaining confirmatio
 Three modelling choices are fine for one user and become fatal (or migration-projects)
 with many. This is the phase where "now vs. later" is a real, one-way cost difference.
 
-1. **Exercise names are the primary key.** The string IS the identity in every stored
-   workout, which is why CLAUDE.md carries a standing rule to *never rename or remove an
-   exercise* — and why generic `Leg Curl` still sits beside `Seated Leg Curl` (neither can
-   be touched). That means no typo fixes, no localization, no merging duplicates, ever.
-   → Introduce an `exercises` table (uuid PK); workouts reference the id. Names become
-     editable data.
+> **Constraint hit during implementation:** the development MCP connection is
+> **read-only**, so schema changes can't be applied automatically — they're prepared as
+> migration files under `supabase/migrations/` and applied by hand (see that folder's
+> README). Backfills were validated with read-only `SELECT`s against production first.
 
-2. **The workout ↔ weigh-in join is string equality on a formatted date**
-   (`body_weight_log.date === workouts.date`). It works only because one client generates
-   both strings in one tick. A second device, clock skew, or a millisecond of drift
-   silently orphans the weigh-in — no FK, no referential integrity catches it. (This is
-   also why `date` is TEXT instead of `timestamptz`.)
-   → `body_weight_log.workout_id uuid references workouts(id)`. Then `date` can go back to
-     `timestamptz`, since the FK removes the reason TEXT existed.
+1. **Exercise names are the primary key** — 🔲 **OPEN, needs a design decision from you.**
+   The string IS the identity in every stored workout, which is why CLAUDE.md carries a
+   standing rule to *never rename or remove an exercise* — and why generic `Leg Curl` still
+   sits beside `Seated Leg Curl` (neither can be touched). No typo fixes, no localization,
+   no merging duplicates, ever. This is the highest-value Phase 1 item AND the highest blast
+   radius (the catalogue is code, keyed by name, used as React keys and in the Progress
+   dropdown). **The fork:** keep the catalogue code-owned and just add stable ids
+   (additive, lower-risk), or make the DB the catalogue's source of truth so users can
+   create/edit exercises (a real product feature). I did not blind-rewrite this — see
+   "Exercise identity — the open decision" below.
 
-3. **`exercises` is a JSONB document** the app never queries server-side, and nothing
-   validates its contents (hence the `?? 0` / `!= null` guards on every read). Per-set
-   analytics across a real user base want rows, not documents.
-   → `workout_exercises` + `sets` tables.
+2. **The workout ↔ weigh-in join is string equality on a formatted date** — ✅ **migration
+   ready (`0001`), pending manual apply.** `body_weight_log.workout_id` FK added, backfill
+   validated (2 finish-time weigh-ins link, 2 standalone stay null), `ON DELETE CASCADE`.
+   The app doesn't write `workout_id` yet (gated on the migration being live), but the
+   related orphan bug — `deleteWorkout` leaving the finish-time weigh-in in the chart — is
+   already fixed in the client. Once `0001` is applied, wiring the app to prefer
+   `workout_id` over the date match is a small follow-up, after which `date` can move to
+   `timestamptz`.
 
-**Deliverables:** the schema migration + a backfill script for existing rows. At ~2 rows
-the script is throwaway; at 100k it is a project with a rollback plan.
+3. **`exercises` is a JSONB document** the app never queries server-side — 🔲 **deferred on
+   purpose.** Full relational explosion (`workout_exercises` + `sets` tables) mostly buys
+   server-side per-set analytics, which don't exist yet, at the cost of the largest rewrite
+   in the app. Do it when analytics move server-side, not before. Exercise *identity* (item
+   1) does not require it — a stable id can live inside the JSONB.
 
 **Why before Phase 2:** the sync engine syncs whatever schema exists. Fix the schema first,
 then choose the engine.
 
+### Exercise identity — the open decision (blocks completing item 1)
+
+Two viable shapes, and it's your call because it's hard to walk back:
+
+- **A — Code-owned catalogue + stable ids (recommended first step).** Keep `EXERCISES` in
+  code as the picker's structure; give each entry a stable id; store `exerciseId` alongside
+  `name` in workout data; reads group by id with a name fallback. Additive, reversible-ish,
+  removes the "can't rename" ceiling. Does **not** let users invent exercises.
+- **B — DB-owned catalogue.** An `exercises` table is the source of truth; users can
+  create/rename/merge. Bigger change, and a genuine product feature (moderation, dedup,
+  per-user vs. global). Only worth it if user-defined exercises are on the near roadmap.
+
+Recommendation: **A now** (unblocks renaming/localization/dedup at low risk), **B later**
+if and when user-created exercises become a feature. Pick one and item 1 becomes
+implementable.
+
 ---
 
-## Phase 2 — Buy sync; do not hand-roll it
+## Phase 2 — Buy sync; do not hand-roll it — 🔲 BLOCKED on your account/decision
 
 With the model fixed, make the offline promise *real* (not just *safe*): adopt a
 Postgres/Supabase-native sync engine — **PowerSync** or **ElectricSQL**. Hand-rolled sync
 (outboxes, replay, conflict resolution) is a category of bug that eats teams alive, and
 "we lost your workout" is the one failure a fitness product cannot ship.
+
+**This can't be done autonomously** — it needs an account with the chosen vendor, its
+client SDK + keys, and a real vendor decision. Groundwork that *is* in place: the Phase 0
+`_sync` marker already models per-row sync state, and Phase 1 gives the engine a clean
+schema to replicate. When you've picked a vendor and created the project, the integration
+is the next concrete step.
 
 **Conflict policy is an explicit decision, not a default.** Today settings use last-write-
 wins on a 600ms debounce — silent data loss the moment a phone and a laptop disagree.
@@ -100,19 +130,24 @@ most conflicts stop existing.
 
 ## Phase 3 — The product floor (rides alongside; not blockers)
 
-- **Error reporting (Sentry or equivalent).** Every sync failure today logs to a console
-  nobody reads; in production you would never learn users are losing data. This arguably
-  belongs *with* Phase 0 — visibility is the whole point of Phase 0.
-- **A real migration chain.** [schema.sql](schema.sql) is idempotent re-runnable DDL, which
-  is not versioning. Move to `supabase/migrations/`.
-- **Tests on the reconcile/sync logic specifically.** There is currently no test framework
-  at all (`npm run build` / tsc is the only check), and the merge logic from Phases 0–2 is
-  exactly the code that must not silently regress.
-- **Enable leaked-password protection** in Supabase Auth (HaveIBeenPwned check). Auth is
-  email + password, so this lint is live, not moot.
+- ✅ **A real migration chain.** Done — `supabase/migrations/` now holds `0000_baseline`
+  (the pre-existing schema) + `0001` (the weigh-in FK), with a README runbook. `schema.sql`
+  stays as the flattened canonical state.
+- ✅ **Tests on the reconcile/sync logic.** Done (a start) — `tests/sync-merge.test.mjs`
+  runs the merge semantics with `node`, no framework added. Caveat: it *mirrors* the inline
+  logic rather than importing it (the app keeps state logic inside the one big component);
+  extracting the reconcile helpers into an importable module is the follow-up.
+- 🔲 **Error reporting (Sentry or equivalent).** Needs your Sentry account + DSN, so it's a
+  hand-off: the SDK wiring is small once the DSN exists (an env var like the Supabase keys).
+  Highest-priority Phase 3 item — visibility is the whole point of Phase 0, and right now a
+  production sync failure still only reaches `console.error`.
+- 🔲 **Enable leaked-password protection** in Supabase Auth (HaveIBeenPwned check). Auth is
+  email + password, so this lint is live, not moot. **Dashboard toggle — you must flip it**
+  (Auth → Providers → Email → "Leaked password protection"); the MCP doesn't expose it.
   See <https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection>.
-- **Health-data floor:** body weight is health data. Point-in-time recovery / backups,
+- 🔲 **Health-data floor:** body weight is health data. Point-in-time recovery / backups,
   auth rate limiting, and a real account-deletion (GDPR) path raise the compliance floor.
+  The deletion path wants an edge function with the service role (needs deploy access).
 
 ---
 

@@ -1,15 +1,21 @@
 -- FitPulse — Supabase schema (Path A: real auth + Row Level Security).
--- Run this in the Supabase SQL editor (or `supabase db` / the MCP apply_migration
--- tool). Safe to re-run: guards are IF NOT EXISTS / drop-before-create.
+--
+-- This is the CANONICAL current schema. The change history lives in
+-- supabase/migrations/ (the tracked chain); this file is the flattened result and
+-- is what a fresh read should consult. Safe to re-run: guards are IF NOT EXISTS /
+-- drop-before-create.
 --
 -- Design notes:
 --   • `date` columns are TEXT, not timestamptz, on purpose. The app treats a
---     workout's date as an opaque ISO string that also links a weigh-in to its
---     session (body_weight_log.date == workouts.date). TEXT round-trips the exact
---     string the client generated; timestamptz would re-normalise it and could
---     break that string-equality correlation.
+--     workout's date as an opaque ISO string. TEXT round-trips the exact string
+--     the client generated; timestamptz would re-normalise it. A finish-time
+--     weigh-in still shares its workout's date string, but the authoritative link
+--     is now body_weight_log.workout_id (migration 0001), not that equality — so
+--     moving `date` to timestamptz later no longer risks the correlation.
 --   • `exercises` is JSONB — a workout is one document (nested sets[] with a
 --     nullable weight = bodyweight). The app never queries inside it server-side.
+--     Exercise identity is still the name string; giving exercises stable ids is
+--     the open Phase 1 item (see PRODUCT-ROADMAP.md).
 --   • user_id defaults to auth.uid() so inserts don't need to send it; RLS still
 --     enforces it via WITH CHECK.
 
@@ -29,12 +35,14 @@ create index if not exists workouts_user_date_idx on public.workouts (user_id, d
 
 -- ── body_weight_log ──────────────────────────────────────────────────────────
 create table if not exists public.body_weight_log (
-  id       uuid primary key default gen_random_uuid(),
-  user_id  uuid not null default auth.uid() references auth.users on delete cascade,
-  date     text not null,                 -- ISO string; matches a workout's date for finish-time weigh-ins
-  weight   real not null
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null default auth.uid() references auth.users on delete cascade,
+  date       text not null,               -- ISO string; a finish-time weigh-in shares its workout's date
+  weight     real not null,
+  workout_id uuid references public.workouts(id) on delete cascade  -- null = standalone quick-log (migration 0001)
 );
 create index if not exists bw_user_date_idx on public.body_weight_log (user_id, date);
+create index if not exists bw_workout_idx   on public.body_weight_log (workout_id);
 
 -- ── settings (one row per user) ──────────────────────────────────────────────
 create table if not exists public.settings (

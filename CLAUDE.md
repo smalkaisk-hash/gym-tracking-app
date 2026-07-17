@@ -14,7 +14,9 @@ npm run build     # tsc && vite build  — tsc is the only typecheck; there is n
 npm run preview   # serve the production build from dist/
 ```
 
-There is no test framework, linter, or formatter installed. `npm run build` is the only automated check, so run it after non-trivial edits. Don't invent a `npm test` — if tests are wanted, the harness has to be added first.
+There is no test framework, linter, or formatter installed. `npm run build` is the only automated check, so run it after non-trivial edits. The one exception: `node tests/sync-merge.test.mjs` runs a plain-Node assertion test of the offline sync-reconcile logic (no framework) — run it if you touch the `mergeUnsynced` hydrate logic, and keep the copy in that file in step with the app. If a broader test harness is wanted, it still has to be added first.
+
+**Database schema** is versioned in `supabase/migrations/` (see its README); `schema.sql` at the root is the flattened canonical state. The dev MCP is read-only, so migrations are applied by hand in the Supabase SQL editor — `0001` (weigh-in FK) is prepared but not yet applied to production.
 
 ## Architecture
 
@@ -53,7 +55,7 @@ set           { reps: int, weight: float | null }   // null = bodyweight, never 
 bodyWeightLog [{ id: uuid, date: ISO string, weight }]
 ```
 
-`duration` (seconds) is present only when the session timer was on. A weigh-in links to its session by exact `date` string equality (`body_weight_log.date === workouts.date`) — there is no FK; Phase 1 of the roadmap replaces this with a real `workout_id`.
+`duration` (seconds) is present only when the session timer was on. A weigh-in links to its session by exact `date` string equality (`body_weight_log.date === workouts.date`) — the client still relies on this in `updateWorkout`/`deleteWorkout`. A real `body_weight_log.workout_id` FK is prepared (migration `0001`, not yet applied; the app doesn't read/write it yet). `deleteWorkout` now removes the paired finish-time weigh-in (local + server) so it isn't orphaned — matched by date, which the FK cascade will also enforce once `0001` is live.
 
 **A set's `weight` is nullable.** Exercises in `BODYWEIGHT_OPTIONAL` (currently the `CORE` group) can be logged with reps alone, storing `weight: null` — bodyweight, which is distinct from a real 0. Anything reading `weight` must handle it: use `?? 0` for arithmetic (`volumeOf` already relies on `|| 0`), `?? ''` to keep an input controlled, and `!= null` before treating it as a number. `parseFloat('')` is `NaN`, so blank input is normalised to `null` at both write sites — `addSet` and `updateSetValue`.
 

@@ -3096,9 +3096,26 @@ const GymTrackerApp = () => {
   // subset always routes to the right row.
   const deleteWorkout = async (id: string) => {
     const removed = workouts.find(w => w.id === id);
+    // The finish-time weigh-in shares the workout's exact date string; remove it too
+    // so deleting a workout doesn't strand an orphan in the body-weight chart. The
+    // 0001 FK cascade enforces this server-side once applied — this keeps local state
+    // correct now, and works before the migration lands. (A standalone quick-log has
+    // its own timestamp, so it won't collide with the workout's date.)
+    const pairedBW = removed ? bodyWeightLog.find(e => e.date === removed.date) : undefined;
     setWorkouts(w => w.filter(x => x.id !== id));   // optimistic
+    if (pairedBW) setBodyWeightLog(log => log.filter(e => e.id !== pairedBW.id));
     const { error } = await supabase.from('workouts').delete().eq('id', id);
-    if (error) { console.error('Delete workout failed', error); if (removed) setWorkouts(prev => [...prev, removed]); flash("Couldn't delete — you may be offline. The workout is still saved."); }
+    if (error) {
+      console.error('Delete workout failed', error);
+      if (removed)  setWorkouts(prev => [...prev, removed]);
+      if (pairedBW) setBodyWeightLog(prev => [...prev, pairedBW]);
+      flash("Couldn't delete — you may be offline. The workout is still saved.");
+      return;
+    }
+    if (pairedBW) {
+      const { error: e2 } = await supabase.from('body_weight_log').delete().eq('id', pairedBW.id);
+      if (e2) console.error('Delete paired weigh-in failed', e2);   // cascade will also cover it once 0001 is live
+    }
   };
 
   const updateWorkout = async (id: string, updated: any) => {
