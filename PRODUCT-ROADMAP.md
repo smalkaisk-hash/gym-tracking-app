@@ -147,9 +147,11 @@ most conflicts stop existing.
   email + password, so this lint is live, not moot. **Dashboard toggle — you must flip it**
   (Auth → Providers → Email → "Leaked password protection"); the MCP doesn't expose it.
   See <https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection>.
-- 🔲 **Health-data floor:** body weight is health data. Point-in-time recovery / backups,
-  auth rate limiting, and a real account-deletion (GDPR) path raise the compliance floor.
-  The deletion path wants an edge function with the service role (needs deploy access).
+- **Health-data floor:** body weight is health data.
+  - ✅ **Account deletion (GDPR)** — done: a `delete_account()` SECURITY DEFINER function
+    (scoped to `auth.uid()`, cascades wipe the user's rows) + a two-step confirm in
+    Settings calling it via RPC. Captured as migration `0002`; verify it's applied on prod.
+  - 🔲 Point-in-time recovery / backups and auth rate limiting still raise the floor.
 
 ---
 

@@ -15,6 +15,7 @@ by hand. Run each un-applied file's SQL in the **Supabase SQL editor** (or via
 | --- | --- |
 | `0000_baseline.sql` | ✅ already applied (this is the original hand-run schema — do **not** re-run) |
 | `0001_add_workout_id_fk_to_body_weight_log.sql` | ⏳ **not yet applied — run this** |
+| `0002_add_delete_account_function.sql` | ⏳ **verify applied** — the in-app "Delete account" button calls `delete_account()`; if the RPC errors with "function does not exist", run this |
 
 ### To apply 0001
 

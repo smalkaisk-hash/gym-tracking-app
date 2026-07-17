@@ -14,8 +14,9 @@
 --     moving `date` to timestamptz later no longer risks the correlation.
 --   • `exercises` is JSONB — a workout is one document (nested sets[] with a
 --     nullable weight = bodyweight). The app never queries inside it server-side.
---     Exercise identity is still the name string; giving exercises stable ids is
---     the open Phase 1 item (see PRODUCT-ROADMAP.md).
+--     Each logged exercise carries a stable `exerciseId` (a slug) inside the JSONB;
+--     that, not the display name, is the app-side identity (see PRODUCT-ROADMAP.md
+--     Phase 1). The DB shape is unchanged — the id rides inside the document.
 --   • user_id defaults to auth.uid() so inserts don't need to send it; RLS still
 --     enforces it via WITH CHECK.
 
@@ -68,3 +69,23 @@ create policy "own body_weight_log" on public.body_weight_log
 drop policy if exists "own settings" on public.settings;
 create policy "own settings" on public.settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ── Self-service account deletion ─────────────────────────────────────────────
+-- The browser client holds only the anon key, which can't touch auth.users. This
+-- SECURITY DEFINER function runs as its owner and deletes the *calling* user
+-- (auth.uid() — never an arbitrary id), and the on-delete-cascade FKs above then
+-- wipe that user's workouts, weigh-ins and settings. Executable only by a signed-
+-- in (authenticated) user, on their own account.
+create or replace function public.delete_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke all     on function public.delete_account() from anon, public;
+grant  execute on function public.delete_account() to authenticated;
