@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-FitPulse — a personal gym tracking app (React + TypeScript + Vite + Tailwind). Per the README, it's a for-fun personal project, not a product. It is client-only: no backend, no API, no auth, no router.
+FitPulse — a personal gym tracking app (React + TypeScript + Vite + Tailwind). Per the README, it's a for-fun personal project, not a product. It has a Supabase (Postgres) backend with email + password auth — open signup, forgot-password reset, and change-password in Settings — and every table is RLS-scoped to `auth.uid()`. There is still no client-side router: the auth screens (`LoginScreen`, `ResetPasswordScreen`, config/loader) are pre-render gates in `GymTrackerApp`, and in-app navigation is the `currentScreen` string. The server is the source of truth; localStorage is an offline read cache and the one-time migration source.
 
 ## Commands
 
@@ -26,29 +26,38 @@ In file order: constants → `useTheme` → `SetRow` → `ExerciseCard` → `Wor
 
 **All state lives in `GymTrackerApp` and flows down as props.** No context, no reducer, no state library. Child components take `({ ... }: any)` — prop types are deliberately untyped throughout, and `strict` is off in tsconfig. Don't add types piecemeal to one component and leave the rest; either the user wants a typing pass or they don't.
 
-**Persistence is localStorage, four keys.** The first three each have their own write-back `useEffect`:
+**Persistence is Supabase (source of truth) with localStorage as an offline read cache.** Three Postgres tables — `workouts`, `body_weight_log`, `settings` (schema in [schema.sql](schema.sql)) — each RLS-scoped to `auth.uid()`. State keeps the app's original camelCase shapes; rows are snake_case, mapped at the boundary in [src/supabase.ts](src/supabase.ts). Writes are optimistic: mutate state → a write-back `useEffect` persists to localStorage → the same handler awaits the Supabase call.
+
+localStorage holds these keys (each of the first four has its own write-back `useEffect`):
 
 | Constant | Key | Holds |
 | --- | --- | --- |
 | `STORAGE_KEY` | `gym-workouts` | the workouts array |
 | `BW_LOG_KEY` | `gym-bw-log` | body weight log |
 | `GOAL_KEY` | `gym-weekly-goal` | weekly workout goal (int) |
+| `PREFS_KEY` | `gym-prefs` | user prefs blob |
+| `ACTIVE_KEY` | `gym-active-session` | in-progress workout, so a refresh can't lose it |
 | `THEME_KEY` | `gym-theme` | `light` / `dark`, only once the user picks a side |
+| (direct) | `gym-theme-vars` | resolved palette for both themes, stamped by [index.html](index.html) before first paint |
 
-A single mount effect loads the first three, and back-fills `bodyWeightLog` from existing workouts' `bodyWeight` when `gym-bw-log` is absent (migration for data written before the log existed). Be careful with effect order here: the write effects also fire on mount with empty initial state, and it's only safe because the load effect reads synchronously first. An early return or reorder in the load effect can wipe stored data.
+On mount: a load effect paints the cache synchronously; then, once a Supabase session appears, a **hydrate** effect fetches server rows and *replaces* state (`setWorkouts(rows.map(rowToWorkout))`). First login on an account with no server data runs a one-time localStorage → Supabase migration. Be careful with effect order: the write effects also fire on mount with empty initial state, and it's only safe because the load effect reads synchronously first. An early return or reorder in the load effect can wipe stored data.
+
+> **⚠️ Known gap — silent offline data loss (see [PRODUCT-ROADMAP.md](PRODUCT-ROADMAP.md), Phase 0).** Failed writes only `console.error`; hydrate *replaces* state rather than merging, so a row logged while offline (never reaching the server) is dropped on the next reload after a successful hydrate. There is no outbox/retry. This is the first thing to fix before real users.
 
 **Data shapes** (implicit — there are no interfaces):
 
 ```
-workout       { type, bodyWeight, exercises[], date: ISO string, notes }
-exercise      { name, sets[], notes }
+workout       { id: uuid, type, bodyWeight, exercises[], date: ISO string, notes, duration? }
+exercise      { name, sets[], notes }               // name is the identity — see "Never rename"
 set           { reps: int, weight: float | null }   // null = bodyweight, never 0
-bodyWeightLog [{ date: ISO string, weight }]
+bodyWeightLog [{ id: uuid, date: ISO string, weight }]
 ```
+
+`duration` (seconds) is present only when the session timer was on. A weigh-in links to its session by exact `date` string equality (`body_weight_log.date === workouts.date`) — there is no FK; Phase 1 of the roadmap replaces this with a real `workout_id`.
 
 **A set's `weight` is nullable.** Exercises in `BODYWEIGHT_OPTIONAL` (currently the `CORE` group) can be logged with reps alone, storing `weight: null` — bodyweight, which is distinct from a real 0. Anything reading `weight` must handle it: use `?? 0` for arithmetic (`volumeOf` already relies on `|| 0`), `?? ''` to keep an input controlled, and `!= null` before treating it as a number. `parseFloat('')` is `NaN`, so blank input is normalised to `null` at both write sites — `addSet` and `updateSetValue`.
 
-**Array index is workout identity** — there are no IDs. `deleteWorkout(i)` and `updateWorkout(i, ...)` index straight into the `workouts` array. `HistoryScreen` displays workouts sorted newest-first, so it tags each with `originalIndex` before sorting and passes *that* back to the mutators. Any new list view that reorders or filters must do the same, or it will edit the wrong workout.
+**Workout identity is the row `id` (uuid).** `deleteWorkout(id)` and `updateWorkout(id, ...)` key by uuid — the Supabase row id, back-filled with `crypto.randomUUID()` for cache entries that predate ids and for optimistic temp rows before the insert returns. `HistoryScreen` resolves `workouts[originalIndex].id` after sorting/filtering and passes the id back, so a reordered subset still routes to the right row. (Exercise identity, by contrast, is still the *name string* — see the "Never rename" convention below; that's the model weakness Phase 1 of [PRODUCT-ROADMAP.md](PRODUCT-ROADMAP.md) addresses.)
 
 ## Conventions
 
