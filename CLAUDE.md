@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 FitPulse — a personal gym tracking app (React + TypeScript + Vite + Tailwind). Per the README, it's a for-fun personal project, not a product. It has a Supabase (Postgres) backend with email + password auth — open signup, forgot-password reset, and change-password in Settings (which requires the current password — see below) — and every table is RLS-scoped to `auth.uid()`. There is still no client-side router: the auth screens (`LoginScreen`, `ResetPasswordScreen`, `OnboardingScreen`, config/loader) are pre-render gates in `GymTrackerApp`, and in-app navigation is the `currentScreen` string. The server is the source of truth; localStorage is an offline read cache and the one-time migration source.
 
-One-time Supabase dashboard setup (auth redirect URLs, email-confirmation choice, templates) is documented in [SUPABASE-SETUP.md](SUPABASE-SETUP.md); branded copies of the confirm-signup and reset-password email templates live in [email-templates/](email-templates/). Neither is wired into the build — they're paste-into-the-dashboard references.
+One-time Supabase dashboard setup (auth redirect URLs, email-confirmation choice, email-template copy) is documented in [SUPABASE-SETUP.md](SUPABASE-SETUP.md). The email templates are edited directly in the dashboard — nothing template-related is wired into the build.
 
 ## Commands
 

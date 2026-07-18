@@ -81,9 +81,8 @@ Security–scoped to `auth.uid()` (see [src/supabase.ts](src/supabase.ts) and
 ### One-time Supabase dashboard setup
 
 The auth flows need a little dashboard configuration (redirect URLs, the email-confirmation
-choice, optional branded email templates). It's a one-time walkthrough in
-[SUPABASE-SETUP.md](SUPABASE-SETUP.md); the branded email templates live in
-[email-templates/](email-templates/) as paste-into-the-dashboard references.
+choice, optional email-template copy). It's a one-time walkthrough in
+[SUPABASE-SETUP.md](SUPABASE-SETUP.md).
 
 ## Commands
 
