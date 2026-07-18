@@ -2091,7 +2091,7 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
         <div className={`${card} p-4 mb-3`}>
           <h3 className={`${label} mb-4`}>Muscle group balance</h3>
           <MuscleGroupDonut
-            workouts={filterByDate(workouts)}
+            workouts={windowedWorkouts}
             theme={theme}
             prefs={prefs}
             metric={muscleMetric}
