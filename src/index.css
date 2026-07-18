@@ -122,6 +122,42 @@
   .animate-fade-rise {
     animation: fade-rise 0.6s ease-out both;
   }
+
+  /* Horizontal drift for the liquid-fill wave surface (the goal tile). One
+     wavelength is 60 user units, so the wave path is drawn wider than the
+     viewBox and translated by -60 to loop seamlessly. The global reduced-motion
+     rule below freezes it, leaving a still fill. */
+  @keyframes wave-x {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-60px); }
+  }
+  .animate-wave      { animation: wave-x 2.8s linear infinite; }
+  .animate-wave-slow { animation: wave-x 4.6s linear infinite; }
+
+  /* Carbonation for the "Bubbles" goal fill — a bubble rises through the liquid
+     body and fades out near the surface. Per-bubble delay/duration is set inline. */
+  @keyframes bubble-rise {
+    0%   { transform: translateY(0);      opacity: 0; }
+    15%  { opacity: 0.55; }
+    85%  { opacity: 0.5; }
+    100% { transform: translateY(-100px); opacity: 0; }
+  }
+  .animate-bubble { animation: bubble-rise 3.4s ease-in infinite; }
+
+  /* Soft breathing pulse for the "Glow" goal fill. Scale only, so the element's
+     own opacity is untouched. */
+  @keyframes glow-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+  }
+  .animate-glow { animation: glow-pulse 3.2s ease-in-out infinite; }
+
+  /* Each "Mosaic" tile pops in from small. Only `from` is set, so the tile settles
+     at its own resting opacity rather than being forced opaque. */
+  @keyframes tile-pop {
+    from { opacity: 0; transform: scale(0.4); }
+  }
+  .animate-tile { animation: tile-pop 0.4s ease-out both; }
 }
 
 * {

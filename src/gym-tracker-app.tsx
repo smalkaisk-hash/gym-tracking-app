@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound, CloudOff } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, ChevronRight, ChevronDown, ChevronUp, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound, CloudOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW, bwToRow } from './supabase';
 
@@ -16,7 +16,7 @@ import customImg from '../Assets/pexels-koolshooters-8544616.jpg';
 // CONSTANTS & HELPERS (top of file)
 //   • Exercise catalogue ........ CORE, CARDIO, EXERCISES, ALL_GROUPS
 //   • Exercise identity ......... slug, idForName, exerciseIdOf, EXERCISE_ID_OVERRIDES
-//   • Muscle grouping ........... groupForExercise, EXERCISE_GROUP_BY_ID
+//   • Muscle grouping ........... groupForExercise, GROUP_TO_MUSCLE, MUSCLE_BY_ID
 //   • Storage keys .............. STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, THEME_KEY
 //   • Prefs schema .............. DEFAULT_PREFS, Prefs
 //   • Design tokens ............. card, input, btnPrimary/Secondary/Danger, label, readout
@@ -24,7 +24,7 @@ import customImg from '../Assets/pexels-koolshooters-8544616.jpg';
 //   • Units ..................... LB_PER_KG, KG_PER_LB
 //
 // HOOKS & UI PRIMITIVES
-//   • useTheme .................. resolves light/dark/system → tokens
+//   • useTheme .................. resolves light/dark → tokens
 //   • Toggle .................... shared switch
 //
 // SCREENS / COMPONENTS (in file order)
@@ -261,13 +261,6 @@ const ALL_GROUPS: ExerciseGroup[] = [
   CARDIO,
 ];
 
-// Stored workouts keep only an exercise name, so to tally by muscle we need the
-// reverse of the catalogue: name → group. Built once at load. Names are unique
-// across ALL_GROUPS (they're React keys too), so there are no collisions.
-const EXERCISE_GROUP_INDEX: Record<string, string> = Object.fromEntries(
-  ALL_GROUPS.flatMap(g => g.items.map(name => [name, g.group]))
-);
-
 // A free-text exercise the user typed isn't in the catalogue — it lands here.
 const OTHER_GROUP = 'Other';
 
@@ -296,17 +289,85 @@ const idForName = (name: string) => EXERCISE_ID_OVERRIDES[name] || slug(name) ||
 // rows written before ids existed (the same value the write path would have stored).
 const exerciseIdOf = (ex: any) => ex.exerciseId ?? idForName(ex.name);
 
-// Catalogue lookups keyed by stable id.
-const EXERCISE_GROUP_BY_ID: Record<string, string> = Object.fromEntries(
-  ALL_GROUPS.flatMap(g => g.items.map(name => [idForName(name), g.group]))
-);
+// Catalogue name lookup keyed by stable id (for display of legacy id-only reads).
 const EXERCISE_NAME_BY_ID: Record<string, string> = Object.fromEntries(
   ALL_GROUPS.flatMap(g => g.items.map(name => [idForName(name), name]))
 );
 
-// Muscle group for a logged exercise: by id, then legacy name, then Other.
+// ── Per-muscle taxonomy for the balance views (decoupled from the picker) ─────
+// The catalogue `group` is the picker's structure — day-oriented buckets, some
+// compound ('Lats & Deadlifts'). The Muscle-group-balance donut and the Progress
+// "all exercises" list want the single primary mover of each lift, at real-muscle
+// granularity (front/side/rear delt split, lats vs upper-back vs traps vs lower
+// back, ab/adductors, obliques…), grounded in the standard ExRx muscle taxonomy.
+// So they read this parallel map, never the picker group. Each picker group has a
+// DEFAULT muscle (its dominant mover); every exercise whose prime mover differs is
+// listed in the overrides below. Primary-mover only — assisting muscles aren't
+// counted (a bench press is Chest, not also front delts / triceps). Editing this
+// never touches the picker. Full slice set: Chest, Front/Side/Rear Delts, Triceps,
+// Biceps, Forearms, Lats, Upper Back, Traps, Lower Back, Abs, Obliques, Quads,
+// Hamstrings, Glutes, Calves, Adductors, Abductors, Cardio.
+const GROUP_TO_MUSCLE: Record<string, string> = {
+  'Chest': 'Chest',
+  'Shoulders': 'Front Delts',            // presses/front raises; laterals → Side Delts (below)
+  'Triceps': 'Triceps',
+  'Lats & Deadlifts': 'Lats',            // pulldowns/pull-ups; floor deadlifts → Lower Back (below)
+  'Rows': 'Upper Back',                  // horizontal rows = rhomboids / mid-traps
+  'Rear Delts & Traps': 'Rear Delts',    // shrugs / upright rows / high pull → Traps (below)
+  'Biceps': 'Biceps',                    // wrist/forearm work → Forearms (below)
+  'Quads': 'Quads',
+  'Hamstrings & Glutes': 'Hamstrings',   // glute-dominant work → Glutes (below)
+  'Lunges & Split Squats': 'Quads',
+  'Calves & Hips': 'Calves',             // ab/adduction accessories → Abductors/Adductors (below)
+  'Abs & Core': 'Abs',                   // rotation / lateral flexion → Obliques (below)
+  'Cardio': 'Cardio',
+};
+
+// Exercises whose primary mover isn't their catalogue group's default (above).
+const MUSCLE_OVERRIDES_BY_NAME: Record<string, string> = {
+  // Shoulders — the lateral-raise family isolates the side (lateral) deltoid
+  'Lateral Raises': 'Side Delts', 'Cable Lateral Raise': 'Side Delts',
+  'Machine Lateral Raise': 'Side Delts', 'Leaning Lateral Raise': 'Side Delts',
+  // Pull day — shrugs, upright rows and high pulls are trapezius-dominant
+  'Shrugs': 'Traps', 'Barbell Shrugs': 'Traps', 'Dumbbell Shrugs': 'Traps',
+  'Trap Bar Shrugs': 'Traps', 'Cable Shrugs': 'Traps',
+  'Upright Row': 'Traps', 'Cable Upright Row': 'Traps', 'High Pull': 'Traps',
+  // Floor deadlifts load the spinal erectors; the pure hip-hinges live in legs
+  'Deadlift': 'Lower Back', 'Trap Bar Deadlift': 'Lower Back', 'Deficit Deadlift': 'Lower Back',
+  'Snatch Grip Deadlift': 'Lower Back', 'Rack Pull': 'Lower Back', 'Block Pull': 'Lower Back',
+  'Back Extension': 'Lower Back',
+  // Wrist/forearm work catalogued at the tail of the Biceps list
+  'Reverse Curl': 'Forearms', 'Zottman Curl': 'Forearms', 'Wrist Curl': 'Forearms', 'Reverse Wrist Curl': 'Forearms',
+  // Glute-dominant bridges, thrusts, swings and pulls (grouped with the hamstrings)
+  'Hip Thrust': 'Glutes', 'Barbell Hip Thrust': 'Glutes', 'Single Leg Hip Thrust': 'Glutes',
+  'Machine Hip Thrust': 'Glutes', 'Glute Bridge': 'Glutes', 'Frog Pump': 'Glutes',
+  'Glute Kickback': 'Glutes', 'Cable Pull Through': 'Glutes', 'Kettlebell Swing': 'Glutes',
+  'Sumo Deadlift': 'Glutes', 'Reverse Hyperextension': 'Glutes',
+  // Calves & Hips — split the hip accessories out of the calf default
+  'Hip Adduction': 'Adductors',
+  'Hip Abduction': 'Abductors', 'Cable Hip Abduction': 'Abductors',
+  'Clamshell': 'Abductors', 'Monster Walk': 'Abductors',
+  // Core — rotation, anti-rotation and lateral flexion work the obliques
+  'Side Plank': 'Obliques', 'Bicycle Crunch': 'Obliques', 'Russian Twist': 'Obliques',
+  'Woodchopper': 'Obliques', 'Landmine Twist': 'Obliques', 'Side Bend': 'Obliques',
+  'Pallof Press': 'Obliques', 'Suitcase Carry': 'Obliques', 'Hanging Windshield Wiper': 'Obliques',
+};
+
+// The primary muscle for a catalogue name (override first, else the group default).
+const muscleForCatalogueName = (name: string, group: string) =>
+  MUSCLE_OVERRIDES_BY_NAME[name] ?? GROUP_TO_MUSCLE[group] ?? group;
+
+// id → muscle and name → muscle, built once for logged-id and legacy-name reads.
+const MUSCLE_BY_ID: Record<string, string> = Object.fromEntries(
+  ALL_GROUPS.flatMap(g => g.items.map(name => [idForName(name), muscleForCatalogueName(name, g.group)]))
+);
+const MUSCLE_BY_NAME: Record<string, string> = Object.fromEntries(
+  ALL_GROUPS.flatMap(g => g.items.map(name => [name, muscleForCatalogueName(name, g.group)]))
+);
+
+// Muscle for a logged exercise: by id, then legacy name, then Other (free-text).
 const groupForExercise = (ex: any) =>
-  EXERCISE_GROUP_BY_ID[exerciseIdOf(ex)] ?? EXERCISE_GROUP_INDEX[ex.name] ?? OTHER_GROUP;
+  MUSCLE_BY_ID[exerciseIdOf(ex)] ?? MUSCLE_BY_NAME[ex.name] ?? OTHER_GROUP;
 
 // The muscle-group breakdown, by whichever metric the user picked, sorted
 // most-trained first. Pure and takes an already date-filtered list, so both the
@@ -352,6 +413,10 @@ const THEME_KEY   = 'gym-theme';
 // breaks data saved by an older build.
 type Units = 'kg' | 'lb';
 type Gender = 'male' | 'female' | 'other' | '';   // '' = not set / left blank
+// How the home "This week" tile draws goal progress. All four ship; the user picks
+// one in Settings (see WeekGoalTile). New value is safe on old caches — prefs merges
+// over DEFAULT_PREFS, so a missing field falls back to 'liquid'.
+type GoalCardStyle = 'liquid' | 'bubbles' | 'mosaic' | 'glow' | 'ring' | 'plates' | 'liquidNumber';
 type Prefs = {
   name: string;                  // display name, '' = not set (collected at onboarding)
   gender: Gender;                // '' = not set / left blank
@@ -365,12 +430,13 @@ type Prefs = {
   restTimer: boolean;            // start a rest countdown after each set
   restSeconds: number;           // its default duration
   workoutTimer: boolean;         // time the whole session and log its duration
+  goalCardStyle: GoalCardStyle;  // how the "This week" tile visualises goal progress
 };
 const DEFAULT_PREFS: Prefs = {
   name: '', gender: '',
   units: 'kg', hidden: [], muscleMetric: 'sets', bwChart: 'line',
   accent: 'blue', base: 'graphite', semantics: 'plates', restTimer: true, restSeconds: 90,
-  workoutTimer: true,
+  workoutTimer: true, goalCardStyle: 'liquid',
 };
 
 // Hideable stat widgets, keyed per screen so the same kind can be hidden on one
@@ -398,14 +464,264 @@ const btnDanger    = 'bg-crit hover:brightness-110 text-white font-semibold roun
 // Small uppercase caption. Used for every label in the app.
 const label = 'font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-muted';
 
-// A number that is meant to be read at arm's length, mid-set.
-const readout = 'font-display font-bold tabular-nums leading-none text-ink';
+// A number that is meant to be read at arm's length, mid-set. Colour is left to
+// inherit (body is `text-ink`) so a call-site `text-accent`/`text-good` override
+// actually wins — Tailwind emits `.text-ink` after them alphabetically, so baking
+// `text-ink` in here would silently beat every same-property override layered on it.
+const readout = 'font-display font-bold tabular-nums leading-none';
 
-const TYPE_CONFIG: Record<string, { label: string; Icon: any; color: string; iconBg: string }> = {
-  push:   { label: 'Push Day', Icon: Maximize2, color: 'text-accent', iconBg: 'bg-accent/10' },
-  pull:   { label: 'Pull Day', Icon: Anchor,    color: 'text-accent', iconBg: 'bg-accent/10' },
-  legs:   { label: 'Leg Day',  Icon: Mountain,  color: 'text-accent', iconBg: 'bg-accent/10' },
-  custom: { label: 'Custom',   Icon: Layers,    color: 'text-muted',  iconBg: 'bg-raised'    },
+// ─── Weekly-goal progress tile ──────────────────────────────────────────────────
+// The home "This week" stat tile can visualise goal progress four ways, chosen in
+// Settings (prefs.goalCardStyle). Colour is driven by `tone` (a text-colour class:
+// text-accent, or text-good once the goal is met) and SVG fills use currentColor, so
+// themes and the met-state green come from the token system — no raw hex here. Each
+// fill animates up from empty on mount; the global reduced-motion rule in index.css
+// collapses every animation/transition to a static fill.
+
+// Two sine waves drifting horizontally, translated up to the fill level. Drawn from
+// x=-60 to 180 (wider than the 0..120 viewBox) so the -60 drift loops without a gap.
+const WAVE_FRONT = 'M-60,10 C-45,3 -30,17 0,10 C15,3 30,17 60,10 C75,3 90,17 120,10 C135,3 150,17 180,10 L180,120 L-60,120 Z';
+const WAVE_BACK  = 'M-60,10 C-45,17 -30,3 0,10 C15,17 30,3 60,10 C75,17 90,3 120,10 C135,17 150,3 180,10 L180,120 L-60,120 Z';
+// The front wave's top edge only (no fill), used as a bright waterline crest.
+const WAVE_CREST = 'M-60,10 C-45,3 -30,17 0,10 C15,3 30,17 60,10 C75,3 90,17 120,10 C135,3 150,17 180,10';
+const RISE = 'cubic-bezier(.22,1,.36,1)';
+const clampPct = (n: number) => Math.max(0, Math.min(100, n));
+
+// Carbonation for the Bubbles fill: fixed x/size/timing so the render is stable.
+const BUBBLES = [
+  { x: 24, r: 2.4, delay: 0,   dur: 3.2 },
+  { x: 52, r: 1.7, delay: 1.1, dur: 3.9 },
+  { x: 78, r: 2.9, delay: 0.5, dur: 3.0 },
+  { x: 98, r: 1.5, delay: 1.9, dur: 4.3 },
+  { x: 40, r: 1.5, delay: 2.4, dur: 3.6 },
+  { x: 66, r: 2.1, delay: 1.5, dur: 3.4 },
+];
+
+// True after the first paint. Fills read `empty` until then, real value after, so the
+// CSS transition animates them up from empty on mount.
+const useMounted = () => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return mounted;
+};
+
+// Liquid wave filling the whole tile from the bottom to `pct`. A gentle wash (low
+// opacity) so the number stays legible on top even when submerged. With `bubbles`, it
+// grows a brighter crest line and carbonation rising through the body (the Bubbles style).
+const LiquidWave = ({ pct, tone, bubbles }: any) => {
+  const shown = useMounted() ? 100 - clampPct(pct) : 100;
+  return (
+    <div aria-hidden className={`absolute inset-0 pointer-events-none ${tone}`}>
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 120 100" preserveAspectRatio="none">
+        <g style={{ transform: `translateY(${shown}px)`, transition: `transform 900ms ${RISE}` }}>
+          <g className="animate-wave-slow">
+            <path d={WAVE_BACK} fill="currentColor" fillOpacity="0.14" />
+          </g>
+          <g className="animate-wave">
+            <path d={WAVE_FRONT} fill="currentColor" fillOpacity="0.26" />
+            {bubbles && (
+              <path d={WAVE_CREST} fill="none" stroke="currentColor" strokeOpacity="0.55" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+            )}
+          </g>
+          {bubbles && BUBBLES.map((b, i) => (
+            <circle
+              key={i} cx={b.x} cy="110" r={b.r} fill="currentColor" fillOpacity="0.5" className="animate-bubble"
+              style={{ animationDelay: `${b.delay}s`, animationDuration: `${b.dur}s` }}
+            />
+          ))}
+        </g>
+      </svg>
+    </div>
+  );
+};
+
+// A grid of small tiles behind the number that light up bottom-up until the filled
+// share matches `pct`. Nods to the "small blocks" idea; kept a translucent wash so the
+// number reads over it.
+const MOSAIC_COLS = 6;
+const MOSAIC_ROWS = 5;
+const MosaicFill = ({ pct, tone }: any) => {
+  const total = MOSAIC_COLS * MOSAIC_ROWS;
+  const filled = useMounted() ? Math.round((clampPct(pct) / 100) * total) : 0;
+  return (
+    <div
+      aria-hidden
+      className={`absolute inset-2 grid gap-1 ${tone}`}
+      style={{ gridTemplateColumns: `repeat(${MOSAIC_COLS}, 1fr)`, gridTemplateRows: `repeat(${MOSAIC_ROWS}, 1fr)` }}
+    >
+      {Array.from({ length: total }).map((_, idx) => {
+        const r = Math.floor(idx / MOSAIC_COLS);
+        const c = idx % MOSAIC_COLS;
+        const bottomUp = (MOSAIC_ROWS - 1 - r) * MOSAIC_COLS + c;   // 0 = bottom-left, fills first
+        const on = bottomUp < filled;
+        return (
+          <div
+            key={idx}
+            className={`rounded-[2px] ${on ? 'bg-current animate-tile' : 'bg-line'}`}
+            style={{ opacity: on ? 0.32 : 0.12, animationDelay: on ? `${bottomUp * 26}ms` : undefined }}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+// A soft radial glow behind the number whose radius grows with `pct` and gently
+// pulses. Ambient rather than a hard fill line; turns green with the met state.
+const RadialGlow = ({ pct, tone }: any) => {
+  const size = useMounted() ? 32 + clampPct(pct) * 0.9 : 32;   // % of tile width, up to ~122%
+  return (
+    <div aria-hidden className={`absolute inset-0 flex items-center justify-center overflow-hidden ${tone}`}>
+      <div
+        className="aspect-square rounded-full animate-glow"
+        style={{
+          width: `${size}%`,
+          background: 'radial-gradient(circle, currentColor 0%, transparent 68%)',
+          opacity: 0.4,
+          transition: `width 900ms ${RISE}`,
+        }}
+      />
+    </div>
+  );
+};
+
+// A ring that sweeps from the top (12 o'clock) to `pct`. Sits behind the number.
+const ProgressRing = ({ pct, tone }: any) => {
+  const p = Math.max(0, Math.min(100, pct));
+  const offset = useMounted() ? 100 - p : 100;   // pre-paint: empty ring, then sweep to p
+  return (
+    <svg aria-hidden viewBox="0 0 100 100" className="h-[104px] w-[104px] -rotate-90 sm:h-[120px] sm:w-[120px]">
+      <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="7" className="text-line" />
+      <circle
+        cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="round"
+        pathLength={100} strokeDasharray="100" strokeDashoffset={offset} className={tone}
+        style={{ transition: `stroke-dashoffset 900ms ${RISE}` }}
+      />
+    </svg>
+  );
+};
+
+// A row of pips = the weekly goal; the first `count` are filled. Big goals (> 8) would
+// overflow the small tile, so they fall back to a slim bar with the same fill logic.
+const PlatePips = ({ count, goal, tone }: any) => {
+  if (goal > 8) {
+    const p = goal > 0 ? Math.min(count / goal, 1) * 100 : 0;
+    return (
+      <div className="h-2 w-full max-w-[92px] overflow-hidden rounded-chip bg-line">
+        <div className={`h-full rounded-chip bg-current ${tone}`} style={{ width: `${p}%`, transition: `width 800ms ${RISE}` }} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex max-w-full flex-wrap items-center justify-center gap-1">
+      {Array.from({ length: Math.max(goal, 0) }).map((_, i) => (
+        <span
+          key={i}
+          className={`h-2.5 w-2.5 rounded-full ${i < count ? `bg-current ${tone} animate-fade-rise` : 'bg-line'}`}
+          style={i < count ? { animationDelay: `${i * 80}ms` } : undefined}
+        />
+      ))}
+    </div>
+  );
+};
+
+// The unique one: the number glyph itself is the vessel. The numerals clip a rising
+// liquid; the un-filled part shows as a faint outline of the same digits.
+const LiquidNumber = ({ value, pct, tone }: any) => {
+  const shown = useMounted() ? 100 - Math.max(0, Math.min(100, pct)) : 100;
+  const digitProps = {
+    x: 60, y: 62, textAnchor: 'middle' as const, fontSize: 72, fontWeight: 700,
+    fontFamily: "'Barlow Condensed', sans-serif",
+  };
+  return (
+    <svg aria-hidden viewBox="0 0 120 80" className={`h-[76px] w-auto sm:h-[92px] ${tone}`}>
+      <defs>
+        <clipPath id="liquidNumberClip">
+          <text {...digitProps}>{value}</text>
+        </clipPath>
+      </defs>
+      {/* the empty vessel */}
+      <text {...digitProps} fill="currentColor" fillOpacity="0.16">{value}</text>
+      {/* the liquid, clipped to the digits */}
+      <g clipPath="url(#liquidNumberClip)">
+        <g style={{ transform: `translateY(${shown}px)`, transition: `transform 1000ms ${RISE}` }}>
+          <g className="animate-wave">
+            <path d={WAVE_FRONT} fill="currentColor" fillOpacity="0.92" />
+          </g>
+        </g>
+      </g>
+    </svg>
+  );
+};
+
+// The tile itself. Kept the same size as its Streak/Sessions siblings so the row stays
+// aligned; only the interior changes per style.
+const WeekGoalTile = ({ style, pct, met, count, goal }: any) => {
+  const tone = met ? 'text-good' : 'text-accent';
+  const rounded = Math.round(pct);
+  const wrap = `${card} p-3 sm:p-4 relative overflow-hidden flex flex-col items-center text-center min-h-[132px] sm:min-h-[148px]`;
+
+  if (style === 'ring') {
+    return (
+      <div className={wrap}>
+        <span className={`${label} text-[10px] relative z-10`}>This week</span>
+        <div className="relative my-auto flex items-center justify-center">
+          <ProgressRing pct={pct} tone={tone} />
+          <span className={`${readout} absolute text-4xl leading-none sm:text-5xl ${tone}`}>{rounded}</span>
+        </div>
+        <p className="relative z-10 text-[11px] text-faint">% of goal</p>
+      </div>
+    );
+  }
+
+  if (style === 'plates') {
+    const filled = Math.min(count, goal);
+    return (
+      <div className={wrap}>
+        <span className={`${label} text-[10px]`}>This week</span>
+        <p className={`${readout} my-2 text-4xl leading-none sm:text-5xl ${tone}`}>
+          {filled}<span className="text-2xl text-faint">/{goal}</span>
+        </p>
+        <PlatePips count={filled} goal={goal} tone={tone} />
+        <p className="mt-auto pt-2 text-[11px] text-faint">sessions done</p>
+      </div>
+    );
+  }
+
+  if (style === 'liquidNumber') {
+    return (
+      <div className={wrap}>
+        <span className={`${label} text-[10px]`}>This week</span>
+        <div className="my-auto"><LiquidNumber value={rounded} pct={pct} tone={tone} /></div>
+        <p className="text-[11px] text-faint">% of goal</p>
+      </div>
+    );
+  }
+
+  // Background-fill styles (liquid / bubbles / mosaic / glow): an animated fill behind
+  // the number. `liquid` is the default fall-through.
+  const fill =
+    style === 'mosaic' ? <MosaicFill pct={pct} tone={tone} /> :
+    style === 'glow'   ? <RadialGlow pct={pct} tone={tone} /> :
+    <LiquidWave pct={pct} tone={tone} bubbles={style === 'bubbles'} />;
+  return (
+    <div className={wrap}>
+      {fill}
+      <span className={`${label} text-[10px] relative z-10`}>This week</span>
+      <p className={`${readout} my-auto text-5xl leading-none sm:text-6xl relative z-10 ${tone}`}>{rounded}</p>
+      <p className="relative z-10 text-[11px] text-faint">% of goal</p>
+    </div>
+  );
+};
+
+const TYPE_CONFIG: Record<string, { label: string }> = {
+  push:   { label: 'Push Day' },
+  pull:   { label: 'Pull Day' },
+  legs:   { label: 'Leg Day' },
+  custom: { label: 'Custom' },
 };
 
 // ── Import sanitisation ──────────────────────────────────────────────────────
@@ -475,35 +791,31 @@ const SESSION_TYPES: SessionType[] = [
 ];
 
 // Recharts takes colour strings, not classes, so the tokens are mirrored here.
-// `cat` is the donut's categorical sequence — assigned to slices in fixed order,
-// never cycled. The order is CVD-safe by adjacency (validated with the dataviz
-// palette checker in both themes: worst adjacent ΔE 9.1 light / 8.4 dark). Slot 0
-// is the app's accent blue, so the chart still reads as FitPulse. Don't reorder
-// or hand-edit these without re-running the validator.
+// `accent` is the single-series line colour and `series2` the bodyweight amber; the
+// rest are neutrals. The muscle-focus donut no longer keeps a fixed categorical
+// palette here — it derives its slice colours from the accent (muscleDonutPalette).
 const CHART = {
-  dark:  { accent: '#2E7BD6', series2: '#E0A63C', grid: '#26313A', axis: '#5A6874', surface: '#151C21', line: '#26313A', muted: '#8B9AA7',
-           cat: ['#3987e5', '#008300', '#d55181', '#c98500', '#199e70', '#d95926', '#9085e9'] },
-  light: { accent: '#1B5FBF', series2: '#A9741F', grid: '#D7DEE3', axis: '#93A1AC', surface: '#FFFFFF', line: '#D7DEE3', muted: '#5A6874',
-           cat: ['#2a78d6', '#008300', '#e87ba4', '#eda100', '#1baf7a', '#eb6834', '#4a3aa7'] },
+  dark:  { accent: '#2E7BD6', series2: '#E0A63C', grid: '#26313A', axis: '#5A6874', surface: '#151C21', line: '#26313A', muted: '#8B9AA7' },
+  light: { accent: '#1B5FBF', series2: '#A9741F', grid: '#D7DEE3', axis: '#93A1AC', surface: '#FFFFFF', line: '#D7DEE3', muted: '#5A6874' },
 };
 
 // Accent presets. Each is a light+dark pair; the token strings are RGB triplets
 // (dropped straight into `--accent` / `--accent-ink`), `hex` mirrors the accent for
 // charts. Red and green are excluded so an accent never impersonates crit/good.
 // Every ink/accent contrast was checked against WCAG (worst ink-on-accent 4.23,
-// worst accent-on-surface 4.03) — don't hand-edit without re-checking. The donut's
-// categorical palette is deliberately NOT re-tinted (it's CVD-validated as a set);
-// only the single-series exercise line follows the accent.
+// worst accent-on-surface 4.03) — don't hand-edit without re-checking. Both the
+// single-series exercise line and the muscle-focus donut follow the accent (the
+// donut derives an analogous+shade fan from it — see muscleDonutPalette).
 const WHITE_INK = '255 255 255';
 const DARK_INK  = '13 18 21';
 type AccentTone = { accent: string; ink: string; hex: string };
 const ACCENTS: Record<string, { label: string; light: AccentTone; dark: AccentTone }> = {
   blue:    { label: 'Blue',    light: { accent: '27 95 191',  ink: WHITE_INK, hex: '#1B5FBF' }, dark: { accent: '46 123 214',  ink: WHITE_INK, hex: '#2E7BD6' } },
-  indigo:  { label: 'Indigo',  light: { accent: '67 56 202',  ink: WHITE_INK, hex: '#4338CA' }, dark: { accent: '129 140 248', ink: DARK_INK,  hex: '#818CF8' } },
-  violet:  { label: 'Violet',  light: { accent: '109 40 217', ink: WHITE_INK, hex: '#6D28D9' }, dark: { accent: '139 92 246',  ink: WHITE_INK, hex: '#8B5CF6' } },
-  magenta: { label: 'Magenta', light: { accent: '162 28 175', ink: WHITE_INK, hex: '#A21CAF' }, dark: { accent: '210 75 224',  ink: DARK_INK,  hex: '#D24BE0' } },
-  pink:    { label: 'Pink',    light: { accent: '190 24 93',  ink: WHITE_INK, hex: '#BE185D' }, dark: { accent: '244 114 182', ink: DARK_INK,  hex: '#F472B6' } },
-  rose:    { label: 'Rose',    light: { accent: '190 18 60',  ink: WHITE_INK, hex: '#BE123C' }, dark: { accent: '251 113 133', ink: DARK_INK,  hex: '#FB7185' } },
+  indigo:  { label: 'Indigo',  light: { accent: '79 70 229',  ink: WHITE_INK, hex: '#4F46E5' }, dark: { accent: '129 140 248', ink: DARK_INK,  hex: '#818CF8' } },
+  violet:  { label: 'Violet',  light: { accent: '124 58 237', ink: WHITE_INK, hex: '#7C3AED' }, dark: { accent: '139 92 246',  ink: WHITE_INK, hex: '#8B5CF6' } },
+  magenta: { label: 'Magenta', light: { accent: '190 29 176', ink: WHITE_INK, hex: '#BE1DB0' }, dark: { accent: '210 75 224',  ink: DARK_INK,  hex: '#D24BE0' } },
+  pink:    { label: 'Pink',    light: { accent: '219 39 119', ink: WHITE_INK, hex: '#DB2777' }, dark: { accent: '244 114 182', ink: DARK_INK,  hex: '#F472B6' } },
+  rose:    { label: 'Rose',    light: { accent: '225 29 72',  ink: WHITE_INK, hex: '#E11D48' }, dark: { accent: '251 113 133', ink: DARK_INK,  hex: '#FB7185' } },
   orange:  { label: 'Orange',  light: { accent: '194 65 12',  ink: WHITE_INK, hex: '#C2410C' }, dark: { accent: '251 146 60',  ink: DARK_INK,  hex: '#FB923C' } },
   amber:   { label: 'Amber',   light: { accent: '180 83 9',   ink: WHITE_INK, hex: '#B45309' }, dark: { accent: '245 158 11',  ink: DARK_INK,  hex: '#F59E0B' } },
   red:     { label: 'Red',     light: { accent: '220 38 38',  ink: WHITE_INK, hex: '#DC2626' }, dark: { accent: '248 113 113', ink: DARK_INK,  hex: '#F87171' } },
@@ -514,7 +826,7 @@ const ACCENTS: Record<string, { label: string; light: AccentTone; dark: AccentTo
   teal:    { label: 'Teal',    light: { accent: '15 118 110', ink: WHITE_INK, hex: '#0F766E' }, dark: { accent: '20 184 166',  ink: DARK_INK,  hex: '#14B8A6' } },
   cyan:    { label: 'Cyan',    light: { accent: '14 116 144', ink: WHITE_INK, hex: '#0E7490' }, dark: { accent: '34 211 238',  ink: DARK_INK,  hex: '#22D3EE' } },
   sky:     { label: 'Sky',     light: { accent: '3 105 161',  ink: WHITE_INK, hex: '#0369A1' }, dark: { accent: '56 189 248',  ink: DARK_INK,  hex: '#38BDF8' } },
-  purple:  { label: 'Purple',  light: { accent: '126 34 206', ink: WHITE_INK, hex: '#7E22CE' }, dark: { accent: '168 85 247',  ink: WHITE_INK, hex: '#A855F7' } },
+  purple:  { label: 'Purple',  light: { accent: '147 51 234', ink: WHITE_INK, hex: '#9333EA' }, dark: { accent: '168 85 247',  ink: WHITE_INK, hex: '#A855F7' } },
   slate:   { label: 'Slate',   light: { accent: '71 85 105',  ink: WHITE_INK, hex: '#475569' }, dark: { accent: '124 139 160', ink: DARK_INK,  hex: '#7C8BA0' } },
 };
 const ACCENT_IDS = Object.keys(ACCENTS);
@@ -572,13 +884,74 @@ const resolveThemeVars = (accent: string, base: string, semantics: string, theme
 };
 
 // Recharts reads hex, not CSS tokens — so charts get their neutrals from the base
-// and their accent from the accent choice. series2 (bodyweight amber) and the
-// donut's CVD-validated `cat` palette are deliberately fixed.
+// and their accent from the accent choice. series2 (bodyweight amber) is fixed; the
+// muscle-focus donut derives its slice palette from the accent (see below).
 const resolveChart = (prefs: { accent: string; base: string } | undefined, theme: Theme) => {
   const fixed = CHART[theme];
   if (!prefs) return fixed;
   const b = (BASES[prefs.base] ?? BASES.graphite)[theme].chart;
   return { ...fixed, accent: accentTone(prefs.accent, theme).hex, surface: b.surface, line: b.line, grid: b.grid, axis: b.axis, muted: b.muted };
+};
+
+// ─── Accent-derived donut palette ───────────────────────────────────────────────
+// The muscle-focus donut tints its slices from an analogous+shade fan around the
+// chosen accent — a coordinated family of the accent, never the raw accent itself.
+// Small self-contained HSL helpers (no colour library in the app). h in degrees,
+// s/l in %.
+const hexToHsl = (hex: string): { h: number; s: number; l: number } => {
+  const m = hex.replace('#', '');
+  const r = parseInt(m.slice(0, 2), 16) / 255;
+  const g = parseInt(m.slice(2, 4), 16) / 255;
+  const b = parseInt(m.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r)      h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else                h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const l = (max + min) / 2;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  return { h, s: s * 100, l: l * 100 };
+};
+
+const hslToHex = (h: number, s: number, l: number): string => {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if      (h < 60)  { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else              { r = c; b = x; }
+  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+};
+
+// Build `count` slice colours from the accent hex. Anchored on the accent's own HSL,
+// so the fan inherits the theme-correct lightness zone (light accents are deep, dark
+// accents lifted). Each slice steps hue OUTWARD within a bounded arc (never offset 0,
+// so no slice equals the raw accent) and shifts lightness, so even near-hue slices
+// separate by brightness — the part that keeps it readable under colour blindness.
+const DONUT_HUE_OFFSETS  = [-14, 18, -34, 40, -54, 58, -74, 78];
+const DONUT_LIGHT_DELTAS = [8, -8, 14, -14, 4, -4, 18, -18];
+const muscleDonutPalette = (accentHex: string, theme: Theme, count: number): string[] => {
+  const { h, s, l } = hexToHsl(accentHex);
+  const sat  = Math.max(45, Math.min(85, s));       // floor so desaturated accents (Slate) stay distinguishable
+  const loL  = theme === 'dark' ? 40 : 32;          // clamp band: not too dark on graphite…
+  const hiL  = theme === 'dark' ? 72 : 62;          // …not too pale on white
+  return Array.from({ length: count }, (_, i) => {
+    const hue = h + DONUT_HUE_OFFSETS[i % DONUT_HUE_OFFSETS.length];
+    const lig = Math.max(loL, Math.min(hiL, l + DONUT_LIGHT_DELTAS[i % DONUT_LIGHT_DELTAS.length]));
+    return hslToHex(hue, sat, lig);
+  });
 };
 
 const volumeOf = (exercise: any) =>
@@ -656,44 +1029,31 @@ const metricValueLabel = (metric: MuscleMetric, value: number, units: Units): st
 const startOfDayMs = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
 // ─── useTheme ──────────────────────────────────────────────────────────────────
-// Follows the OS until the user picks a side, then stays pinned to their choice.
+// Light or dark, pinned to the user's choice. Defaults to the OS preference on
+// first load (no stored side yet), then stays on whatever they pick.
 type Theme = 'light' | 'dark';
 
 const prefersDark = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-// 'system' follows the OS; 'light'/'dark' pin a side. Persisted in THEME_KEY —
-// index.html only stamps light/dark before paint, so 'system' (or absent) means
-// follow the media query, matching this hook.
-type ThemeMode = 'light' | 'dark' | 'system';
+// 'light'/'dark' pin a side, persisted in THEME_KEY. index.html stamps the saved
+// side before paint; an absent/legacy value falls back to the OS preference here.
+type ThemeMode = 'light' | 'dark';
 
 const useTheme = () => {
   const [mode, setModeState] = useState<ThemeMode>(() => {
     try {
       const saved = localStorage.getItem(THEME_KEY);
-      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+      if (saved === 'light' || saved === 'dark') return saved;
     } catch { /* ignore */ }
-    return 'system';
+    return prefersDark() ? 'dark' : 'light';
   });
 
-  const [systemTheme, setSystemTheme] = useState<Theme>(() => prefersDark() ? 'dark' : 'light');
+  const theme: Theme = mode;
 
-  // Track the OS preference always; it's only *used* while mode is 'system', but
-  // keeping it live means switching back to System resolves instantly.
+  // Pin the resolved side on the root so the in-app choice governs the tokens.
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const sync = () => setSystemTheme(mq.matches ? 'dark' : 'light');
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
-  }, []);
-
-  const theme: Theme = mode === 'system' ? systemTheme : mode;
-
-  // Pin the resolved side on the root while explicit; drop the stamp in System so
-  // the CSS media query governs again.
-  useEffect(() => {
-    if (mode === 'system') delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = mode;
+    document.documentElement.dataset.theme = mode;
   }, [mode]);
 
   const setMode = (m: ThemeMode) => {
@@ -981,7 +1341,6 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
   const fmtClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   const cfg                = TYPE_CONFIG[workoutType] ?? TYPE_CONFIG.custom;
-  const WorkoutIcon        = cfg.Icon;
   const availableGroups: ExerciseGroup[] = workoutType === 'custom' ? ALL_GROUPS : EXERCISES[workoutType] ?? [];
 
   // The one input does triple duty: it matches muscle groups ("chest" opens the
@@ -1018,10 +1377,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
       <div className={`${card} p-4 mb-3`}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
-              <WorkoutIcon size={16} className={cfg.color} />
-              <h2 className={label}>{cfg.label}</h2>
-            </div>
+            <h2 className={label}>{cfg.label}</h2>
             <div className="flex items-baseline gap-1.5 mt-2">
               <span className={`${readout} text-4xl`}>{fmtVolume(totalVolume, units)}</span>
               <span className="text-xs font-semibold text-muted">moved</span>
@@ -1059,7 +1415,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             <p className={label}>Body wt</p>
             {/* A skipped weigh-in is null — show a dash, not "Bodyweight" (which
                 reads as a real reading and only makes sense for a set's load). */}
-            <p className={`${readout} text-xl mt-1`}>
+            <p className={`${readout} text-xl mt-1 ${workout.bodyWeight == null ? '' : 'text-accent'}`}>
               {workout.bodyWeight == null ? '—' : fmtWeight(workout.bodyWeight, units)}
             </p>
             <p className="text-xs text-faint mt-2 tabular-nums">{totalSets} set{totalSets !== 1 ? 's' : ''}</p>
@@ -1067,17 +1423,26 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
         </div>
       </div>
 
-      <button
-        onClick={() => setShowExerciseList(v => !v)}
-        className={`${btnSecondary} w-full p-3.5 mb-3 flex items-center justify-center gap-2`}
-      >
-        <Plus size={18} className={showExerciseList ? 'rotate-45 transition-transform' : 'transition-transform'} />
-        {showExerciseList ? 'Close' : 'Add Exercise'}
-      </button>
+      <div className="flex flex-col gap-3">
+        {workout.exercises.map((exercise: any, i: number) => (
+          <ExerciseCard
+            key={i}
+            exercise={exercise}
+            exerciseIndex={i}
+            exerciseCount={workout.exercises.length}
+            addSet={addSetAndRest}
+            removeSet={removeSet}
+            removeExercise={removeExercise}
+            moveExercise={moveExercise}
+            updateExerciseNotes={updateExerciseNotes}
+            units={units}
+          />
+        ))}
+      </div>
 
       {/* Exercise picker */}
       {showExerciseList && (
-        <div className={`${card} mb-3 overflow-hidden`}>
+        <div className={`${card} mt-3 overflow-hidden`}>
           {/* Search is pinned — only the catalogue below it scrolls. */}
           <div className="flex gap-2 p-3">
             <input
@@ -1146,22 +1511,13 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
         </div>
       )}
 
-      <div className="flex flex-col gap-3">
-        {workout.exercises.map((exercise: any, i: number) => (
-          <ExerciseCard
-            key={i}
-            exercise={exercise}
-            exerciseIndex={i}
-            exerciseCount={workout.exercises.length}
-            addSet={addSetAndRest}
-            removeSet={removeSet}
-            removeExercise={removeExercise}
-            moveExercise={moveExercise}
-            updateExerciseNotes={updateExerciseNotes}
-            units={units}
-          />
-        ))}
-      </div>
+      <button
+        onClick={() => setShowExerciseList(v => !v)}
+        className={`${btnSecondary} w-full p-3.5 mt-3 flex items-center justify-center gap-2`}
+      >
+        <Plus size={18} className={showExerciseList ? 'rotate-45 transition-transform' : 'transition-transform'} />
+        {showExerciseList ? 'Close' : 'Add Exercise'}
+      </button>
 
       <div className={`${card} p-4 mt-3`}>
         <label htmlFor="workout-notes" className={`${label} block mb-2`}>Session Notes</label>
@@ -1534,7 +1890,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <div className="text-right">
-                        <p className={`${readout} text-lg`}>{fmtVolume(sessionVolume, units)}</p>
+                        <p className={`${readout} text-lg text-accent`}>{fmtVolume(sessionVolume, units)}</p>
                         <p className="text-xs text-faint mt-0.5 tabular-nums">
                           {workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''}
                         </p>
@@ -1622,8 +1978,10 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
 
                     <div className="p-4 flex flex-col gap-5">
                       {displayWorkout.exercises.map((exercise: any, exIdx: number) => {
+                        // A bodyweight set is null, not 0 — coalesce so Math.max
+                        // isn't skewed and the top-set highlight tracks real load.
                         const topWeight = exercise.sets.length
-                          ? Math.max(...exercise.sets.map((s: any) => s.weight))
+                          ? Math.max(...exercise.sets.map((s: any) => s.weight ?? 0))
                           : null;
 
                         return (
@@ -1770,12 +2128,15 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
        { group: OTHER_GROUP, value: foldedVal, pct: total ? (foldedVal / total) * 100 : 0, count: leftover.length }]
     : data;
 
-  // The catch-all recedes to the muted neutral; real groups take catalogue hues in
-  // fixed order. The legend renders these same slices, in the same order, so a
-  // group's ring colour and its legend dot can never drift apart — and the folded
-  // arc is always spelled out in the legend rather than left as a mystery wedge.
+  // The catch-all recedes to the muted neutral; real groups take an accent-derived
+  // fan (analogous hue + shade) in slice order. The legend renders these same slices,
+  // in the same order, so a group's ring colour and its legend dot can never drift
+  // apart — and the folded arc is always spelled out in the legend rather than left
+  // as a mystery wedge.
+  const realCount = slices.filter(d => d.group !== OTHER_GROUP).length;
+  const palette   = muscleDonutPalette(c.accent, theme, Math.max(realCount, 1));
   const colorAt = (group: string, i: number) =>
-    group === OTHER_GROUP ? c.muted : c.cat[i % c.cat.length];
+    group === OTHER_GROUP ? c.muted : palette[i % palette.length];
 
   // Volume zeroes bodyweight/cardio (no external load moved), so those groups drop
   // off the ring entirely. Count how many vanished against the set tally so the
@@ -1852,7 +2213,8 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
 // ─── BodyWeightTrend ─────────────────────────────────────────────────────────────
 // The body-weight chart, as a line or bars per the user's choice. Shared by the
 // Home sparkline (compact) and the Progress card. `data` arrives already in display
-// units, so this only draws. Bars reuse the line's colour — no palette change.
+// units, so this only draws. The series follows the user's chosen accent (like the
+// Progress exercise line), so body weight reads in the app's colour everywhere.
 const BodyWeightTrend = ({ data, theme, prefs, chartType = 'line', units = 'kg', height = 220, compact = false }: any) => {
   const c = resolveChart(prefs, theme);
   const font = { fontSize: compact ? '10px' : '11px', fontFamily: 'Barlow, system-ui, sans-serif' };
@@ -1875,12 +2237,12 @@ const BodyWeightTrend = ({ data, theme, prefs, chartType = 'line', units = 'kg',
       {chartType === 'bar' ? (
         <BarChart data={data} margin={margin}>
           {chrome}
-          <Bar dataKey="bodyWeight" fill={c.series2} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="bodyWeight" fill={c.accent} radius={[2, 2, 0, 0]} isAnimationActive={false} />
         </BarChart>
       ) : (
         <LineChart data={data} margin={margin}>
           {chrome}
-          <Line type="monotone" dataKey="bodyWeight" stroke={c.series2} strokeWidth={2} dot={{ fill: c.series2, r: compact ? 2.5 : 3, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+          <Line type="monotone" dataKey="bodyWeight" stroke={c.accent} strokeWidth={2} dot={{ fill: c.accent, r: compact ? 2.5 : 3, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
         </LineChart>
       )}
     </ResponsiveContainer>
@@ -1978,7 +2340,7 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
     for (const id of Object.keys(lastName)) {
       const data = seriesForExercise(id);
       if (data.length === 0) continue;
-      const g    = EXERCISE_GROUP_BY_ID[id] ?? EXERCISE_GROUP_INDEX[lastName[id]] ?? OTHER_GROUP;
+      const g    = MUSCLE_BY_ID[id] ?? MUSCLE_BY_NAME[lastName[id]] ?? OTHER_GROUP;
       const name = EXERCISE_NAME_BY_ID[id] ?? lastName[id];
       (groups[g] ?? (groups[g] = [])).push({ id, name, data });
     }
@@ -2162,7 +2524,7 @@ const Segmented = ({ value, onChange, options }: any) => (
   </div>
 );
 
-const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'system', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, onDeleteAccount, userEmail, onDone }: any) => {
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'dark', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, onDeleteAccount, userEmail, onDone }: any) => {
   const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
   const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -2245,9 +2607,8 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm text-ink">Theme</span>
           <Segmented value={themeMode} onChange={(v: ThemeMode) => setThemeMode && setThemeMode(v)}
-            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'System' }]} />
+            options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
         </div>
-        <p className="text-xs text-faint mt-2">System follows your device’s light/dark setting.</p>
 
         <div className="h-px bg-line my-4" />
         <h3 className={`${label} mb-3`}>Accent colour</h3>
@@ -2290,14 +2651,6 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             );
           })}
         </div>
-
-        <div className="h-px bg-line my-4" />
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm text-ink">Status colours</span>
-          <Segmented value={prefs.semantics} onChange={(v: string) => updatePrefs({ semantics: v })}
-            options={SEM_IDS.map(id => ({ value: id, label: SEMANTICS[id].label }))} />
-        </div>
-        <p className="text-xs text-faint mt-2">The success / warning / danger colours. “Colour-blind” keeps success and danger distinct for red-green colour blindness.</p>
       </div>
 
       {/* Units */}
@@ -2323,6 +2676,30 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
           <span className="text-sm text-ink">Body-weight chart</span>
           <Segmented value={prefs.bwChart} onChange={(v: 'line' | 'bar') => updatePrefs({ bwChart: v })}
             options={[{ value: 'line', label: 'Line' }, { value: 'bar', label: 'Bar' }]} />
+        </div>
+        <div className="py-1">
+          <span className="text-sm text-ink">Weekly-goal tile</span>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {[
+              { value: 'liquid',       label: 'Liquid' },
+              { value: 'bubbles',      label: 'Bubbles' },
+              { value: 'mosaic',       label: 'Mosaic' },
+              { value: 'glow',         label: 'Glow' },
+              { value: 'ring',         label: 'Ring' },
+              { value: 'plates',       label: 'Plates' },
+              { value: 'liquidNumber', label: 'Digits' },
+            ].map(o => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => updatePrefs({ goalCardStyle: o.value as GoalCardStyle })}
+                aria-pressed={prefs.goalCardStyle === o.value}
+                className={`px-3 py-1.5 rounded-ctl border text-sm font-semibold transition-colors ${prefs.goalCardStyle === o.value ? 'bg-accent border-accent text-accent-ink' : 'bg-raised border-line text-muted hover:text-ink'}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
         {prefs.muscleMetric === 'volume' && (
           <p className="text-xs text-faint mt-2">Volume is reps × weight, so bodyweight and cardio work counts as zero.</p>
@@ -2998,6 +3375,13 @@ const GymTrackerApp = () => {
   };
   const markSync = (rows: any[], id: string, state: 'pending' | 'error' | null) =>
     rows.map(r => (r.id === id ? { ...r, _sync: state ?? undefined } : r));
+  // Whether body_weight_log has the `workout_id` column (migration 0001). Detected
+  // from a hydrate fetch (below) rather than assumed, so this build is correct both
+  // before and after 0001 is applied: while absent, weigh-ins insert without the
+  // column (no 400) and fall back to the date-string pairing; once the column
+  // appears, finish-time weigh-ins link to their workout and the ON DELETE CASCADE
+  // becomes the real relation. Once true it stays true — a column can't disappear.
+  const bwHasWorkoutId = useRef(false);
   // recovery — the user arrived via a password-reset link. That link returns a
   // real session, so without this flag the gate below would drop them straight
   // into the app; instead it pins them on ResetPasswordScreen until they set a
@@ -3040,10 +3424,15 @@ const GymTrackerApp = () => {
       const storedGoal = localStorage.getItem(GOAL_KEY);
       const storedPrefs = localStorage.getItem(PREFS_KEY);
 
+      // A `_sync: 'pending'` in the cache is stale — its in-flight write died with
+      // the previous page load, so it will never resolve on its own. Demote it to
+      // 'error' so it surfaces in the unsynced banner and re-uploads on the next
+      // successful write/hydrate, instead of sitting invisible forever.
+      const normalizeSync = (r: any) => (r._sync === 'pending' ? { ...r, _sync: 'error' } : r);
       // Back-fill a local id on cache entries that predate row ids, so the cached
       // list is editable until hydrate swaps in the server rows.
       const loadedWorkouts = (stored ? JSON.parse(stored) : [])
-        .map((w: any) => ({ ...w, id: w.id ?? crypto.randomUUID() }));
+        .map((w: any) => normalizeSync({ ...w, id: w.id ?? crypto.randomUUID() }));
       if (loadedWorkouts.length > 0) setWorkouts(loadedWorkouts);
       // Clamp on read: a goal saved before the 7/week cap would otherwise survive it.
       if (storedGoal) {
@@ -3061,12 +3450,14 @@ const GymTrackerApp = () => {
       // so keys/edits work until hydrate replaces them with the server rows. Carry
       // `_sync` through: a weigh-in that failed to sync must keep its mark across a
       // reload, or the hydrate merge would treat it as synced and drop it.
-      const withId = (e: any) => ({ id: e.id ?? crypto.randomUUID(), date: e.date, weight: e.weight, ...(e._sync ? { _sync: e._sync } : {}) });
+      const withId = (e: any) => normalizeSync({ id: e.id ?? crypto.randomUUID(), date: e.date, weight: e.weight, ...(e._sync ? { _sync: e._sync } : {}), ...(e.workoutId != null ? { workoutId: e.workoutId } : {}) });
       if (storedBW) {
         setBodyWeightLog(JSON.parse(storedBW).map(withId));
       } else if (loadedWorkouts.length > 0) {
-        // Migrate existing workout body weights into the log
-        setBodyWeightLog(loadedWorkouts.map((w: any) => withId({ date: w.date, weight: w.bodyWeight })));
+        // Migrate existing workout body weights into the log — but only REAL
+        // weigh-ins. A skipped one is bodyWeight null, and toDisplayWeight(null) * 10
+        // coerces to 0, which would plot a phantom 0 kg point and drag the chart.
+        setBodyWeightLog(loadedWorkouts.filter((w: any) => w.bodyWeight != null).map((w: any) => withId({ date: w.date, weight: w.bodyWeight })));
       }
 
       // Resume an in-progress session if one was persisted (a refresh, phone lock,
@@ -3176,6 +3567,12 @@ const GymTrackerApp = () => {
         }
         if (cancelled) return;
 
+        // Feature-detect the workout_id column (migration 0001) from the fetched
+        // rows: PostgREST's select('*') returns the key even when null, so its
+        // presence on any row means the column is live. Latches on — this decides
+        // whether finishWorkout links new weigh-ins (see bwHasWorkoutId).
+        if (bwRows.some((r: any) => r && 'workout_id' in r)) bwHasWorkoutId.current = true;
+
         // Server is the source of truth, BUT a row that failed to sync (offline,
         // maintenance window) lives only in local state/cache with a `_sync` mark.
         // Merge rather than replace so hydrate can't silently drop it: prefer the
@@ -3187,8 +3584,15 @@ const GymTrackerApp = () => {
           const unsynced = prev.filter(r => r._sync);
           const byId = new Map(unsynced.map(r => [r.id, r]));
           const serverIds = new Set(serverRows.map(r => r.id));
+          const serverDates = new Set(serverRows.map(r => r.date));
           const merged  = serverRows.map(r => byId.get(r.id) ?? mapRow(r));
-          const orphans = unsynced.filter(r => !serverIds.has(r.id));
+          // An unsynced insert whose id never reached the server is re-appended so
+          // it isn't lost — UNLESS a server row already carries its exact date, which
+          // means the insert actually committed and we only lost the ack. Re-adding
+          // it then would duplicate the row, so drop the orphan and keep the server
+          // copy. (Session/weigh-in dates are ms-precision ISO strings, so a genuine
+          // offline insert on a new day won't false-match an existing server date.)
+          const orphans = unsynced.filter(r => !serverIds.has(r.id) && !serverDates.has(r.date));
           return [...merged, ...orphans];
         };
         if (migrated) {
@@ -3299,7 +3703,7 @@ const GymTrackerApp = () => {
     const load = fromInputWeight(weight, units);
     setCurrentWorkout((w: any) => {
       const exercises = w.exercises.map((ex: any, i: number) =>
-        i === exIdx ? { ...ex, sets: [...ex.sets, { reps: parseInt(reps), weight: load }] } : ex
+        i === exIdx ? { ...ex, sets: [...ex.sets, { reps: parseInt(reps, 10) || 0, weight: load }] } : ex
       );
       return { ...w, exercises };
     });
@@ -3366,8 +3770,13 @@ const GymTrackerApp = () => {
     if (error) { console.error('Save workout failed', error); setWorkouts(prev => markSync(prev, tempId, 'error')); }
     else setWorkouts(prev => prev.map(w => w.id === tempId ? rowToWorkout(data) : w));
     if (bwTempId) {
+      // Link the weigh-in to its workout by real FK when 0001 is live and the
+      // workout row saved (so we have its id); otherwise omit workout_id and rely
+      // on the date-string pairing as before. bwToRow only emits the column when
+      // workoutId is set, so a pre-0001 insert can't reference a missing column.
+      const workoutId = bwHasWorkoutId.current && !error && data ? data.id : undefined;
       const { data: bw, error: bwErr } = await supabase.from('body_weight_log')
-        .insert(bwToRow({ date: completed.date, weight: completed.bodyWeight })).select().single();
+        .insert(bwToRow({ date: completed.date, weight: completed.bodyWeight, workoutId })).select().single();
       if (bwErr) { console.error('Save weigh-in failed', bwErr); setBodyWeightLog(prev => markSync(prev, bwTempId, 'error')); }
       else setBodyWeightLog(prev => prev.map(e => e.id === bwTempId ? rowToBW(bw) : e));
     }
@@ -3408,23 +3817,39 @@ const GymTrackerApp = () => {
   // (null = no weigh-in) — delete, update, or insert as needed, in state and on
   // the server. This is the edit path (History changed a finish-time weight);
   // finishWorkout does its own optimistic/_sync insert for a brand-new session.
-  const reconcilePairedWeighIn = async (dateKey: string, weightKg: number | null) => {
+  // `workoutId` (the edited workout's id) links a newly-inserted weigh-in via FK
+  // when 0001 is live — passed through bwToRow, which drops it pre-0001.
+  const reconcilePairedWeighIn = async (dateKey: string, weightKg: number | null, workoutId?: string) => {
     const existing = pairedWeighIn(dateKey);
     if (weightKg == null) {
       if (existing) {
-        setBodyWeightLog(prev => prev.filter(e => e.id !== existing.id));
+        setBodyWeightLog(prev => prev.filter(e => e.id !== existing.id));   // optimistic
         const { error } = await supabase.from('body_weight_log').delete().eq('id', existing.id);
-        if (error) console.error('Delete weigh-in failed', error);
+        if (error) {
+          // Put it back so local matches the server (the row is still there) instead
+          // of silently dropping a weigh-in that reappears on the next hydrate.
+          console.error('Delete weigh-in failed', error);
+          setBodyWeightLog(prev => prev.some(e => e.id === existing.id) ? prev : [...prev, existing]);
+          flash("Couldn't update the weigh-in — you may be offline.");
+        }
       }
     } else if (existing) {
-      setBodyWeightLog(prev => prev.map(e => e.id === existing.id ? { ...e, weight: weightKg } : e));
+      // Mark 'error' on failure (as updateWorkout does) so hydrate's merge prefers
+      // this local edit over the stale server row rather than reverting it.
+      setBodyWeightLog(prev => prev.map(e => e.id === existing.id ? { ...e, weight: weightKg, _sync: 'pending' } : e));
       const { error } = await supabase.from('body_weight_log').update({ weight: weightKg }).eq('id', existing.id);
-      if (error) console.error('Update weigh-in failed', error);
+      setBodyWeightLog(prev => markSync(prev, existing.id, error ? 'error' : null));
+      if (error) { console.error('Update weigh-in failed', error); flash('Weigh-in saved on this device only — not synced yet.'); }
     } else {
+      // Optimistic insert under a temp id, mirroring finishWorkout — an offline add
+      // keeps its 'error' mark and survives hydrate instead of vanishing.
+      const link   = bwHasWorkoutId.current ? workoutId : undefined;
+      const tempId = crypto.randomUUID();
+      setBodyWeightLog(prev => [...prev, { id: tempId, date: dateKey, weight: weightKg, _sync: 'pending' }]);
       const { data, error } = await supabase.from('body_weight_log')
-        .insert(bwToRow({ date: dateKey, weight: weightKg })).select().single();
-      if (error) console.error('Add weigh-in failed', error);
-      else setBodyWeightLog(prev => [...prev, rowToBW(data)]);
+        .insert(bwToRow({ date: dateKey, weight: weightKg, workoutId: link })).select().single();
+      if (error) { console.error('Add weigh-in failed', error); setBodyWeightLog(prev => markSync(prev, tempId, 'error')); flash('Weigh-in saved on this device only — not synced yet.'); }
+      else setBodyWeightLog(prev => prev.map(e => e.id === tempId ? rowToBW(data) : e));
     }
   };
 
@@ -3449,7 +3874,13 @@ const GymTrackerApp = () => {
     }
     if (pairedBW) {
       const { error: e2 } = await supabase.from('body_weight_log').delete().eq('id', pairedBW.id);
-      if (e2) console.error('Delete paired weigh-in failed', e2);   // cascade will also cover it once 0001 is live
+      if (e2) {
+        // The workout is gone but its weigh-in delete bounced — the row still lives
+        // on the server and would silently reappear on the next hydrate. Put it back
+        // in local state so the two stay in step until the delete can be retried.
+        console.error('Delete paired weigh-in failed', e2);
+        setBodyWeightLog(prev => prev.some(e => e.id === pairedBW.id) ? prev : [...prev, pairedBW]);
+      }
     }
   };
 
@@ -3464,7 +3895,7 @@ const GymTrackerApp = () => {
     // Keep the body-weight log in step: the finish-time entry shares the workout's
     // date, so edit/clear it here too — otherwise the chart and readout keep the
     // old (or wrong) number the History edit was meant to fix.
-    await reconcilePairedWeighIn(updated.date, updated.bodyWeight);
+    await reconcilePairedWeighIn(updated.date, updated.bodyWeight, id);
   };
 
   // Remove a body-weight data point (a fat-fingered entry, say). Keyed by row uuid.
@@ -3532,10 +3963,17 @@ const GymTrackerApp = () => {
           const cleanBW = (Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : [])
             .map(cleanImportedBW).filter(Boolean);
 
-          // Replace the account's server data wholesale, then seed state from the
-          // rows we inserted (so every workout carries its new uuid).
-          await supabase.from('workouts').delete().eq('user_id', uid);
-          await supabase.from('body_weight_log').delete().eq('user_id', uid);
+          // Non-destructive replace: INSERT the new rows first, and only once every
+          // insert has succeeded delete the old ones. A failed import then leaves the
+          // account's existing data intact instead of wiping it between a delete and
+          // a throw. Capture the pre-existing ids up front so the final delete removes
+          // exactly the old set, not the rows we just added.
+          const [{ data: oldW }, { data: oldBW }] = await Promise.all([
+            supabase.from('workouts').select('id').eq('user_id', uid),
+            supabase.from('body_weight_log').select('id').eq('user_id', uid),
+          ]);
+          const oldWIds  = (oldW  ?? []).map((r: any) => r.id);
+          const oldBWIds = (oldBW ?? []).map((r: any) => r.id);
 
           let wRows: any[] = [];
           if (cleanWorkouts.length) {
@@ -3547,9 +3985,19 @@ const GymTrackerApp = () => {
           if (cleanBW.length) {
             const { data, error } = await supabase.from('body_weight_log')
               .insert(cleanBW.map(bwToRow)).select();
-            if (error) throw error;
+            if (error) {
+              // Roll back the workouts we just inserted so a half-done import doesn't
+              // leave new rows sitting duplicated alongside the still-present old set.
+              const newWIds = wRows.map((r: any) => r.id);
+              if (newWIds.length) await supabase.from('workouts').delete().in('id', newWIds);
+              throw error;
+            }
             bwRows = data ?? [];
           }
+
+          // Every insert landed — now it's safe to drop the old rows.
+          if (oldWIds.length)  await supabase.from('workouts').delete().in('id', oldWIds);
+          if (oldBWIds.length) await supabase.from('body_weight_log').delete().in('id', oldBWIds);
           const goal     = Number.isFinite(d.weeklyGoal) ? clampGoal(d.weeklyGoal) : GOAL_DEFAULT;
           const rawPrefs = d.prefs && typeof d.prefs === 'object' ? d.prefs : {};
           const prefsObj = {
@@ -3635,6 +4083,11 @@ const GymTrackerApp = () => {
   };
 
   // ── Derived stats ────────────────────────────────────────────────────────────
+  // A streak tolerates up to this many days between sessions (rest days). The SAME
+  // threshold gates both the gap from today and the gaps between sessions, so the
+  // head and body checks agree on what "still going" means (they used to differ —
+  // 1 day vs 2 — which let a streak read as alive while its head check killed it).
+  const STREAK_GAP_DAYS = 2;
   const getWorkoutStreak = () => {
     if (workouts.length === 0) return 0;
     const todayMs = startOfDayMs(new Date());
@@ -3644,23 +4097,25 @@ const GymTrackerApp = () => {
       workouts.map((w: any) => startOfDayMs(new Date(w.date)))
     )].sort((a, b) => b - a);
 
-    // Streak is 0 if most recent workout is more than 1 day ago
-    if (todayMs - uniqueDays[0] > dayMs) return 0;
+    // Broken if the most recent session is already beyond the rest-day tolerance.
+    if ((todayMs - uniqueDays[0]) / dayMs > STREAK_GAP_DAYS) return 0;
 
     let streak = 1;
     for (let i = 1; i < uniqueDays.length; i++) {
-      if ((uniqueDays[i - 1] - uniqueDays[i]) / dayMs <= 2) streak++;
+      if ((uniqueDays[i - 1] - uniqueDays[i]) / dayMs <= STREAK_GAP_DAYS) streak++;
       else break;
     }
     return streak;
   };
 
-  const getWeeklyGoalProgress = () => {
+  // Sessions logged in the trailing 7 days — the raw count (used by the plates tile)
+  // and the goal percentage (capped at 100, used by every other tile).
+  const weeklyCount = (() => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 7);
-    const count = workouts.filter((w: any) => new Date(w.date) >= cutoff).length;
-    return Math.min((count / weeklyGoal) * 100, 100);
-  };
+    return workouts.filter((w: any) => new Date(w.date) >= cutoff).length;
+  })();
+  const getWeeklyGoalProgress = () => Math.min((weeklyCount / weeklyGoal) * 100, 100);
 
   // The dashboard muscle-focus donut is scoped to the last 30 days — a rolling
   // "what have I been hitting lately" read, distinct from Progress's selectable
@@ -3671,9 +4126,16 @@ const GymTrackerApp = () => {
     return workouts.filter((w: any) => new Date(w.date) >= cutoff);
   })();
 
+  // The most recent session by actual date, not array position — every "latest"
+  // readout keys off this so an out-of-order workouts array (e.g. a re-appended
+  // orphan) can't mislabel "Last session"/"Last type".
+  const latestWorkout: any = workouts.length
+    ? workouts.reduce((a: any, b: any) => (new Date(b.date).getTime() >= new Date(a.date).getTime() ? b : a))
+    : null;
+
   const getDaysSinceLastWorkout = () => {
-    if (workouts.length === 0) return 'No workouts yet';
-    const lastDay  = startOfDayMs(new Date(workouts[workouts.length - 1].date));
+    if (!latestWorkout) return 'No workouts yet';
+    const lastDay  = startOfDayMs(new Date(latestWorkout.date));
     const todayDay = startOfDayMs(new Date());
     const diff     = Math.round((todayDay - lastDay) / 86400000);
     if (diff === 0) return 'Today';
@@ -3687,8 +4149,8 @@ const GymTrackerApp = () => {
     : [...bodyWeightLog].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight;
 
   const getLatestWorkoutType = () => {
-    if (workouts.length === 0) return '—';
-    const cfg = TYPE_CONFIG[workouts[workouts.length - 1].type];
+    if (!latestWorkout) return '—';
+    const cfg = TYPE_CONFIG[latestWorkout.type];
     return cfg?.label ?? '—';
   };
 
@@ -3699,7 +4161,6 @@ const GymTrackerApp = () => {
   }));
 
   const entryTypeCfg  = TYPE_CONFIG[selectedWorkoutType ?? 'custom'] ?? TYPE_CONFIG.custom;
-  const EntryTypeIcon = entryTypeCfg.Icon;
 
   const goalPct    = getWeeklyGoalProgress();
   const goalMet    = goalPct >= 100;
@@ -3799,26 +4260,19 @@ const GymTrackerApp = () => {
           {!prefs.hidden.includes('dash.stats') && (
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
-              { key: 'streak', caption: 'Streak',    value: streak,                  unit: streak === 1 ? 'day' : 'days', Icon: Flame },
-              { key: 'week',   caption: 'This week', value: `${Math.round(goalPct)}`, unit: '% of goal',                  Icon: Target },
-              { key: 'total',  caption: 'Sessions',  value: workouts.length,          unit: 'all time',                   Icon: Activity },
-            ].map(({ key, caption, value, unit, Icon }) => (
-              <div key={key} className={`${card} p-3 sm:p-4`}>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Icon size={13} className={key === 'streak' && streak > 0 ? 'text-good' : 'text-faint'} />
+              { key: 'streak', caption: 'Streak',   value: streak,          unit: streak === 1 ? 'day' : 'days' },
+              { key: 'week' },   // the goal tile is rendered by WeekGoalTile — it draws its own value/unit
+              { key: 'total',  caption: 'Sessions', value: workouts.length, unit: 'all time' },
+            ].map(({ key, caption, value, unit }) => (
+              key === 'week' ? (
+                <WeekGoalTile key="week" style={prefs.goalCardStyle} pct={goalPct} met={goalMet} count={weeklyCount} goal={weeklyGoal} />
+              ) : (
+                <div key={key} className={`${card} p-3 sm:p-4 flex flex-col items-center text-center min-h-[132px] sm:min-h-[148px]`}>
                   <span className={`${label} text-[10px]`}>{caption}</span>
+                  <p className={`${readout} text-5xl sm:text-6xl leading-none my-auto text-accent`}>{value}</p>
+                  <p className="text-[11px] text-faint">{unit}</p>
                 </div>
-                <p className={`${readout} text-3xl sm:text-4xl ${key === 'week' && goalMet ? 'text-good' : ''}`}>{value}</p>
-                <p className="text-[11px] text-faint mt-1">{unit}</p>
-                {key === 'week' && (
-                  <div className="w-full bg-raised rounded-chip h-1 mt-2.5 overflow-hidden">
-                    <div
-                      className={`h-1 rounded-chip transition-all ${goalMet ? 'bg-good' : 'bg-accent'}`}
-                      style={{ width: `${goalPct}%` }}
-                    />
-                  </div>
-                )}
-              </div>
+              )
             ))}
           </div>
           )}
@@ -3870,8 +4324,8 @@ const GymTrackerApp = () => {
             <div className="flex items-center justify-between gap-3 mb-3">
               <h3 className={label}>Body weight</h3>
               <div className="flex items-baseline gap-1">
-                <span className={`${readout} text-2xl`}>{latestBodyWeightKg == null ? '—' : trim1(toDisplayWeight(latestBodyWeightKg, units) as number)}</span>
-                {latestBodyWeightKg != null && <span className="text-[11px] font-semibold text-muted">{units}</span>}
+                <span className={`${readout} text-2xl ${latestBodyWeightKg == null ? '' : 'text-accent'}`}>{latestBodyWeightKg == null ? '—' : trim1(toDisplayWeight(latestBodyWeightKg, units) as number)}</span>
+                {latestBodyWeightKg != null && <span className="text-[11px] font-semibold text-accent/70">{units}</span>}
               </div>
             </div>
 
@@ -3980,14 +4434,9 @@ const GymTrackerApp = () => {
       {currentScreen === 'enterBodyWeight' && (
         <div className="max-w-md mx-auto px-4 py-10">
           <div className={`${card} p-6`}>
-            <div className="flex items-center gap-3 mb-6">
-              <div className={`w-10 h-10 rounded-ctl ${entryTypeCfg.iconBg} grid place-items-center`}>
-                <EntryTypeIcon size={20} className={entryTypeCfg.color} />
-              </div>
-              <div>
-                <h2 className="font-display text-xl font-bold uppercase tracking-wide text-ink leading-none">{entryTypeCfg.label}</h2>
-                <p className="text-xs text-faint mt-1.5">Weigh in, or skip to start</p>
-              </div>
+            <div className="mb-6">
+              <h2 className="font-display text-xl font-bold uppercase tracking-wide text-ink leading-none">{entryTypeCfg.label}</h2>
+              <p className="text-xs text-faint mt-1.5">Weigh in, or skip to start</p>
             </div>
 
             <label htmlFor="entry-bw" className={`${label} block mb-2`}>Body weight ({units}) — optional</label>
@@ -3997,7 +4446,7 @@ const GymTrackerApp = () => {
               value={bodyWeight}
               onChange={e => setBodyWeight(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && confirmBodyWeight()}
-              className={`${input} w-full font-display text-3xl font-bold tabular-nums text-center py-4`}
+              className={`${input} w-full font-display text-3xl font-bold tabular-nums text-center py-4 !text-accent`}
               placeholder={units === 'lb' ? '182' : '82.5'}
               autoFocus
             />

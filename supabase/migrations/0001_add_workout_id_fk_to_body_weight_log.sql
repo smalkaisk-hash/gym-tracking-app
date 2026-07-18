@@ -10,9 +10,12 @@
 -- Backfill validated against production data on 2026-07-17: of 4 weigh-ins, the 2
 -- finish-time ones link to their workouts and the 2 standalone quick-logs stay null.
 --
--- NOTE: the app does not yet WRITE workout_id (that wiring is a follow-up, gated on
--- this migration being live). Applying this migration is safe and non-breaking on
--- its own: the new column simply sits populated and unused until the app is wired.
+-- NOTE: the app is now wired to use workout_id — it feature-detects the column on
+-- hydrate and, once present, links finish-time weigh-ins to their workout and
+-- leans on this ON DELETE CASCADE. Until this migration is live the app detects the
+-- column's absence and inserts weigh-ins without it (falling back to the date-string
+-- pairing), so applying this migration is still safe and non-breaking — it simply
+-- flips the app onto the real FK the next time it hydrates. No app deploy required.
 
 alter table public.body_weight_log
   add column if not exists workout_id uuid references public.workouts(id) on delete cascade;

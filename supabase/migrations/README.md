@@ -14,7 +14,7 @@ by hand. Run each un-applied file's SQL in the **Supabase SQL editor** (or via
 | File | Status on prod (`dhxsamkaqszffajcwuzn`) |
 | --- | --- |
 | `0000_baseline.sql` | ✅ already applied (this is the original hand-run schema — do **not** re-run) |
-| `0001_add_workout_id_fk_to_body_weight_log.sql` | ⏳ **not yet applied — run this** |
+| `0001_add_workout_id_fk_to_body_weight_log.sql` | ✅ applied 2026-07-18 (FK `body_weight_log_workout_id_fkey` live, ON DELETE CASCADE; backfill verified 2 linked / 2 standalone) |
 | `0002_add_delete_account_function.sql` | ⏳ **verify applied** — the in-app "Delete account" button calls `delete_account()`; if the RPC errors with "function does not exist", run this |
 
 ### To apply 0001
@@ -28,9 +28,11 @@ by hand. Run each un-applied file's SQL in the **Supabase SQL editor** (or via
    from body_weight_log group by 1;
    ```
 
-It is additive and non-breaking: the app does not yet read or write `workout_id`, so
-nothing changes in the UI until the follow-up app wiring lands. Applying it early is
-safe and enables the `ON DELETE CASCADE` (a workout delete now also removes its
+It is additive and non-breaking. The app is already wired to use `workout_id`: it
+feature-detects the column on hydrate, inserting weigh-ins without it (date-string
+fallback) while it's absent and linking them via FK once it appears. So applying this
+migration needs **no app deploy** — the next hydrate flips the app onto the real FK
+and enables the `ON DELETE CASCADE` (a workout delete then also removes its
 finish-time weigh-in server-side).
 
 ## Fresh environment (staging branch, new project)

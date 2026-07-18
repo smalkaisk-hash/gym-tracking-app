@@ -38,10 +38,23 @@ export const workoutToRow = (w: any) => ({
   duration: w.duration ?? null,
 });
 
-export const rowToBW = (r: any) => ({ id: r.id, date: r.date, weight: r.weight });
+// `workout_id` (migration 0001) links a finish-time weigh-in to its workout; it's
+// carried through to state as camelCase `workoutId` when present. Absent on a
+// standalone quick-log, and absent entirely until 0001 is live — hence the guard.
+export const rowToBW = (r: any) => ({
+  id: r.id, date: r.date, weight: r.weight,
+  ...(r.workout_id != null ? { workoutId: r.workout_id } : {}),
+});
 
 // The write direction. `id`/`_sync` are client-only, so an entry maps to just the
 // real columns — the mirror of rowToBW, and the single place the body_weight_log
 // insert shape is defined (as workoutToRow is for workouts). Every insert of a
 // weigh-in goes through here, so a new column is added in one spot, not five.
-export const bwToRow = (e: any) => ({ date: e.date, weight: e.weight });
+// `workout_id` is emitted ONLY when the caller supplies a workoutId — a pre-0001
+// insert omits it so it can't reference a column that doesn't exist yet, and a
+// standalone quick-log omits it because it links to no workout.
+export const bwToRow = (e: any) => ({
+  date: e.date,
+  weight: e.weight,
+  ...(e.workoutId != null ? { workout_id: e.workoutId } : {}),
+});
