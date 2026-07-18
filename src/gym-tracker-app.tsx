@@ -473,9 +473,9 @@ const readout = 'font-display font-bold tabular-nums leading-none';
 // ─── Weekly-goal progress tile ──────────────────────────────────────────────────
 // The home "This week" stat tile can visualise goal progress four ways, chosen in
 // Settings (prefs.goalCardStyle). Colour is driven by `tone` (a text-colour class:
-// text-accent, or text-good once the goal is met) and SVG fills use currentColor, so
-// themes and the met-state green come from the token system — no raw hex here. Each
-// fill animates up from empty on mount; the global reduced-motion rule in index.css
+// always text-accent — the user's chosen accent, at every fill level) and SVG fills
+// use currentColor, so themes come from the token system — no raw hex here. Each fill
+// animates up from empty on mount; the global reduced-motion rule in index.css
 // collapses every animation/transition to a static fill.
 
 // Two sine waves drifting horizontally, translated up to the fill level. Drawn from
@@ -570,7 +570,7 @@ const MosaicFill = ({ pct, tone }: any) => {
 };
 
 // A soft radial glow behind the number whose radius grows with `pct` and gently
-// pulses. Ambient rather than a hard fill line; turns green with the met state.
+// pulses. Ambient rather than a hard fill line; tinted by `tone` (the accent).
 const RadialGlow = ({ pct, tone }: any) => {
   const size = useMounted() ? 32 + clampPct(pct) * 0.9 : 32;   // % of tile width, up to ~122%
   return (
@@ -660,7 +660,7 @@ const LiquidNumber = ({ value, pct, tone }: any) => {
 // The tile itself. Kept the same size as its Streak/Sessions siblings so the row stays
 // aligned; only the interior changes per style.
 const WeekGoalTile = ({ style, pct, met, count, goal }: any) => {
-  const tone = met ? 'text-good' : 'text-accent';
+  const tone = 'text-accent';   // always the chosen accent — no met-state green
   const rounded = Math.round(pct);
   const wrap = `${card} p-3 sm:p-4 relative overflow-hidden flex flex-col items-center text-center min-h-[132px] sm:min-h-[148px]`;
 
@@ -1231,12 +1231,128 @@ const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, remo
   );
 };
 
-// ─── WorkoutScreen ─────────────────────────────────────────────────────────────
-const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, patchWorkout, units = 'kg', restTimer = false, restSeconds = 90, workoutTimer = false }: any) => {
+// ─── ExercisePicker ────────────────────────────────────────────────────────────
+// The searchable, muscle-grouped catalogue chooser used by the live WorkoutScreen.
+// The one input does triple duty: it matches a muscle group ("chest" opens the whole
+// Chest group), otherwise filters exercise names, and the + commits whatever was
+// typed as a one-off. `onAdd(name)` is the only output. Groups come from ALL_GROUPS
+// for a custom session, else the type's curated EXERCISES list. `closeOnAdd`
+// collapses the panel after a pick — the in-workout UX.
+const ExercisePicker = ({ workoutType, onAdd, closeOnAdd = true }: any) => {
   const [showExerciseList, setShowExerciseList]     = useState(false);
   const [customExerciseName, setCustomExerciseName] = useState('');
-  const [showCancelConfirm, setShowCancelConfirm]   = useState(false);
   const [openGroup, setOpenGroup]                   = useState<string | null>(null);
+
+  const availableGroups: ExerciseGroup[] = workoutType === 'custom' ? ALL_GROUPS : EXERCISES[workoutType] ?? [];
+
+  // Filtering keeps the grouping — empty groups drop out rather than leaving a bare heading.
+  const query     = customExerciseName.trim().toLowerCase();
+  const searching = query.length > 0;
+  const visibleGroups: ExerciseGroup[] = (query
+    ? availableGroups.map(g =>
+        g.group.toLowerCase().includes(query)
+          ? g
+          : { ...g, items: g.items.filter(ex => ex.toLowerCase().includes(query)) })
+    : availableGroups
+  ).filter(g => g.items.length > 0);
+  const matchCount = visibleGroups.reduce((n, g) => n + g.items.length, 0);
+
+  const commit = (name: string) => {
+    onAdd(name);
+    setCustomExerciseName('');
+    if (closeOnAdd) setShowExerciseList(false);
+  };
+  const handleAddCustomExercise = () => {
+    const name = customExerciseName.trim();
+    if (name) commit(name);
+  };
+
+  return (
+    <>
+      {showExerciseList && (
+        <div className={`${card} mt-3 overflow-hidden`}>
+          {/* Search is pinned — only the catalogue below it scrolls. */}
+          <div className="flex gap-2 p-3">
+            <input
+              type="text"
+              placeholder="Search exercise or muscle group…"
+              aria-label="Search by exercise or muscle group, or type a new exercise name"
+              value={customExerciseName}
+              onChange={e => setCustomExerciseName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddCustomExercise()}
+              className={`${input} flex-1 py-2 text-sm`}
+            />
+            <button
+              onClick={handleAddCustomExercise}
+              disabled={!customExerciseName.trim()}
+              aria-label="Add as a new exercise"
+              className={`${btnPrimary} px-3 disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+          <div className="h-px bg-line" />
+
+          {/* One collapsed row per muscle group — open the one you want rather than
+              scrolling past every exercise in the catalogue. A search expands the
+              hits automatically, since you've already said what you're after. */}
+          {matchCount > 0 ? (
+            <div className="flex flex-col">
+              {visibleGroups.map(g => {
+                const open = searching || openGroup === g.group;
+                return (
+                  <div key={g.group} className="border-b border-line last:border-b-0">
+                    <button
+                      onClick={() => setOpenGroup(openGroup === g.group ? null : g.group)}
+                      aria-expanded={open}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-raised/60 transition-colors"
+                    >
+                      <span className={label}>{g.group}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs text-faint tabular-nums">{g.items.length}</span>
+                        <ChevronDown size={14} className={`text-faint transition-transform ${open ? 'rotate-180' : ''}`} />
+                      </span>
+                    </button>
+
+                    {open && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-3 pb-3">
+                        {g.items.map(ex => (
+                          <button
+                            key={ex}
+                            onClick={() => commit(ex)}
+                            className="text-left px-3 py-2.5 rounded-ctl text-sm text-ink hover:bg-raised transition-colors"
+                          >
+                            {ex}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-faint text-center px-4 py-6">
+              Nothing matches “{customExerciseName.trim()}”. Hit + to add it as a new exercise.
+            </p>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowExerciseList(v => !v)}
+        className={`${btnSecondary} w-full p-3.5 mt-3 flex items-center justify-center gap-2`}
+      >
+        <Plus size={18} className={showExerciseList ? 'rotate-45 transition-transform' : 'transition-transform'} />
+        {showExerciseList ? 'Close' : 'Add Exercise'}
+      </button>
+    </>
+  );
+};
+
+// ─── WorkoutScreen ─────────────────────────────────────────────────────────────
+const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, patchWorkout, units = 'kg', restTimer = false, restSeconds = 90, workoutTimer = false }: any) => {
+  const [showCancelConfirm, setShowCancelConfirm]   = useState(false);
 
   // Per-session timer state lives on the workout object, seeded from the saved
   // defaults but overridden only here — the in-workout toggles never write back to
@@ -1341,34 +1457,9 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
   const fmtClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   const cfg                = TYPE_CONFIG[workoutType] ?? TYPE_CONFIG.custom;
-  const availableGroups: ExerciseGroup[] = workoutType === 'custom' ? ALL_GROUPS : EXERCISES[workoutType] ?? [];
-
-  // The one input does triple duty: it matches muscle groups ("chest" opens the
-  // whole Chest group), falls back to matching exercise names, and the + button
-  // still commits whatever you typed as a one-off. Filtering keeps the grouping —
-  // empty groups drop out rather than leaving a bare heading.
-  const query     = customExerciseName.trim().toLowerCase();
-  const searching = query.length > 0;
-  const visibleGroups: ExerciseGroup[] = (query
-    ? availableGroups.map(g =>
-        g.group.toLowerCase().includes(query)
-          ? g
-          : { ...g, items: g.items.filter(ex => ex.toLowerCase().includes(query)) })
-    : availableGroups
-  ).filter(g => g.items.length > 0);
-  const matchCount = visibleGroups.reduce((n, g) => n + g.items.length, 0);
 
   const totalVolume = workout.exercises.reduce((sum: number, ex: any) => sum + volumeOf(ex), 0);
   const totalSets   = workout.exercises.reduce((sum: number, ex: any) => sum + ex.sets.length, 0);
-
-  const handleAddCustomExercise = () => {
-    const name = customExerciseName.trim();
-    if (name) {
-      addExercise(name);
-      setCustomExerciseName('');
-      setShowExerciseList(false);
-    }
-  };
 
   return (
     <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 pb-36">
@@ -1441,83 +1532,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
       </div>
 
       {/* Exercise picker */}
-      {showExerciseList && (
-        <div className={`${card} mt-3 overflow-hidden`}>
-          {/* Search is pinned — only the catalogue below it scrolls. */}
-          <div className="flex gap-2 p-3">
-            <input
-              type="text"
-              placeholder="Search exercise or muscle group…"
-              aria-label="Search by exercise or muscle group, or type a new exercise name"
-              value={customExerciseName}
-              onChange={e => setCustomExerciseName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAddCustomExercise()}
-              className={`${input} flex-1 py-2 text-sm`}
-            />
-            <button
-              onClick={handleAddCustomExercise}
-              disabled={!customExerciseName.trim()}
-              aria-label="Add as a new exercise"
-              className={`${btnPrimary} px-3 disabled:opacity-40 disabled:cursor-not-allowed`}
-            >
-              <Plus size={16} />
-            </button>
-          </div>
-          <div className="h-px bg-line" />
-
-          {/* One collapsed row per muscle group — open the one you want rather than
-              scrolling past every exercise in the catalogue. A search expands the
-              hits automatically, since you've already said what you're after. */}
-          {matchCount > 0 ? (
-            <div className="flex flex-col">
-              {visibleGroups.map(g => {
-                const open = searching || openGroup === g.group;
-                return (
-                  <div key={g.group} className="border-b border-line last:border-b-0">
-                    <button
-                      onClick={() => setOpenGroup(openGroup === g.group ? null : g.group)}
-                      aria-expanded={open}
-                      className="w-full flex items-center justify-between gap-3 px-3 py-3 hover:bg-raised/60 transition-colors"
-                    >
-                      <span className={label}>{g.group}</span>
-                      <span className="flex items-center gap-2">
-                        <span className="text-xs text-faint tabular-nums">{g.items.length}</span>
-                        <ChevronDown size={14} className={`text-faint transition-transform ${open ? 'rotate-180' : ''}`} />
-                      </span>
-                    </button>
-
-                    {open && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-3 pb-3">
-                        {g.items.map(ex => (
-                          <button
-                            key={ex}
-                            onClick={() => { addExercise(ex); setCustomExerciseName(''); setShowExerciseList(false); }}
-                            className="text-left px-3 py-2.5 rounded-ctl text-sm text-ink hover:bg-raised transition-colors"
-                          >
-                            {ex}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-xs text-faint text-center px-4 py-6">
-              Nothing matches “{customExerciseName.trim()}”. Hit + to add it as a new exercise.
-            </p>
-          )}
-        </div>
-      )}
-
-      <button
-        onClick={() => setShowExerciseList(v => !v)}
-        className={`${btnSecondary} w-full p-3.5 mt-3 flex items-center justify-center gap-2`}
-      >
-        <Plus size={18} className={showExerciseList ? 'rotate-45 transition-transform' : 'transition-transform'} />
-        {showExerciseList ? 'Close' : 'Add Exercise'}
-      </button>
+      <ExercisePicker workoutType={workoutType} onAdd={addExercise} />
 
       <div className={`${card} p-4 mt-3`}>
         <label htmlFor="workout-notes" className={`${label} block mb-2`}>Session Notes</label>
@@ -4005,7 +4020,7 @@ const GymTrackerApp = () => {
             ...rawPrefs,
             name:   typeof rawPrefs.name   === 'string' ? rawPrefs.name   : '',
             gender: typeof rawPrefs.gender === 'string' ? rawPrefs.gender : '',
-            hidden: Array.isArray(rawPrefs.hidden) ? rawPrefs.hidden : [],
+            hidden:   Array.isArray(rawPrefs.hidden)   ? rawPrefs.hidden   : [],
           };
           const { error: sErr } = await supabase.from('settings')
             .upsert({ user_id: uid, weekly_goal: goal, prefs: prefsObj, updated_at: new Date().toISOString() });
