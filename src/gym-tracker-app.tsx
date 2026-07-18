@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, Target, Activity, ChevronRight, ChevronDown, ChevronUp, Flame, Layers, Maximize2, Anchor, Mountain, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound, CloudOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW } from './supabase';
+import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW, bwToRow } from './supabase';
 
 // Vite hashes and copies these into dist/assets at build time.
 import pushImg from '../Assets/pexels-tima-miroshnichenko-5327522.jpg';
@@ -9,14 +9,46 @@ import pullImg from '../Assets/pexels-zeal-creative-studios-58866141-34043598.jp
 import legsImg from '../Assets/pexels-kong-khawlhring-3896794-5799855.jpg';
 import customImg from '../Assets/pexels-koolshooters-8544616.jpg';
 
+// ═════════════════════════════════════════════════════════════════════════════
+// MODULE MAP — this is the whole app in one file (see CLAUDE.md for the "why").
+// Search the SYMBOL names below to jump; they don't rot the way line numbers do.
+//
+// CONSTANTS & HELPERS (top of file)
+//   • Exercise catalogue ........ CORE, CARDIO, EXERCISES, ALL_GROUPS
+//   • Exercise identity ......... slug, idForName, exerciseIdOf, EXERCISE_ID_OVERRIDES
+//   • Muscle grouping ........... groupForExercise, EXERCISE_GROUP_BY_ID
+//   • Storage keys .............. STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, THEME_KEY
+//   • Prefs schema .............. DEFAULT_PREFS, Prefs
+//   • Design tokens ............. card, input, btnPrimary/Secondary/Danger, label, readout
+//   • Type & theme config ....... TYPE_CONFIG, SESSION_TYPES, CHART, ACCENTS, BASES, SEMANTICS
+//   • Units ..................... LB_PER_KG, KG_PER_LB
+//
+// HOOKS & UI PRIMITIVES
+//   • useTheme .................. resolves light/dark/system → tokens
+//   • Toggle .................... shared switch
+//
+// SCREENS / COMPONENTS (in file order)
+//   • SetRow, ExerciseCard ...... a set's inputs; one exercise's card
+//   • WorkoutScreen ............. the live logging session
+//   • HistoryScreen ............. past workouts (edit / delete / sync chip)
+//   • ProgressScreen ............ per-exercise strength + body-weight charts
+//   • SettingsScreen ............ prefs, theme, account (change pw / delete / export)
+//   • LoginScreen, ResetPasswordScreen, OnboardingScreen ... auth + first-run gates
+//
+// ROOT
+//   • GymTrackerApp ............. default export at the bottom — ALL state lives here
+//     (workouts, bodyWeightLog, prefs, session) and flows down as props. Holds the
+//     load/hydrate/write-back effects and the `currentScreen` string router.
+// ═════════════════════════════════════════════════════════════════════════════
+
 // The catalogue, grouped by muscle. The groups are the picker's structure — a
 // flat 80-item alphabetical list buries Box Squat between Barbell Row and
 // Bulgarian Split Squat.
 //
 // Grouped by what the muscle actually does, not by where a given listicle files
 // it — chest flyes are pressing (push); pullovers are lat-driven (pull).
-// Names are the identity used in stored workouts: add freely, but renaming one
-// orphans it from every session already logged under the old string.
+// Adding a name is always free; RENAMING is safe if you pin the id — see the
+// "Stable exercise identity" section below (the id, not the name, is the identity).
 type ExerciseGroup = { group: string; items: string[] };
 
 // Core and cardio belong to no single day — they get bolted onto whatever you're
@@ -312,6 +344,7 @@ const ACTIVE_KEY  = 'gym-active-session';   // in-progress workout, so a refresh
 // Seven days in a week, and almost nobody trains twice in one.
 const GOAL_MIN = 1;
 const GOAL_MAX = 7;
+const GOAL_DEFAULT = 4;
 const THEME_KEY   = 'gym-theme';
 
 // User-chosen view settings, all set from the Settings screen. Persisted as one
@@ -373,6 +406,56 @@ const TYPE_CONFIG: Record<string, { label: string; Icon: any; color: string; ico
   pull:   { label: 'Pull Day', Icon: Anchor,    color: 'text-accent', iconBg: 'bg-accent/10' },
   legs:   { label: 'Leg Day',  Icon: Mountain,  color: 'text-accent', iconBg: 'bg-accent/10' },
   custom: { label: 'Custom',   Icon: Layers,    color: 'text-muted',  iconBg: 'bg-raised'    },
+};
+
+// ── Import sanitisation ──────────────────────────────────────────────────────
+// A backup file is user-supplied and may be hand-edited or corrupt. Coerce every
+// imported record into a known-good shape before it reaches the DB, so a malformed
+// file can't poison the account with NaN weights, blank ids or an unknown type
+// (which would then break the stats and charts that read them). Bad rows drop out
+// rather than propagate; unknown workout types fold to 'custom'.
+const cleanImportedSet = (s: any) => {
+  const reps = Math.trunc(Number(s?.reps));
+  if (!Number.isFinite(reps) || reps <= 0) return null;          // a set needs real reps
+  const raw = s?.weight;
+  const weight = raw == null || raw === '' ? null : Number(raw);  // null = bodyweight, distinct from 0
+  if (weight != null && (!Number.isFinite(weight) || weight < 0)) return null;
+  return { reps, weight };
+};
+
+const cleanImportedExercise = (e: any) => {
+  const name = typeof e?.name === 'string' ? e.name.trim() : '';
+  if (!name) return null;
+  return {
+    name,
+    exerciseId: typeof e?.exerciseId === 'string' && e.exerciseId ? e.exerciseId : idForName(name),
+    sets: Array.isArray(e?.sets) ? e.sets.map(cleanImportedSet).filter(Boolean) : [],
+    notes: typeof e?.notes === 'string' ? e.notes : '',
+  };
+};
+
+const cleanImportedWorkout = (w: any) => {
+  if (!w || typeof w !== 'object') return null;
+  const date = typeof w.date === 'string' && w.date ? w.date : null;
+  if (!date) return null;                                         // date is the row's correlation key
+  const bw  = Number(w.bodyWeight);
+  const dur = Math.trunc(Number(w.duration));
+  return {
+    type: TYPE_CONFIG[w.type] ? w.type : 'custom',               // unknown type folds to custom
+    bodyWeight: w.bodyWeight == null || !Number.isFinite(bw) ? null : bw,
+    exercises: Array.isArray(w.exercises) ? w.exercises.map(cleanImportedExercise).filter(Boolean) : [],
+    date,
+    notes: typeof w.notes === 'string' ? w.notes : '',
+    ...(Number.isFinite(dur) && dur > 0 ? { duration: dur } : {}),
+  };
+};
+
+const cleanImportedBW = (e: any) => {
+  if (!e || typeof e !== 'object') return null;
+  const date = typeof e.date === 'string' && e.date ? e.date : null;
+  const weight = Number(e.weight);
+  if (!date || !Number.isFinite(weight) || weight <= 0) return null;
+  return { date, weight };
 };
 
 // Home-screen session picker. A tile with `img` renders the photo full-bleed;
@@ -567,6 +650,11 @@ const metricValueLabel = (metric: MuscleMetric, value: number, units: Units): st
   : metric === 'sessions' ? `${value} session${value !== 1 ? 's' : ''}`
   : `${value} set${value !== 1 ? 's' : ''}`;
 
+// Midnight (local) of a date, as epoch ms — the key for bucketing/comparing by
+// calendar day. Local, not UTC: parsing an ISO date as UTC midnight would shove a
+// late-evening session onto the day before.
+const startOfDayMs = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
 // ─── useTheme ──────────────────────────────────────────────────────────────────
 // Follows the OS until the user picks a side, then stays pinned to their choice.
 type Theme = 'light' | 'dark';
@@ -617,6 +705,23 @@ const useTheme = () => {
   const toggle = () => setMode(theme === 'dark' ? 'light' : 'dark');
 
   return { theme, mode, setMode, toggle };
+};
+
+// ─── Toggle ────────────────────────────────────────────────────────────────────
+// The pill switch with a sliding knob, used for every on/off setting. Two sizes:
+// 'sm' for the in-workout timer bar, 'md' (default) for Settings rows. Pass an
+// aria-label through — it's forwarded to the button.
+const Toggle = ({ on, onClick, size = 'md', ...rest }: any) => {
+  const track = size === 'sm' ? 'w-9 h-5' : 'w-10 h-6';
+  const knob  = size === 'sm' ? 'h-4 w-4' : 'h-5 w-5';
+  return (
+    <button
+      type="button" role="switch" aria-checked={on} onClick={onClick} {...rest}
+      className={`relative ${track} rounded-full transition-colors flex-shrink-0 ${on ? 'bg-accent' : 'bg-raised border border-line'}`}
+    >
+      <span className={`absolute top-0.5 ${knob} rounded-full bg-surface shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+    </button>
+  );
 };
 
 // ─── SetRow ────────────────────────────────────────────────────────────────────
@@ -924,14 +1029,12 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             {/* Session timer — total elapsed time. Toggle is a per-session override
                 (never touches Settings); pause/resume freezes the count. */}
             <div className="flex items-center gap-2 mt-3">
-              <button
-                role="switch" aria-checked={!!sessionOn}
+              <Toggle
+                size="sm"
+                on={!!sessionOn}
                 aria-label={`${sessionOn ? 'Stop' : 'Start'} session timer`}
                 onClick={toggleSessionTimer}
-                className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${sessionOn ? 'bg-accent' : 'bg-raised border border-line'}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${sessionOn ? 'left-[18px]' : 'left-0.5'}`} />
-              </button>
+              />
               <Timer size={13} className="text-muted" />
               <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Session</span>
               <span className="text-[10px] text-faint hidden sm:inline">total time</span>
@@ -1079,14 +1182,12 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             it can be switched on/off mid-workout without visiting Settings. */}
         <div className={`border-b border-line transition-colors ${restDone ? 'bg-good/15' : ''}`}>
           <div className="max-w-3xl mx-auto flex items-center gap-2.5 px-3 py-2">
-            <button
-              role="switch" aria-checked={!!restOn}
+            <Toggle
+              size="sm"
+              on={!!restOn}
               aria-label={`${restOn ? 'Disable' : 'Enable'} rest timer`}
               onClick={toggleRestTimer}
-              className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${restOn ? 'bg-accent' : 'bg-raised border border-line'}`}
-            >
-              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all ${restOn ? 'left-[18px]' : 'left-0.5'}`} />
-            </button>
+            />
             <span className={`text-[11px] font-semibold uppercase tracking-wide ${restDone ? 'text-good' : restOn && rest != null && !restPaused ? 'text-accent' : 'text-muted'}`}>Rest</span>
             <span className="text-[10px] text-faint hidden sm:inline">between sets</span>
             {!restOn ? (
@@ -1249,10 +1350,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   // ── Calendar view: bucket the (already filtered, newest-first) sessions by
   // local calendar day. The key is midday-safe local time — parsing the ISO
   // date as UTC midnight would shove late-evening sessions onto the day before.
-  const dayKeyOf = (iso: string) => {
-    const d = new Date(iso);
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  };
+  const dayKeyOf = (iso: string) => startOfDayMs(new Date(iso));
   const daysMap = new Map<number, any[]>();
   filtered.forEach((w: any) => {
     const k = dayKeyOf(w.date);
@@ -1266,7 +1364,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   const daysInMonth = new Date(calYear, calMon + 1, 0).getDate();
   const monthLabel  = calMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const now         = new Date();
-  const todayKey    = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const todayKey    = startOfDayMs(now);
   const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
   const shiftMonth = (delta: number) => { setCalMonth(new Date(calYear, calMon + delta, 1)); setSelectedDay(null); };
 
@@ -1837,6 +1935,15 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
     return items.filter(i => new Date(i.date) >= start);
   };
 
+  // The workouts inside the selected window, computed once per (data, timeframe)
+  // change. Every per-exercise series and the muscle breakdown read this instead
+  // of re-filtering the whole history each — the All-exercises view would
+  // otherwise re-scan `workouts` once per exercise (O(exercises × workouts)).
+  const windowedWorkouts = useMemo(
+    () => filterByDate(workouts),
+    [workouts, timeframe, customStartDate, customEndDate],
+  );
+
   // The exercise select carries this sentinel when the user wants every
   // exercise at once. It can't collide with a real name (double underscore).
   // The All-exercises view then renders the same top-set chart per exercise.
@@ -1844,9 +1951,9 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
 
   // Top-set series (max weight per session, in display units) for one exercise,
   // keyed by stable id — the data behind a single chart. Reused for the single- and
-  // all-exercise views.
+  // all-exercise views. Reads the pre-filtered window, not the full history.
   const seriesForExercise = (id: string) =>
-    filterByDate(workouts).flatMap((w: any) => {
+    windowedWorkouts.flatMap((w: any) => {
       const ex = w.exercises.find((e: any) => exerciseIdOf(e) === id);
       if (!ex || ex.sets.length === 0) return [];
       // Bodyweight sets carry no load, so they count as 0 here rather than NaN.
@@ -1862,7 +1969,7 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   // Every logged exercise's series, bucketed by muscle group in the donut's order
   // so the All-exercises view echoes the Muscle group balance card above it.
   const getExercisesByGroup = () => {
-    const inWindow: any[] = filterByDate(workouts);
+    const inWindow: any[] = windowedWorkouts;
     const lastName: Record<string, string> = {};
     for (const w of inWindow) for (const e of w.exercises) lastName[exerciseIdOf(e)] = e.name;
     const order = muscleGroupBreakdown(inWindow, muscleMetric).map(d => d.group);
@@ -1880,17 +1987,26 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
       .sort((a, b) => rank(a.group) - rank(b.group));
   };
 
-  const getExerciseData = () => (!selectedExercise || isAllExercises ? [] : seriesForExercise(selectedExercise));
-
   const getBodyWeightData = () =>
     filterByDate(bodyWeightLog).map((e: any) => ({
       date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
     }));
 
-  const exerciseData     = getExerciseData();
-  const exercisesByGroup = isAllExercises ? getExercisesByGroup() : [];
-  const bodyWeightData   = getBodyWeightData();
+  // Chart datasets, memoised on their real inputs so an unrelated re-render
+  // (theme or colour-pref change) doesn't recompute the series.
+  const exerciseData     = useMemo(
+    () => (!selectedExercise || isAllExercises ? [] : seriesForExercise(selectedExercise)),
+    [windowedWorkouts, selectedExercise, isAllExercises, units],
+  );
+  const exercisesByGroup = useMemo(
+    () => (isAllExercises ? getExercisesByGroup() : []),
+    [windowedWorkouts, isAllExercises, units, muscleMetric],
+  );
+  const bodyWeightData   = useMemo(
+    () => getBodyWeightData(),
+    [bodyWeightLog, timeframe, customStartDate, customEndDate, units],
+  );
 
   const tooltipStyle = {
     backgroundColor: c.surface,
@@ -2086,7 +2202,7 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
   const [deleteBusy, setDeleteBusy]             = useState(false);
   const [deleteMsg, setDeleteMsg]               = useState<string | null>(null);
 
-  const handleDeleteAccount = async () => {
+  const deleteAccount = async () => {
     if (deleteBusy) return;
     setDeleteBusy(true); setDeleteMsg(null);
     const err = await onDeleteAccount();
@@ -2106,14 +2222,11 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
     return (
       <div key={k} className="flex items-center justify-between gap-3 py-2">
         <span className="text-sm text-ink">{WIDGET_LABELS[k]}</span>
-        <button
-          role="switch" aria-checked={shown}
+        <Toggle
+          on={shown}
           aria-label={`${shown ? 'Hide' : 'Show'} ${WIDGET_LABELS[k]}`}
           onClick={() => toggleHidden(k)}
-          className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${shown ? 'bg-accent' : 'bg-raised border border-line'}`}
-        >
-          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all ${shown ? 'left-[18px]' : 'left-0.5'}`} />
-        </button>
+        />
       </div>
     );
   };
@@ -2221,26 +2334,20 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         <h3 className={`${label} mb-3`}>Workout</h3>
         <div className="flex items-center justify-between gap-3 py-1">
           <span className="text-sm text-ink">Session timer</span>
-          <button
-            role="switch" aria-checked={prefs.workoutTimer}
+          <Toggle
+            on={prefs.workoutTimer}
             aria-label={`${prefs.workoutTimer ? 'Disable' : 'Enable'} session timer`}
             onClick={() => updatePrefs({ workoutTimer: !prefs.workoutTimer })}
-            className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${prefs.workoutTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
-          >
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all ${prefs.workoutTimer ? 'left-[18px]' : 'left-0.5'}`} />
-          </button>
+          />
         </div>
         <p className="text-xs text-faint mb-1">Times each session and saves the length to your history.</p>
         <div className="flex items-center justify-between gap-3 py-1">
           <span className="text-sm text-ink">Rest timer</span>
-          <button
-            role="switch" aria-checked={prefs.restTimer}
+          <Toggle
+            on={prefs.restTimer}
             aria-label={`${prefs.restTimer ? 'Disable' : 'Enable'} rest timer`}
             onClick={() => updatePrefs({ restTimer: !prefs.restTimer })}
-            className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${prefs.restTimer ? 'bg-accent' : 'bg-raised border border-line'}`}
-          >
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow transition-all ${prefs.restTimer ? 'left-[18px]' : 'left-0.5'}`} />
-          </button>
+          />
         </div>
         {prefs.restTimer && (
           <div className="flex flex-wrap items-center justify-between gap-2 py-1">
@@ -2272,6 +2379,7 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             type="text"
             value={prefs.name}
             onChange={e => updatePrefs({ name: e.target.value })}
+            onBlur={e => { const t = e.target.value.trim(); if (t !== prefs.name) updatePrefs({ name: t }); }}
             placeholder="Your name"
             autoComplete="given-name"
             className={`${input} w-full`}
@@ -2359,7 +2467,7 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             <p className="text-sm text-ink">Permanently delete your account and all its data? This can't be undone.</p>
             <div className="flex gap-2">
               <button
-                onClick={handleDeleteAccount}
+                onClick={deleteAccount}
                 disabled={deleteBusy}
                 className={`${btnDanger} flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50`}
               >
@@ -2411,6 +2519,14 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
 };
 
 // ─── Auth gate screens ─────────────────────────────────────────────────────────
+// Auth-access convention: these pre-render GATES (Login / ResetPassword) render
+// before GymTrackerApp mounts, so they have no container handlers to receive and
+// call `supabase.auth.*` directly, mapping errors with the shared authErrorText.
+// IN-APP screens are the opposite — SettingsScreen never touches supabase; its
+// auth actions (changePassword, deleteAccount, signOut) are injected as props by
+// GymTrackerApp and stay presentational. One rule, split by where the screen sits
+// relative to the mount: gate → direct; in-app → injected.
+//
 // A full-screen shell shared by the pre-app states (loading / login / config
 // error), so they match the app chrome instead of flashing bare.
 const AuthShell = ({ children }: any) => (
@@ -2786,12 +2902,11 @@ const ResetPasswordScreen = ({ onDone, onSignOut }: any) => {
 };
 
 // Shown once, right after the first login on a brand-new account (see the
-// `needsOnboarding` gate). Collects a display name, weight unit and gender —
-// all optional; one "Get started" commits whatever's set and drops the gate.
-// `loading` renders the exact same card while the post-signup hydrate is still in
-// flight — inputs disabled, button spinning — so the onboarding frame stays on
-// screen continuously from signup onward instead of flashing a bare loader.
-const OnboardingScreen = ({ initialPrefs, onDone, loading = false }: any) => {
+// `needsOnboarding` gate). Only the name is required — it's the un-onboarded
+// sentinel (empty = un-onboarded) and drives the greeting. Weight unit has a
+// default and gender is optional (both are changeable in Settings), matching the
+// "you can change any of this later" copy. "Get started" commits and drops the gate.
+const OnboardingScreen = ({ initialPrefs, onDone }: any) => {
   const [name, setName]     = useState('');
   const [units, setUnits]   = useState<Units>(initialPrefs?.units ?? 'kg');
   const [gender, setGender] = useState<Gender>(initialPrefs?.gender ?? '');
@@ -2799,41 +2914,38 @@ const OnboardingScreen = ({ initialPrefs, onDone, loading = false }: any) => {
   return (
     <AuthShell>
       <AuthHeader />
-      <form className={`${card} p-6`} onSubmit={e => { e.preventDefault(); if (!loading && name.trim() && gender) onDone({ name: name.trim(), units, gender }); }}>
+      <form className={`${card} p-6`} onSubmit={e => { e.preventDefault(); if (name.trim()) onDone({ name: name.trim(), units, gender }); }}>
         <p className="text-sm text-ink font-medium text-center mb-1">Welcome to FitPulse</p>
         <p className="text-xs text-muted text-center mb-5">Set up your profile. You can change any of this later in Settings.</p>
 
-        <fieldset disabled={loading} className="contents">
-          <div className="mb-4">
-            <label htmlFor="onboard-name" className={`${label} block mb-2`}>Name</label>
-            <input
-              id="onboard-name"
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="What should we call you?"
-              autoComplete="given-name"
-              autoFocus={!loading}
-              className={`${input} w-full`}
-            />
-          </div>
+        <div className="mb-4">
+          <label htmlFor="onboard-name" className={`${label} block mb-2`}>Name</label>
+          <input
+            id="onboard-name"
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="What should we call you?"
+            autoComplete="given-name"
+            autoFocus
+            className={`${input} w-full`}
+          />
+        </div>
 
-          <div className="mb-4">
-            <span className={`${label} block mb-2`}>Weight unit</span>
-            <Segmented value={units} onChange={(v: Units) => setUnits(v)}
-              options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
-          </div>
+        <div className="mb-4">
+          <span className={`${label} block mb-2`}>Weight unit</span>
+          <Segmented value={units} onChange={(v: Units) => setUnits(v)}
+            options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
+        </div>
 
-          <div className="mb-5">
-            <span className={`${label} block mb-2`}>Gender</span>
-            <Segmented value={gender} onChange={(v: Gender) => setGender(v)}
-              options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }]} />
-          </div>
-        </fieldset>
+        <div className="mb-5">
+          <span className={`${label} block mb-2`}>Gender <span className="text-faint normal-case">(optional)</span></span>
+          <Segmented value={gender} onChange={(v: Gender) => setGender(v)}
+            options={[{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }]} />
+        </div>
 
-        <button type="submit" disabled={loading || !name.trim() || !gender} className={`${btnPrimary} w-full p-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}>
-          {loading && <Loader2 size={16} className="animate-spin" />}
-          {loading ? 'Setting up…' : 'Get started'}
+        <button type="submit" disabled={!name.trim()} className={`${btnPrimary} w-full p-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}>
+          Get started
         </button>
       </form>
     </AuthShell>
@@ -2845,7 +2957,7 @@ const GymTrackerApp = () => {
   const [currentScreen, setCurrentScreen]             = useState('home');
   const [workouts, setWorkouts]                       = useState<any[]>([]);
   const [bodyWeightLog, setBodyWeightLog]             = useState<{ id: string; date: string; weight: number }[]>([]);
-  const [weeklyGoal, setWeeklyGoal]                   = useState(4);
+  const [weeklyGoal, setWeeklyGoal]                   = useState(GOAL_DEFAULT);
   const [currentWorkout, setCurrentWorkout]           = useState<any>(null);
   const [selectedWorkoutType, setSelectedWorkoutType] = useState<string | null>(null);
   const [bodyWeight, setBodyWeight]                   = useState('');
@@ -2894,7 +3006,6 @@ const GymTrackerApp = () => {
   const clampGoal = (g: number) => Math.min(GOAL_MAX, Math.max(GOAL_MIN, g));
 
   const { theme, mode, setMode, toggle } = useTheme();
-  const c = CHART[theme];
 
   const units = prefs.units;
   const updatePrefs  = (patch: Partial<Prefs>) => setPrefs(p => ({ ...p, ...patch }));
@@ -2937,7 +3048,7 @@ const GymTrackerApp = () => {
       // Clamp on read: a goal saved before the 7/week cap would otherwise survive it.
       if (storedGoal) {
         const g = parseInt(storedGoal);
-        if (!Number.isNaN(g)) setWeeklyGoal(Math.min(GOAL_MAX, Math.max(GOAL_MIN, g)));
+        if (!Number.isNaN(g)) setWeeklyGoal(clampGoal(g));
       }
       // Merge over defaults so a blob saved by an older build (missing fields) still
       // loads; guard hidden is an array in case of hand-edited/corrupt storage.
@@ -3015,7 +3126,7 @@ const GymTrackerApp = () => {
       let bwRows: any[] = [];
       if (localBW.length) {
         const { data, error } = await supabase.from('body_weight_log')
-          .insert(localBW.map((e: any) => ({ date: e.date, weight: e.weight }))).select();
+          .insert(localBW.map(bwToRow)).select();
         if (error) throw error;
         bwRows = data ?? [];
       }
@@ -3133,16 +3244,20 @@ const GymTrackerApp = () => {
 
   // Sync weekly goal + prefs to Supabase (one row per user). Debounced so a slider
   // drag or colour-picker sweep is one upsert, not dozens. Gated on `hydrated` so
-  // it can't fire with default values before the initial load lands.
+  // it can't fire with default values before the initial load lands. Also gated on
+  // `!needsOnboarding`: while a brand-new account is still on the onboarding gate we
+  // must NOT write a settings row — its absence is exactly what `isFirstLogin` reads,
+  // so writing one here would make a reload mid-onboarding skip the gate forever.
+  // Completing onboarding clears the flag and changes prefs, firing this write.
   useEffect(() => {
-    if (!hydrated || !session) return;
+    if (!hydrated || !session || needsOnboarding) return;
     const t = setTimeout(() => {
       supabase.from('settings')
         .upsert({ user_id: session.user.id, weekly_goal: weeklyGoal, prefs, updated_at: new Date().toISOString() })
         .then(({ error }: any) => { if (error) console.error('Settings save failed', error); });
     }, 600);
     return () => clearTimeout(t);
-  }, [weeklyGoal, prefs, hydrated, session]);
+  }, [weeklyGoal, prefs, hydrated, session, needsOnboarding]);
 
   // ── Workout actions ──────────────────────────────────────────────────────────
   const startWorkout = (type: string) => {
@@ -3252,7 +3367,7 @@ const GymTrackerApp = () => {
     else setWorkouts(prev => prev.map(w => w.id === tempId ? rowToWorkout(data) : w));
     if (bwTempId) {
       const { data: bw, error: bwErr } = await supabase.from('body_weight_log')
-        .insert({ date: completed.date, weight: completed.bodyWeight }).select().single();
+        .insert(bwToRow({ date: completed.date, weight: completed.bodyWeight })).select().single();
       if (bwErr) { console.error('Save weigh-in failed', bwErr); setBodyWeightLog(prev => markSync(prev, bwTempId, 'error')); }
       else setBodyWeightLog(prev => prev.map(e => e.id === bwTempId ? rowToBW(bw) : e));
     }
@@ -3266,7 +3381,7 @@ const GymTrackerApp = () => {
     setCurrentScreen('home');
   };
 
-  const handleQuickBWLog = async () => {
+  const logBodyWeight = async () => {
     if (!quickBWInput) return;
     const kg = fromInputWeight(quickBWInput, units);   // typed in display units → stored kg
     if (kg == null) return;
@@ -3274,9 +3389,43 @@ const GymTrackerApp = () => {
     setBodyWeightLog(prev => [...prev, temp]);
     setQuickBWInput('');
     const { data, error } = await supabase.from('body_weight_log')
-      .insert({ date: temp.date, weight: kg }).select().single();
+      .insert(bwToRow({ date: temp.date, weight: kg })).select().single();
     if (error) { console.error('Save weigh-in failed', error); setBodyWeightLog(prev => markSync(prev, temp.id, 'error')); }
     else setBodyWeightLog(prev => prev.map(e => e.id === temp.id ? rowToBW(data) : e));
+  };
+
+  // ── The workout ⇄ finish-time weigh-in pairing ───────────────────────────────
+  // A finish-time weigh-in is linked to its workout by exact date-string equality
+  // (body_weight_log.date === workouts.date). That join key lives in ONE place —
+  // here — so every handler that touches a workout's weigh-in shares the same
+  // notion of "the paired entry" instead of re-deriving the match inline. (A
+  // standalone quick-log has its own timestamp, so it never collides with a
+  // workout's date.) Migration 0001's workout_id FK makes this a real relation
+  // server-side once applied; until then these keep local + server state in step.
+  const pairedWeighIn = (dateKey: string) => bodyWeightLog.find(e => e.date === dateKey);
+
+  // Reconcile the log so the entry paired to `dateKey` matches `weightKg`
+  // (null = no weigh-in) — delete, update, or insert as needed, in state and on
+  // the server. This is the edit path (History changed a finish-time weight);
+  // finishWorkout does its own optimistic/_sync insert for a brand-new session.
+  const reconcilePairedWeighIn = async (dateKey: string, weightKg: number | null) => {
+    const existing = pairedWeighIn(dateKey);
+    if (weightKg == null) {
+      if (existing) {
+        setBodyWeightLog(prev => prev.filter(e => e.id !== existing.id));
+        const { error } = await supabase.from('body_weight_log').delete().eq('id', existing.id);
+        if (error) console.error('Delete weigh-in failed', error);
+      }
+    } else if (existing) {
+      setBodyWeightLog(prev => prev.map(e => e.id === existing.id ? { ...e, weight: weightKg } : e));
+      const { error } = await supabase.from('body_weight_log').update({ weight: weightKg }).eq('id', existing.id);
+      if (error) console.error('Update weigh-in failed', error);
+    } else {
+      const { data, error } = await supabase.from('body_weight_log')
+        .insert(bwToRow({ date: dateKey, weight: weightKg })).select().single();
+      if (error) console.error('Add weigh-in failed', error);
+      else setBodyWeightLog(prev => [...prev, rowToBW(data)]);
+    }
   };
 
   // Identity is the row uuid now (not the array index): HistoryScreen resolves
@@ -3284,12 +3433,10 @@ const GymTrackerApp = () => {
   // subset always routes to the right row.
   const deleteWorkout = async (id: string) => {
     const removed = workouts.find(w => w.id === id);
-    // The finish-time weigh-in shares the workout's exact date string; remove it too
-    // so deleting a workout doesn't strand an orphan in the body-weight chart. The
-    // 0001 FK cascade enforces this server-side once applied — this keeps local state
-    // correct now, and works before the migration lands. (A standalone quick-log has
-    // its own timestamp, so it won't collide with the workout's date.)
-    const pairedBW = removed ? bodyWeightLog.find(e => e.date === removed.date) : undefined;
+    // Remove the paired finish-time weigh-in too, so deleting a workout doesn't
+    // strand an orphan in the body-weight chart. The 0001 FK cascade enforces this
+    // server-side once applied — this keeps local state correct now, before it lands.
+    const pairedBW = removed ? pairedWeighIn(removed.date) : undefined;
     setWorkouts(w => w.filter(x => x.id !== id));   // optimistic
     if (pairedBW) setBodyWeightLog(log => log.filter(e => e.id !== pairedBW.id));
     const { error } = await supabase.from('workouts').delete().eq('id', id);
@@ -3317,23 +3464,7 @@ const GymTrackerApp = () => {
     // Keep the body-weight log in step: the finish-time entry shares the workout's
     // date, so edit/clear it here too — otherwise the chart and readout keep the
     // old (or wrong) number the History edit was meant to fix.
-    const existing = bodyWeightLog.find(e => e.date === updated.date);
-    if (updated.bodyWeight == null) {
-      if (existing) {
-        setBodyWeightLog(prev => prev.filter(e => e.id !== existing.id));
-        const { error: e2 } = await supabase.from('body_weight_log').delete().eq('id', existing.id);
-        if (e2) console.error('Delete weigh-in failed', e2);
-      }
-    } else if (existing) {
-      setBodyWeightLog(prev => prev.map(e => e.id === existing.id ? { ...e, weight: updated.bodyWeight } : e));
-      const { error: e2 } = await supabase.from('body_weight_log').update({ weight: updated.bodyWeight }).eq('id', existing.id);
-      if (e2) console.error('Update weigh-in failed', e2);
-    } else {
-      const { data, error: e2 } = await supabase.from('body_weight_log')
-        .insert({ date: updated.date, weight: updated.bodyWeight }).select().single();
-      if (e2) console.error('Add weigh-in failed', e2);
-      else setBodyWeightLog(prev => [...prev, rowToBW(data)]);
-    }
+    await reconcilePairedWeighIn(updated.date, updated.bodyWeight);
   };
 
   // Remove a body-weight data point (a fat-fingered entry, say). Keyed by row uuid.
@@ -3393,29 +3524,41 @@ const GymTrackerApp = () => {
           if (!Array.isArray(d.workouts) || !session) { resolve(false); return; }
           const uid = session.user.id;
 
+          // Sanitise before we touch the account: a file that parsed but yields no
+          // usable workouts is treated as invalid rather than a signal to wipe
+          // everything — so a corrupt backup can't destroy existing data.
+          const cleanWorkouts = d.workouts.map(cleanImportedWorkout).filter(Boolean);
+          if (d.workouts.length && !cleanWorkouts.length) { resolve(false); return; }
+          const cleanBW = (Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : [])
+            .map(cleanImportedBW).filter(Boolean);
+
           // Replace the account's server data wholesale, then seed state from the
           // rows we inserted (so every workout carries its new uuid).
           await supabase.from('workouts').delete().eq('user_id', uid);
           await supabase.from('body_weight_log').delete().eq('user_id', uid);
 
           let wRows: any[] = [];
-          if (d.workouts.length) {
-            const { data, error } = await supabase.from('workouts').insert(d.workouts.map(workoutToRow)).select();
+          if (cleanWorkouts.length) {
+            const { data, error } = await supabase.from('workouts').insert(cleanWorkouts.map(workoutToRow)).select();
             if (error) throw error;
             wRows = data ?? [];
           }
-          const bwIn = Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : [];
           let bwRows: any[] = [];
-          if (bwIn.length) {
+          if (cleanBW.length) {
             const { data, error } = await supabase.from('body_weight_log')
-              .insert(bwIn.map((e: any) => ({ date: e.date, weight: e.weight }))).select();
+              .insert(cleanBW.map(bwToRow)).select();
             if (error) throw error;
             bwRows = data ?? [];
           }
-          const goal     = Number.isFinite(d.weeklyGoal) ? clampGoal(d.weeklyGoal) : 4;
-          const prefsObj = d.prefs
-            ? { ...DEFAULT_PREFS, ...d.prefs, hidden: Array.isArray(d.prefs.hidden) ? d.prefs.hidden : [] }
-            : DEFAULT_PREFS;
+          const goal     = Number.isFinite(d.weeklyGoal) ? clampGoal(d.weeklyGoal) : GOAL_DEFAULT;
+          const rawPrefs = d.prefs && typeof d.prefs === 'object' ? d.prefs : {};
+          const prefsObj = {
+            ...DEFAULT_PREFS,
+            ...rawPrefs,
+            name:   typeof rawPrefs.name   === 'string' ? rawPrefs.name   : '',
+            gender: typeof rawPrefs.gender === 'string' ? rawPrefs.gender : '',
+            hidden: Array.isArray(rawPrefs.hidden) ? rawPrefs.hidden : [],
+          };
           const { error: sErr } = await supabase.from('settings')
             .upsert({ user_id: uid, weekly_goal: goal, prefs: prefsObj, updated_at: new Date().toISOString() });
           if (sErr) throw sErr;
@@ -3431,12 +3574,17 @@ const GymTrackerApp = () => {
       reader.readAsText(file);
     });
 
-  const clearAllData = async () => {
+  // Drop all in-memory data back to defaults — shared by a full wipe and sign-out.
+  const resetLocalState = () => {
     setWorkouts([]);
     setBodyWeightLog([]);
-    setWeeklyGoal(4);
+    setWeeklyGoal(GOAL_DEFAULT);
     setPrefs(DEFAULT_PREFS);
     setCurrentWorkout(null);
+  };
+
+  const clearAllData = async () => {
+    resetLocalState();
     try { localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
     if (session) {
       const uid = session.user.id;
@@ -3452,11 +3600,7 @@ const GymTrackerApp = () => {
   // End the session and drop the in-memory data (the next sign-in re-hydrates).
   const signOut = async () => {
     try { await supabase.auth.signOut(); } catch (e) { console.error('Sign out failed', e); }
-    setWorkouts([]);
-    setBodyWeightLog([]);
-    setWeeklyGoal(4);
-    setPrefs(DEFAULT_PREFS);
-    setCurrentWorkout(null);
+    resetLocalState();
     setCurrentScreen('home');
     setRecovery(false);   // signing out from the reset screen must clear the flag, or it re-pins us there
   };
@@ -3493,15 +3637,11 @@ const GymTrackerApp = () => {
   // ── Derived stats ────────────────────────────────────────────────────────────
   const getWorkoutStreak = () => {
     if (workouts.length === 0) return 0;
-    const today   = new Date();
-    const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const todayMs = startOfDayMs(new Date());
     const dayMs   = 86400000;
 
     const uniqueDays = [...new Set(
-      workouts.map((w: any) => {
-        const d = new Date(w.date);
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-      })
+      workouts.map((w: any) => startOfDayMs(new Date(w.date)))
     )].sort((a, b) => b - a);
 
     // Streak is 0 if most recent workout is more than 1 day ago
@@ -3533,10 +3673,8 @@ const GymTrackerApp = () => {
 
   const getDaysSinceLastWorkout = () => {
     if (workouts.length === 0) return 'No workouts yet';
-    const last     = new Date(workouts[workouts.length - 1].date);
-    const today    = new Date();
-    const lastDay  = new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime();
-    const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const lastDay  = startOfDayMs(new Date(workouts[workouts.length - 1].date));
+    const todayDay = startOfDayMs(new Date());
     const diff     = Math.round((todayDay - lastDay) / 86400000);
     if (diff === 0) return 'Today';
     if (diff === 1) return 'Yesterday';
@@ -3577,15 +3715,14 @@ const GymTrackerApp = () => {
   if (!authReady)       return <FullScreenLoader />;
   if (recovery)         return <ResetPasswordScreen onDone={() => setRecovery(false)} onSignOut={signOut} />;
   if (!session)         return <LoginScreen />;
-  // Brand-new account: `needsOnboarding` is set asynchronously by the hydrate
-  // effect (after it learns there's no server settings row), so until hydrate
-  // resolves the render would fall through to the dashboard and flash it for a
-  // moment before onboarding appears. Render the onboarding card in its `loading`
-  // state during that window — same frame, inputs locked — so the transition into
-  // the interactive form is seamless instead of flashing a bare loader. Gate on
-  // `!prefs.name` (the un-onboarded default) so a returning user — who has a
-  // cached name — keeps their instant cache-painted dashboard.
-  if (!hydrated && !prefs.name) return <OnboardingScreen initialPrefs={prefs} loading />;
+  // `needsOnboarding` is set asynchronously by the hydrate effect (after it learns
+  // there's no server settings row), so until hydrate resolves the render would fall
+  // through to the dashboard and flash it. Show a NEUTRAL loader during that window —
+  // not the onboarding card, which would greet a returning user (signed out, or a
+  // fresh device with no cached name) with "Welcome / set up your profile" while
+  // their hydrate is in flight. Gate on `!prefs.name` (the un-onboarded default) so a
+  // returning user with a cached name keeps their instant cache-painted dashboard.
+  if (!hydrated && !prefs.name) return <FullScreenLoader />;
   // First login on a brand-new account: greet once for name/units/gender. Set in
   // the hydrate effect, so prefs are already loaded (units prefill). updatePrefs
   // persists via the existing localStorage + debounced Supabase write-backs.
@@ -3745,11 +3882,11 @@ const GymTrackerApp = () => {
                 aria-label={`Log today's body weight in ${units}`}
                 value={quickBWInput}
                 onChange={e => setQuickBWInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleQuickBWLog()}
+                onKeyDown={e => e.key === 'Enter' && logBodyWeight()}
                 className={`${input} flex-1 py-2 text-sm`}
               />
               <button
-                onClick={handleQuickBWLog}
+                onClick={logBodyWeight}
                 disabled={!quickBWInput}
                 className={`${btnPrimary} px-4 text-sm disabled:bg-raised disabled:text-faint disabled:cursor-not-allowed disabled:brightness-100`}
               >

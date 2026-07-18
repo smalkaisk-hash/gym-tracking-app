@@ -39,3 +39,9 @@ export const workoutToRow = (w: any) => ({
 });
 
 export const rowToBW = (r: any) => ({ id: r.id, date: r.date, weight: r.weight });
+
+// The write direction. `id`/`_sync` are client-only, so an entry maps to just the
+// real columns — the mirror of rowToBW, and the single place the body_weight_log
+// insert shape is defined (as workoutToRow is for workouts). Every insert of a
+// weigh-in goes through here, so a new column is added in one spot, not five.
+export const bwToRow = (e: any) => ({ date: e.date, weight: e.weight });
