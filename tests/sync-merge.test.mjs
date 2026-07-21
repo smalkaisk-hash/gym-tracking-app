@@ -13,7 +13,11 @@
 
 const rowToWorkout = (r) => ({ id: r.id, type: r.type, date: r.date });   // stand-in mapper (no _sync)
 
-const mergeUnsynced = (serverRows, mapRow, prev) => {
+// `knownIds` = the row ids that existed when the fetch was ISSUED. It's what lets
+// "absent from the server" mean "deleted remotely" instead of "written after the
+// snapshot was taken" — a row inserted while the fetch was in flight is legitimately
+// missing from it and must not be dropped.
+const mergeUnsynced = (serverRows, mapRow, prev, knownIds = new Set(prev.map(r => r.id))) => {
   const unsynced = prev.filter(r => r._sync);
   const byId = new Map(unsynced.map(r => [r.id, r]));
   const serverIds = new Set(serverRows.map(r => r.id));
@@ -23,7 +27,10 @@ const mergeUnsynced = (serverRows, mapRow, prev) => {
   // server row already carries its exact date (the insert committed, we lost the
   // ack), which would otherwise duplicate the row.
   const orphans = unsynced.filter(r => !serverIds.has(r.id) && !serverDates.has(r.date));
-  return [...merged, ...orphans];
+  // Rows that appeared after the fetch was issued, mark or no mark.
+  const fresh = prev.filter(r =>
+    !r._sync && !knownIds.has(r.id) && !serverIds.has(r.id) && !serverDates.has(r.date));
+  return [...merged, ...orphans, ...fresh];
 };
 
 let pass = 0, fail = 0;
@@ -68,6 +75,24 @@ const check = (name, cond) => { cond ? (pass++, console.log('  ok  ', name)) : (
     [{ id: 'temp-5', type: 'push', date: 'd5', _sync: 'error' }],
   );
   check('lost-ack orphan deduped by date', out.length === 1 && out[0].id === 'r5');
+}
+// G — a row saved WHILE the hydrate fetch was in flight: absent from the server
+// snapshot and carrying no _sync mark, but it wasn't in knownIds, so it must survive.
+// (Pressing Finish during a token-refresh hydrate used to lose the session outright.)
+{
+  const out = mergeUnsynced(
+    [{ id: 'r1', type: 'push', date: 'd1' }],
+    rowToWorkout,
+    [{ id: 'r1', type: 'push', date: 'd1' }, { id: 'r2', type: 'legs', date: 'd2' }],
+    new Set(['r1']),                     // r2 did not exist when the fetch was issued
+  );
+  check('row inserted during hydrate survives', out.map(r => r.id).sort().join(',') === 'r1,r2');
+}
+// H — the mirror case: a row present when the fetch was issued and gone from the
+// server was genuinely deleted, so a stale snapshot must not resurrect it.
+{
+  const out = mergeUnsynced([], rowToWorkout, [], new Set(['r1']));
+  check('locally deleted row is not resurrected', out.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

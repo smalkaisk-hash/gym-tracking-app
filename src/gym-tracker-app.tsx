@@ -300,6 +300,23 @@ Object.assign(EXERCISES, {
 // A free-text exercise the user typed isn't in the catalogue — it lands here.
 const OTHER_GROUP = 'Other';
 
+// ── Safe map lookups ──────────────────────────────────────────────────────────
+// Every table below (TYPE_CONFIG, EXERCISES, BASES, ACCENTS, STARTER_TEMPLATES…)
+// is an object literal used as a dictionary, and their keys come from user data:
+// a workout `type` in an imported backup, a `prefs.base` id, a typed exercise name.
+// A plain `MAP[key]` walks the prototype chain, so a key of '__proto__',
+// 'constructor' or 'toString' returns a truthy Object.prototype member — which
+// then defeats every `?? fallback` and `? :` whitelist guarding these reads, and
+// hands a function to code expecting a string. `pick` returns undefined for
+// anything that isn't an OWN key, so the fallbacks actually fire.
+const own = (o: any, k: any) => o != null && Object.prototype.hasOwnProperty.call(o, k);
+const pick = <T,>(o: Record<string, T> | undefined | null, k: any): T | undefined =>
+  own(o, k) ? (o as Record<string, T>)[k] : undefined;
+// The same idea for maps we BUILD from user-supplied keys: a null-prototype object
+// has no inherited members to collide with, so `map[userKey] = v` is always a plain
+// data write (`map['__proto__'] = v` would otherwise re-point the prototype).
+const bareMap = <T,>(): Record<string, T> => Object.create(null);
+
 // ── Stable exercise identity (roadmap Phase 1, option A) ──────────────────────
 // The display name is no longer the identity. Each exercise has a stable `id` — the
 // slug of its ORIGINAL name — stamped onto every logged exercise. Because the slug is
@@ -307,8 +324,11 @@ const OTHER_GROUP = 'Other';
 // recomputed as slug(name), the same value the write path stores now, so no backfill
 // is needed. Verified: the catalogue's 267 names slug to 267 distinct ids (see
 // tests/exercise-identity.test.mjs).
-const slug = (name: string) =>
-  name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+// Non-string names reach this from a corrupt cache or a hand-edited backup, so it
+// coerces rather than throwing — a nameless exercise must degrade to "Other" in the
+// stats, not white-screen the dashboard.
+const slug = (name: any) =>
+  String(name ?? '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 // To RENAME an exercise safely, change its name string in the catalogue AND pin its
 // id here to the slug of its ORIGINAL name — old and new sessions then share one
@@ -319,7 +339,13 @@ const EXERCISE_ID_OVERRIDES: Record<string, string> = {};
 
 // Stable id for a catalogue/typed name. Falls back to the name itself if it somehow
 // slugs to empty (an all-symbol custom), so an id is never blank.
-const idForName = (name: string) => EXERCISE_ID_OVERRIDES[name] || slug(name) || name;
+const idForName = (name: string) => {
+  // Non-string names reach here from a hand-edited cache or backup; coerce rather
+  // than throw inside `slug`. `pick` keeps a name of '__proto__' from resolving to
+  // an inherited object instead of an id string.
+  const n = typeof name === 'string' ? name : String(name ?? '');
+  return pick(EXERCISE_ID_OVERRIDES, n) || slug(n) || n;
+};
 
 // The stable id of a LOGGED exercise: its stored id, or derived from its name for
 // rows written before ids existed (the same value the write path would have stored).
@@ -412,7 +438,7 @@ const MUSCLE_OVERRIDES_BY_NAME: Record<string, string> = {
 
 // The primary muscle for a catalogue name (override first, else the group default).
 const muscleForCatalogueName = (name: string, group: string) =>
-  MUSCLE_OVERRIDES_BY_NAME[name] ?? GROUP_TO_MUSCLE[group] ?? group;
+  pick(MUSCLE_OVERRIDES_BY_NAME, name) ?? pick(GROUP_TO_MUSCLE, group) ?? group;
 
 // id → muscle and name → muscle, built once for logged-id and legacy-name reads.
 const MUSCLE_BY_ID: Record<string, string> = Object.fromEntries(
@@ -424,7 +450,7 @@ const MUSCLE_BY_NAME: Record<string, string> = Object.fromEntries(
 
 // Muscle for a logged exercise: by id, then legacy name, then Other (free-text).
 const groupForExercise = (ex: any) =>
-  MUSCLE_BY_ID[exerciseIdOf(ex)] ?? MUSCLE_BY_NAME[ex.name] ?? OTHER_GROUP;
+  pick(MUSCLE_BY_ID, exerciseIdOf(ex)) ?? pick(MUSCLE_BY_NAME, ex?.name) ?? OTHER_GROUP;
 
 // The muscle-group breakdown, by whichever metric the user picked, sorted
 // most-trained first. Pure and takes an already date-filtered list, so both the
@@ -434,11 +460,19 @@ const groupForExercise = (ex: any) =>
 //   sessions — how many separate workouts touched the group (once each).
 type MuscleMetric = 'sets' | 'volume' | 'sessions';
 
+// Every read of a workout's exercise list goes through here. A row out of the
+// localStorage cache can lack the array entirely — hand-edited, or truncated by a
+// quota abort mid-write — and `for…of`/`.some` on undefined throws. On any path that
+// runs over EVERY stored workout (the dashboard donut, History search, the Progress
+// exercise list) that one bad row white-screens the app instead of being skipped.
+// The server and import paths both default it to [], so this is the cache's guard.
+const exercisesOf = (w: any): any[] => (Array.isArray(w?.exercises) ? w.exercises : []);
+
 const muscleGroupBreakdown = (workouts: any[], metric: MuscleMetric): { group: string; value: number; pct: number }[] => {
-  const totals: Record<string, number> = {};
+  const totals: Record<string, number> = bareMap();
   for (const w of workouts) {
     const seen = new Set<string>();
-    for (const ex of w.exercises) {
+    for (const ex of exercisesOf(w)) {
       const g = groupForExercise(ex);
       if (metric === 'sets')        totals[g] = (totals[g] ?? 0) + (ex.sets?.length ?? 0);
       else if (metric === 'volume') totals[g] = (totals[g] ?? 0) + volumeOf(ex);
@@ -459,10 +493,33 @@ const GOAL_KEY    = 'gym-weekly-goal';
 const PREFS_KEY   = 'gym-prefs';
 const ACTIVE_KEY  = 'gym-active-session';   // in-progress workout, so a refresh can't lose it
 
+// Which user the cached rows above belong to. localStorage is per-ORIGIN, not
+// per-user, so without this the next account to sign in on a shared browser paints
+// the previous one's dashboard (and could file their sessions under its own id).
+// Recording the owner lets a session end WITHOUT deleting the cache — which matters
+// because an involuntary sign-out (expired refresh token) usually happens offline,
+// exactly when the cache holds the only copy of unsynced rows.
+const CACHE_OWNER_KEY = 'gym-cache-owner';
+
+// How old a persisted in-progress session can be and still be resumed. The session
+// clock is wall-clock derived from the start time, so a session restored days later
+// resumes reading 48:00:00 and logs that as its duration — a permanent bogus record,
+// with no way out of the screen but Finish or Discard. Past this, drop it instead.
+const MAX_RESUME_MS = 12 * 60 * 60 * 1000;   // 12h — longer than any real session
+
 // Seven days in a week, and almost nobody trains twice in one.
 const GOAL_MIN = 1;
 const GOAL_MAX = 7;
 const GOAL_DEFAULT = 4;
+// Math.min/max PROPAGATE NaN rather than clamping it, so an unparsable stored goal
+// (a corrupt cache value, a hand-edited backup) used to land in state as NaN and
+// render the whole goal tile as "NaN%". Lives at module scope beside the bounds it
+// reads — it's a pure function, and nesting it in the component put it out of reach
+// of the tests, which could then only exercise it without these constants in scope.
+const clampGoal = (g: number) => {
+  if (!Number.isFinite(g)) return GOAL_DEFAULT;
+  return Math.min(GOAL_MAX, Math.max(GOAL_MIN, g));
+};
 const THEME_KEY   = 'gym-theme';
 
 // User-chosen view settings, all set from the Settings screen. Persisted as one
@@ -782,12 +839,39 @@ const WeekGoalTile = ({ style, pct, met, count, goal }: any) => {
 // file can't poison the account with NaN weights, blank ids or an unknown type
 // (which would then break the stats and charts that read them). Bad rows drop out
 // rather than propagate; unknown workout types fold to 'custom'.
+// A date is the row's correlation key AND what every chart, streak and calendar
+// bucket parses. An unparseable string survives `text` storage happily and then
+// poisons all of them: NaN sorts unpredictably, the streak head-check `NaN > 2` is
+// false so a dead streak reads as alive, and the calendar buckets it out of sight.
+// So the string must be a date the platform can actually parse, not merely non-empty.
+const isValidDateString = (v: any): v is string =>
+  typeof v === 'string' && v.trim() !== '' && Number.isFinite(new Date(v).getTime());
+
+// Postgres `real` (float4) tops out near 3.4e38, and both weight columns are `real`.
+// A value the client accepts but the column can't hold inserts-errors forever with
+// no retry, so the ceiling belongs on this side too. 100 t is far past any lift or
+// body weight while staying comfortably inside float4.
+const MAX_WEIGHT_KG = 100000;
+const cleanWeight = (raw: any): number | null | undefined => {
+  if (raw == null || raw === '') return null;                     // null = bodyweight
+  // Only a number or a numeric string is a weight. Number() would otherwise coerce
+  // `true`→1, `[]`→0 and `[5]`→5, inventing loads that were never logged — and 0 is
+  // NOT the same as bodyweight (null), so a coerced 0 is a silent data change.
+  if (typeof raw !== 'number' && typeof raw !== 'string') return undefined;
+  // A whitespace-only string is a blank field, not zero — Number(' ') is 0, which
+  // would silently record "0 kg" where the user logged bodyweight.
+  if (typeof raw === 'string' && raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_WEIGHT_KG) return undefined;   // undefined = reject the row
+  return n;
+};
+
+const MAX_REPS = 10000;
 const cleanImportedSet = (s: any) => {
   const reps = Math.trunc(Number(s?.reps));
-  if (!Number.isFinite(reps) || reps <= 0) return null;          // a set needs real reps
-  const raw = s?.weight;
-  const weight = raw == null || raw === '' ? null : Number(raw);  // null = bodyweight, distinct from 0
-  if (weight != null && (!Number.isFinite(weight) || weight < 0)) return null;
+  if (!Number.isFinite(reps) || reps <= 0 || reps > MAX_REPS) return null;   // a set needs real reps
+  const weight = cleanWeight(s?.weight);
+  if (weight === undefined) return null;
   return { reps, weight };
 };
 
@@ -802,28 +886,31 @@ const cleanImportedExercise = (e: any) => {
   };
 };
 
+// A session longer than a day is a stale restored timer, not a real workout.
+const MAX_DURATION_S = 86400;
+
 const cleanImportedWorkout = (w: any) => {
   if (!w || typeof w !== 'object') return null;
-  const date = typeof w.date === 'string' && w.date ? w.date : null;
-  if (!date) return null;                                         // date is the row's correlation key
-  const bw  = Number(w.bodyWeight);
+  if (!isValidDateString(w.date)) return null;                    // date is the row's correlation key
+  const date = w.date;
+  const bw  = cleanWeight(w.bodyWeight);
   const dur = Math.trunc(Number(w.duration));
   return {
-    type: TYPE_CONFIG[w.type] ? w.type : 'custom',               // unknown type folds to custom
-    bodyWeight: w.bodyWeight == null || !Number.isFinite(bw) ? null : bw,
+    type: pick(TYPE_CONFIG, w.type) ? w.type : 'custom',         // unknown type folds to custom
+    bodyWeight: bw === undefined ? null : bw,                     // out-of-range → skipped weigh-in
     exercises: Array.isArray(w.exercises) ? w.exercises.map(cleanImportedExercise).filter(Boolean) : [],
     date,
     notes: typeof w.notes === 'string' ? w.notes : '',
-    ...(Number.isFinite(dur) && dur > 0 ? { duration: dur } : {}),
+    ...(Number.isFinite(dur) && dur > 0 ? { duration: Math.min(dur, MAX_DURATION_S) } : {}),
   };
 };
 
 const cleanImportedBW = (e: any) => {
   if (!e || typeof e !== 'object') return null;
-  const date = typeof e.date === 'string' && e.date ? e.date : null;
+  if (!isValidDateString(e.date)) return null;
   const weight = Number(e.weight);
-  if (!date || !Number.isFinite(weight) || weight <= 0) return null;
-  return { date, weight };
+  if (!Number.isFinite(weight) || weight <= 0 || weight > MAX_WEIGHT_KG) return null;
+  return { date: e.date, weight };
 };
 
 // Home-screen session picker. A tile with `img` renders the photo full-bleed;
@@ -886,6 +973,15 @@ const SPLIT_BY_ID: Record<string, Split> = Object.fromEntries(SPLITS.map(s => [s
 // nothing. Names must match the catalogue exactly or the card is a one-off with a
 // different id and its history won't join up (tests/exercise-identity.test.mjs
 // checks every name here against EXERCISES). Custom is deliberately empty.
+// A fresh exercise card. `_uid` is a per-CARD identity: client-only, and stripped
+// before the session is saved (see finishWorkout). Cards used to be keyed by array
+// index, so React bound each card's un-committed reps/weight draft to a POSITION —
+// reorder or delete a card and the draft stayed behind on that slot, now belonging
+// to a different exercise, and pressing Add Set logged it against the wrong lift.
+const newExerciseCard = (name: string) => ({
+  _uid: crypto.randomUUID(), name, exerciseId: idForName(name), sets: [], notes: '',
+});
+
 const STARTER_TEMPLATES: Record<string, string[]> = {
   push:  ['Bench Press', 'Incline Dumbbell Press', 'Shoulder Press', 'Lateral Raises', 'Tricep Pushdowns'],
   pull:  ['Deadlift', 'Pull-ups', 'Barbell Row', 'Face Pulls', 'Barbell Curl'],
@@ -908,11 +1004,10 @@ const STARTER_TEMPLATES: Record<string, string[]> = {
 };
 
 // The exercise cards a session opens with. Ids are stamped here, same as addExercise.
-const starterExercises = (type: string) =>
-  (STARTER_TEMPLATES[type] ?? []).map(name => ({ name, exerciseId: idForName(name), sets: [], notes: '' }));
+const starterExercises = (type: string) => (pick(STARTER_TEMPLATES, type) ?? []).map(newExerciseCard);
 
 // The tiles a split shows: its days, then Custom (always available, whatever you train).
-const daysOfSplit = (id: string): SessionType[] => [...(SPLIT_BY_ID[id]?.days ?? []), CUSTOM_DAY];
+const daysOfSplit = (id: string): SessionType[] => [...(pick(SPLIT_BY_ID, id)?.days ?? []), CUSTOM_DAY];
 
 // Type → label, derived from SPLITS so a day is named in exactly one place. It holds
 // EVERY day type from every split (not just the current one): it labels history and
@@ -927,7 +1022,7 @@ const TYPE_CONFIG: Record<string, { label: string }> = [...SPLITS.flatMap(s => s
 // display-only — history, stats and the import whitelist all still key off the id.
 // Every label read goes through here rather than TYPE_CONFIG directly.
 const labelForType = (type: string, dayNames: Record<string, string> = {}) =>
-  dayNames[type] || (TYPE_CONFIG[type] ?? TYPE_CONFIG.custom).label;
+  pick(dayNames, type) || (pick(TYPE_CONFIG, type) ?? TYPE_CONFIG.custom).label;
 
 // `dayNames` comes from a cache, a server JSON column or an imported backup, so it
 // gets the same treatment as `hidden`: coerce anything that isn't a string→string
@@ -977,7 +1072,7 @@ const ACCENTS: Record<string, { label: string; light: AccentTone; dark: AccentTo
   slate:   { label: 'Slate',   light: { accent: '71 85 105',  ink: WHITE_INK, hex: '#475569' }, dark: { accent: '124 139 160', ink: DARK_INK,  hex: '#7C8BA0' } },
 };
 const ACCENT_IDS = Object.keys(ACCENTS);
-const accentTone = (id: string, theme: Theme): AccentTone => (ACCENTS[id] ?? ACCENTS.blue)[theme];
+const accentTone = (id: string, theme: Theme): AccentTone => (pick(ACCENTS, id) ?? ACCENTS.blue)[theme];
 
 // Base (neutral) palettes. Each was generated by re-tinting the Graphite ramp at
 // CONSTANT OKLCH lightness — only hue/chroma shift — so every contrast ratio is
@@ -1021,12 +1116,60 @@ const SEMANTICS: Record<string, { label: string; light: SemTone; dark: SemTone }
 };
 const SEM_IDS = Object.keys(SEMANTICS);
 
+// ── Prefs sanitisation ────────────────────────────────────────────────────────
+// `prefs` arrives from three untrusted places — the localStorage cache, the
+// `settings.prefs` JSON column, and an imported backup — and it used to be merged
+// over DEFAULT_PREFS with only `hidden` and `dayNames` checked. Everything else
+// passed through verbatim, so a hand-edited blob could set `units: "stone"` (every
+// weight then rendered as kg but labelled "stone") or `base: "__proto__"` (the theme
+// resolver threw, blanking the app on every device the blob synced to).
+//
+// The merge stays forward-compatible — an unknown FIELD is still preserved, so a
+// blob written by a newer build round-trips — but every field the app actually
+// reads is now pinned to a known-good value. One function, used by all three paths,
+// so they can't drift apart again.
+const oneOf = <T,>(v: any, allowed: readonly T[], fallback: T): T =>
+  allowed.includes(v) ? v : fallback;
+
+const MAX_NAME_LEN = 40;
+const REST_SECONDS = [30, 60, 90, 120, 180] as const;
+const GOAL_CARD_STYLES: GoalCardStyle[] = ['liquid', 'bubbles', 'mosaic', 'glow', 'ring', 'plates', 'liquidNumber'];
+const SPLIT_IDS = SPLITS.map(s => s.id);
+const WIDGET_KEYS = Object.keys(WIDGET_LABELS);
+
+const sanitizePrefs = (raw: any): Prefs => {
+  const p = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  return {
+    ...DEFAULT_PREFS,
+    ...p,
+    name:     typeof p.name === 'string' ? p.name.trim().slice(0, MAX_NAME_LEN) : '',
+    gender:   oneOf<Gender>(p.gender, ['male', 'female', 'other', ''], ''),
+    units:    oneOf<Units>(p.units, ['kg', 'lb'], 'kg'),
+    // Only real widget keys — an unknown key would silently hide nothing, but an
+    // array of objects would break the `.includes` reads that drive every screen.
+    hidden:   Array.isArray(p.hidden) ? p.hidden.filter((k: any) => WIDGET_KEYS.includes(k)) : [],
+    muscleMetric:  oneOf<MuscleMetric>(p.muscleMetric, ['sets', 'volume', 'sessions'], 'sets'),
+    bwChart:       oneOf<'line' | 'bar'>(p.bwChart, ['line', 'bar'], 'line'),
+    accent:        oneOf(p.accent, ACCENT_IDS, 'blue'),
+    base:          oneOf(p.base, BASE_IDS, 'graphite'),
+    semantics:     oneOf(p.semantics, SEM_IDS, 'plates'),
+    restTimer:     typeof p.restTimer === 'boolean' ? p.restTimer : DEFAULT_PREFS.restTimer,
+    restSeconds:   oneOf(p.restSeconds, REST_SECONDS as readonly number[], DEFAULT_PREFS.restSeconds),
+    workoutTimer:  typeof p.workoutTimer === 'boolean' ? p.workoutTimer : DEFAULT_PREFS.workoutTimer,
+    goalCardStyle: oneOf<GoalCardStyle>(p.goalCardStyle, GOAL_CARD_STYLES, 'liquid'),
+    // '' is meaningful (not chosen yet → the home card shows the chooser), so it's
+    // an allowed value rather than a fallback.
+    split:         oneOf(p.split, ['', ...SPLIT_IDS], ''),
+    dayNames:      safeDayNames(p.dayNames),
+  };
+};
+
 // Resolve every customizable CSS token for a theme, from the user's choices. One
 // place so the runtime effect and the pre-paint stamp stay in agreement.
 const resolveThemeVars = (accent: string, base: string, semantics: string, theme: Theme): Record<string, string> => {
   const a = accentTone(accent, theme);
-  const b = (BASES[base] ?? BASES.graphite)[theme];
-  const s = (SEMANTICS[semantics] ?? SEMANTICS.plates)[theme];
+  const b = (pick(BASES, base) ?? BASES.graphite)[theme];
+  const s = (pick(SEMANTICS, semantics) ?? SEMANTICS.plates)[theme];
   return { ...b.tokens, '--accent': a.accent, '--accent-ink': a.ink, '--good': s.good, '--warn': s.warn, '--crit': s.crit };
 };
 
@@ -1036,7 +1179,7 @@ const resolveThemeVars = (accent: string, base: string, semantics: string, theme
 const resolveChart = (prefs: { accent: string; base: string } | undefined, theme: Theme) => {
   const fixed = CHART[theme];
   if (!prefs) return fixed;
-  const b = (BASES[prefs.base] ?? BASES.graphite)[theme].chart;
+  const b = (pick(BASES, prefs.base) ?? BASES.graphite)[theme].chart;
   return { ...fixed, accent: accentTone(prefs.accent, theme).hex, surface: b.surface, line: b.line, grid: b.grid, axis: b.axis, muted: b.muted };
 };
 
@@ -1045,8 +1188,13 @@ const resolveChart = (prefs: { accent: string; base: string } | undefined, theme
 // chosen accent — a coordinated family of the accent, never the raw accent itself.
 // Small self-contained HSL helpers (no colour library in the app). h in degrees,
 // s/l in %.
+// Falls back to the default blue rather than throwing on a malformed value: the hex
+// it reads comes from the accent table, which is keyed by a stored pref — so a bad
+// id used to reach here as undefined and take the whole dashboard down with it.
+const FALLBACK_HEX = '#2E7BD6';
 const hexToHsl = (hex: string): { h: number; s: number; l: number } => {
-  const m = hex.replace('#', '');
+  const src = typeof hex === 'string' && /^#?[0-9a-fA-F]{6}$/.test(hex.trim()) ? hex.trim() : FALLBACK_HEX;
+  const m = src.replace('#', '');
   const r = parseInt(m.slice(0, 2), 16) / 255;
   const g = parseInt(m.slice(2, 4), 16) / 255;
   const b = parseInt(m.slice(4, 6), 16) / 255;
@@ -1101,8 +1249,16 @@ const muscleDonutPalette = (accentHex: string, theme: Theme, count: number): str
   });
 };
 
+// Sums reps × weight over an exercise's sets. Tolerates a missing/!array `sets` and
+// non-numeric entries: this runs over every stored row on the dashboard, so one
+// malformed exercise from an old cache must degrade to 0, not throw and blank the
+// screen. `num` also stops a NaN/Infinity in the data propagating into the total —
+// once the sum is NaN every volume readout on the page renders "NaN".
+const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const volumeOf = (exercise: any) =>
-  exercise.sets.reduce((sum: number, s: any) => sum + (s.reps || 0) * (s.weight || 0), 0);
+  Array.isArray(exercise?.sets)
+    ? exercise.sets.reduce((sum: number, s: any) => sum + num(s?.reps) * num(s?.weight), 0)
+    : 0;
 
 // ─── Units ───────────────────────────────────────────────────────────────────
 // Everything is stored in kg. These convert only at the display and input edges,
@@ -1116,15 +1272,43 @@ const toDisplayWeight = (kg: number | null, units: Units): number | null =>
 
 // Parse a value the user typed in the current units and return kg to store.
 // Blank stays null (the bodyweight-optional rule).
+//
+// This is the ONLY gate between the keyboard and the database, and it used to pass
+// through whatever parseFloat produced. `<input type="number">` blocks letters but
+// happily accepts "-50" and "1e39": a negative weight made session volume negative
+// (which the donut then dropped from its slices while still counting it in the
+// total, rendering percentages over 100), and 1e39 exceeds Postgres `real`, so the
+// insert failed forever with no retry — a row stuck at "not synced" for good.
+// Out-of-range now reads as "no value" rather than being stored.
 const fromInputWeight = (val: string, units: Units): number | null => {
-  if (val.trim() === '') return null;
+  if (typeof val !== 'string' || val.trim() === '') return null;
   const n = parseFloat(val);
-  if (Number.isNaN(n)) return null;
-  return units === 'lb' ? n * KG_PER_LB : n;
+  if (!Number.isFinite(n) || n < 0) return null;
+  const kg = units === 'lb' ? n * KG_PER_LB : n;
+  return kg > MAX_WEIGHT_KG ? null : kg;
 };
 
-// Trim a display number to 1 dp, dropping a trailing .0.
+// Reps typed into an input. Same contract: a whole number in range, else 0 (which
+// every caller treats as "not a usable set").
+const fromInputReps = (val: string): number => {
+  const n = Math.trunc(parseFloat(val));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(n, MAX_REPS);
+};
+
+// A BODY weight, unlike a lift, is never null-as-bodyweight and never zero — 0 kg
+// is a mistyped entry, not a data point, and it drags the chart to the floor. The
+// import sanitiser already rejected `weight <= 0`; the live inputs did not.
+const fromInputBodyWeight = (val: string, units: Units): number | null => {
+  const kg = fromInputWeight(val, units);
+  return kg != null && kg > 0 ? kg : null;
+};
+
+// Trim a display number to 1 dp, dropping a trailing .0. Non-finite input renders
+// as "0" rather than the literal string "NaN"/"Infinity" — these are read mid-set at
+// arm's length, and a garbled number is worse than a zero.
 const trim1 = (n: number) => {
+  if (!Number.isFinite(n)) return '0';
   const r = Math.round(n * 10) / 10;
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
 };
@@ -1133,13 +1317,22 @@ const trim1 = (n: number) => {
 const fmtWeight = (kg: number | null, units: Units): string =>
   kg == null ? 'Bodyweight' : `${trim1(toDisplayWeight(kg, units) as number)} ${units}`;
 
-// Total training volume (stored kg), in the display units. Tonnes only apply to kg.
+// Total training volume (stored kg), in the display units.
+//
+// Every return value ends in " <unit>". That matters because the donut's centre
+// readout strips a trailing unit with /(kg|lb)$/ and prints `units` beneath instead:
+// the kg branch used to abbreviate to "2.5t", which that regex does NOT match, so a
+// 2500 kg total rendered as "2.5t" sitting above the caption "kg" — two units, one
+// of them wrong. (It was a label mismatch, not a 1000× error; the number itself was
+// right.) Abbreviation thresholds stay per-unit — abbreviating lb at 1 000 would cost
+// a digit on the very common 2 000-5 000 lb session, which reads fine in full.
+const VOLUME_ABBREV_AT = { kg: 1000, lb: 100000 } as const;
 const fmtVolume = (kg: number, units: Units = 'kg') => {
-  if (units === 'lb') {
-    const lb = kg * LB_PER_KG;
-    return lb >= 100000 ? `${(lb / 1000).toFixed(1)}k lb` : `${Math.round(lb)} lb`;
-  }
-  return kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)} kg`;
+  const n = Number.isFinite(kg) ? kg : 0;
+  const v = units === 'lb' ? n * LB_PER_KG : n;
+  return Math.abs(v) >= VOLUME_ABBREV_AT[units]
+    ? `${(v / 1000).toFixed(1)}k ${units}`
+    : `${Math.round(v)} ${units}`;
 };
 
 // A session length in seconds, as a clock: M:SS, or H:MM:SS once it passes an hour.
@@ -1174,6 +1367,16 @@ const metricValueLabel = (metric: MuscleMetric, value: number, units: Units): st
 // calendar day. Local, not UTC: parsing an ISO date as UTC midnight would shove a
 // late-evening session onto the day before.
 const startOfDayMs = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+// Whole calendar days between two local-midnight stamps.
+//
+// Dividing the ms difference by 86 400 000 is wrong twice a year: local midnights
+// two calendar days apart are 49 h apart across a DST fall-back, giving 2.041 — so a
+// streak with a tolerated two-day gap spanning the changeover measured as MORE than
+// two days and was declared broken. Rounding restores the calendar-day count the
+// comparison is actually about (the drift is only ±1 h, far from a 0.5-day error).
+const daysBetween = (laterMs: number, earlierMs: number) =>
+  Math.round((laterMs - earlierMs) / 86400000);
 
 // ─── useTheme ──────────────────────────────────────────────────────────────────
 // Light or dark, pinned to the user's choice. Defaults to the OS preference on
@@ -1231,6 +1434,9 @@ const Toggle = ({ on, onClick, size = 'md', ...rest }: any) => {
   );
 };
 
+// Shared across every WorkoutScreen mount — see primeAudio for why it isn't per-mount.
+let sharedAudioCtx: any = null;
+
 // ─── SetRow ────────────────────────────────────────────────────────────────────
 // The scoreboard line. Weight is the number you look for, so it leads — unless
 // there wasn't one, in which case reps are the whole story.
@@ -1254,7 +1460,7 @@ const SetRow = ({ index, set, isTop, onRemove, units = 'kg' }: any) => {
         <span className="text-[11px] font-semibold text-muted">reps</span>
       </div>
       {onRemove ? (
-        <button onClick={onRemove} aria-label={`Remove set ${index + 1}`} className="text-faint hover:text-crit transition-colors">
+        <button onClick={onRemove} aria-label={`Remove set ${index + 1}`} className="-m-1.5 p-1.5 text-faint hover:text-crit transition-colors">
           <X size={15} />
         </button>
       ) : <span className="w-[15px]" />}
@@ -1270,7 +1476,19 @@ const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, remo
   // Abs can be loaded or not, so weight is optional for them — reps alone is a
   // complete set.
   const weightOptional = BODYWEIGHT_OPTIONAL.has(exercise.name);
-  const canAddSet      = !!reps && (weightOptional || !!weight);
+
+  // A typed value the parsers reject (negative, or past the storable ceiling) must be
+  // REFUSED visibly, not silently dropped. fromInputWeight returns null for both
+  // "blank" and "out of range", and null means bodyweight — so without this check,
+  // typing -5 into the weight box logged a perfectly valid-looking Bodyweight set.
+  const repsInvalid   = reps !== '' && fromInputReps(reps) <= 0;
+  const weightInvalid = weight !== '' && fromInputWeight(weight, units) == null;
+  const invalidMsg =
+    repsInvalid   ? `Reps must be a whole number between 1 and ${MAX_REPS}.` :
+    weightInvalid ? `Weight must be between 0 and ${trim1(toDisplayWeight(MAX_WEIGHT_KG, units) as number)} ${units}.` :
+    null;
+
+  const canAddSet = !!reps && !repsInvalid && !weightInvalid && (weightOptional || !!weight);
 
   const handleAddSet = () => {
     if (canAddSet) {
@@ -1359,13 +1577,13 @@ const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, remo
 
       <div className="grid grid-cols-7 gap-2 mb-3">
         <input
-          type="number" inputMode="numeric" placeholder="Reps" aria-label="Reps"
+          type="number" inputMode="numeric" min="0" step="1" placeholder="Reps" aria-label="Reps"
           value={reps} onChange={e => setReps(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAddSet()}
           className={`${input} col-span-2 text-center text-sm`}
         />
         <input
-          type="number" inputMode="decimal" step="0.1"
+          type="number" inputMode="decimal" min="0" step="0.1"
           placeholder={weightOptional ? `${units} — optional` : units}
           aria-label={weightOptional ? `Weight in ${units} (optional — leave blank for bodyweight)` : `Weight in ${units}`}
           value={weight} onChange={e => setWeight(e.target.value)}
@@ -1380,6 +1598,8 @@ const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, remo
           Add Set
         </button>
       </div>
+
+      {invalidMsg && <p role="alert" className="-mt-2 mb-3 text-[11px] text-crit">{invalidMsg}</p>}
 
       <textarea
         value={exercise.notes || ''}
@@ -1404,7 +1624,7 @@ const ExercisePicker = ({ workoutType, onAdd, closeOnAdd = true }: any) => {
   const [customExerciseName, setCustomExerciseName] = useState('');
   const [openGroup, setOpenGroup]                   = useState<string | null>(null);
 
-  const availableGroups: ExerciseGroup[] = workoutType === 'custom' ? ALL_GROUPS : EXERCISES[workoutType] ?? [];
+  const availableGroups: ExerciseGroup[] = workoutType === 'custom' ? ALL_GROUPS : pick(EXERCISES, workoutType) ?? [];
 
   // Filtering keeps the grouping — empty groups drop out rather than leaving a bare heading.
   const query     = customExerciseName.trim().toLowerCase();
@@ -1523,7 +1743,14 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
   const restOn    = workout.restTimer ?? restTimer;
   const patch     = (p: any) => patchWorkout && patchWorkout(p);
   const toggleSessionTimer = () => patch({ workoutTimer: !sessionOn });
-  const toggleRestTimer    = () => patch({ restTimer: !restOn });
+  // Switching rest OFF must also stop any countdown already running. It used to only
+  // flip the flag, so the interval kept going behind a UI that said "off" — with the
+  // Pause/Skip controls hidden — and the phone vibrated and chimed 90s later with no
+  // way to cancel it short of toggling rest back on.
+  const toggleRestTimer = () => {
+    if (restOn) skipRest();
+    patch({ restTimer: !restOn });
+  };
 
   // Session clock — counts up from the start, minus any paused time. Frozen while
   // paused (pausedAt set); derived from wall-clock each tick otherwise, so it stays
@@ -1560,12 +1787,18 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
   // Desktop has no vibrate, so the countdown ending was silent — add a short chime
   // via WebAudio and a visual flash. The context is created on the user gesture that
   // starts the rest (browsers block audio created cold).
+  // One context per DOCUMENT, not per WorkoutScreen mount. Browsers cap how many a
+  // page may create (~6); starting and discarding that many sessions in one page load
+  // used to exhaust the cap, after which `new AC()` threw into the catch below and the
+  // chime silently stopped working for the rest of the page's life. A module-level
+  // context is created at most once and reused by every session.
   const primeAudio = () => {
     try {
       const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
       if (!AC) return;
-      if (!audioRef.current) audioRef.current = new AC();
-      if (audioRef.current.state === 'suspended') audioRef.current.resume();
+      if (!sharedAudioCtx) sharedAudioCtx = new AC();
+      audioRef.current = sharedAudioCtx;
+      if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume();
     } catch { /* ignore */ }
   };
   const chime = () => {
@@ -1585,31 +1818,67 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
       beep(880, 0); beep(1174, 0.12);   // two-tone "done"
     } catch { /* ignore */ }
   };
+  const doneFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onRestComplete = () => {
     setRestPaused(false);
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200);
     chime();
     setRestDone(true);
-    setTimeout(() => setRestDone(false), 1500);
+    // Tracked in a ref so a rapid second rest can't have its green flash cancelled by
+    // the previous rest's stale timeout, and so unmount clears it.
+    if (doneFlashRef.current) clearTimeout(doneFlashRef.current);
+    doneFlashRef.current = setTimeout(() => setRestDone(false), 1500);
   };
-  // Drive the countdown; reused by start and resume so paused time picks up cleanly.
-  const runRest = () => {
+
+  // The countdown is DEADLINE-based, not decrement-based. It used to tick `r - 1`
+  // once a second, so it only advanced while the tab was awake — background the app
+  // or lock the phone (exactly what you do between sets) and the countdown froze,
+  // then resumed from where it left off and never fired while it mattered. Desktop
+  // Chrome throttles hidden tabs to one tick a minute for the same effect. Storing
+  // the target time and deriving the remainder means wall-clock decides, and coming
+  // back to a rest that expired while hidden completes it immediately.
+  const restEndRef = useRef<number | null>(null);
+  const tickRest = () => {
+    const end = restEndRef.current;
+    if (end == null) return;
+    const left = Math.ceil((end - Date.now()) / 1000);
+    if (left <= 0) { clearRest(); restEndRef.current = null; setRest(null); onRestComplete(); }
+    else setRest(left);
+  };
+  // Reused by start and resume so paused time picks up cleanly.
+  const runRest = (secs: number) => {
     clearRest();
-    restRef.current = setInterval(() => {
-      setRest(r => {
-        if (r == null) return r;
-        if (r <= 1) { clearRest(); onRestComplete(); return null; }
-        return r - 1;
-      });
-    }, 1000);
+    restEndRef.current = Date.now() + secs * 1000;
+    setRest(Math.ceil(secs));
+    restRef.current = setInterval(tickRest, 250);   // sub-second so the display lands on time
   };
-  const startRest  = (secs: number = restSeconds) => { primeAudio(); setRestDone(false); setRest(secs); setRestPaused(false); runRest(); };
+  const startRest  = (secs: number = restSeconds) => { primeAudio(); setRestDone(false); setRestPaused(false); runRest(secs); };
   const pauseRest  = () => { clearRest(); setRestPaused(true); };
-  const resumeRest = () => { primeAudio(); setRestPaused(false); runRest(); };
-  const skipRest   = () => { clearRest(); setRestPaused(false); setRest(null); };
+  const resumeRest = () => { primeAudio(); setRestPaused(false); runRest(rest ?? restSeconds); };
+  const skipRest   = () => { clearRest(); restEndRef.current = null; setRestPaused(false); setRest(null); };
   const resetRest  = () => startRest();   // restart the countdown from the full duration
-  const bumpRest   = (delta: number) => setRest(r => (r == null ? r : Math.max(0, r + delta)));
-  useEffect(() => clearRest, []);   // clear on unmount (leaving the workout)
+  const bumpRest   = (delta: number) => {
+    setRest(r => {
+      if (r == null) return r;
+      const next = Math.max(0, r + delta);
+      // Move the deadline too, or the next tick would immediately overwrite `rest`
+      // with the un-bumped remainder.
+      if (!restPaused) restEndRef.current = Date.now() + next * 1000;
+      return next;
+    });
+  };
+  // Re-derive the moment the tab comes back: a rest that ran out while hidden must
+  // complete on return rather than silently continue from a stale number.
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden && restRef.current) tickRest(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  });
+  // Clear both timers on unmount (leaving the workout).
+  useEffect(() => () => {
+    clearRest();
+    if (doneFlashRef.current) clearTimeout(doneFlashRef.current);
+  }, []);
 
   // Logging a set auto-starts the countdown, but only if the setting is on. Manual
   // Start/Pause below stays available regardless, so you can rest off-schedule.
@@ -1678,7 +1947,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
       <div className="flex flex-col gap-3">
         {workout.exercises.map((exercise: any, i: number) => (
           <ExerciseCard
-            key={i}
+            key={exercise._uid ?? `${exerciseIdOf(exercise)}-${i}`}
             exercise={exercise}
             exerciseIndex={i}
             exerciseCount={workout.exercises.length}
@@ -1784,11 +2053,16 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
 
 // ─── HistoryScreen ─────────────────────────────────────────────────────────────
 const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', split = '', dayNames = {} }: any) => {
-  const [expandedWorkout, setExpandedWorkout] = useState<number | null>(null);
-  const [viewingNotes, setViewingNotes]       = useState<number | null>(null);
-  const [editingWorkout, setEditingWorkout]   = useState<number | null>(null);
+  // Row-scoped UI state holds the workout's uuid, never its position. `workouts`
+  // is replaced out from under this screen — hydrate lands a few hundred ms after
+  // the cache paints, and a session added or deleted on another device shifts
+  // every index past it — so a stored index can come to name a different row,
+  // and Save/Delete would then hit the wrong session. The uuid can't drift.
+  const [expandedWorkout, setExpandedWorkout] = useState<string | null>(null);
+  const [viewingNotes, setViewingNotes]       = useState<string | null>(null);
+  const [editingWorkout, setEditingWorkout]   = useState<string | null>(null);
   const [editData, setEditData]               = useState<any>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [filterType, setFilterType]           = useState('all');
   const [search, setSearch]                   = useState('');
   const [addExerciseName, setAddExerciseName] = useState('');
@@ -1813,62 +2087,131 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
     return Object.keys(TYPE_CONFIG).filter(t => wanted.has(t));
   }, [workouts, split]);
 
-  // Display order is newest-first, but the mutators index into the unsorted
-  // array — so originalIndex has to survive the sort.
-  const sortedWorkouts = workouts
-    .map((w: any, i: number) => ({ ...w, originalIndex: i }))
+  // Display order is newest-first. Sort a copy — every row carries its own uuid,
+  // so nothing downstream needs to know where it sat in the stored array.
+  const sortedWorkouts = [...workouts]
     .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  // Both filter controls can go out from under an applied filter: the bar hides
+  // below the threshold, and the type list is derived from what's logged, so
+  // deleting the last 'push' session orphans a `filterType` of 'push'. Either way
+  // History would keep filtering — a short or empty list, with the select snapped
+  // back to "All types" (a value with no option) or no control on screen at all.
+  // So the filter is read through what's currently *reachable*, not raw state.
+  const showFilters  = sortedWorkouts.length > 3;
+  const activeType   = showFilters && filterTypes.includes(filterType) ? filterType : 'all';
+  const activeSearch = showFilters ? search : '';
+
+  // …and state follows, so a type that comes back later (import, restore) can't
+  // silently re-apply a filter the user long since stopped seeing.
+  useEffect(() => {
+    if (filterType !== 'all' && !filterTypes.includes(filterType)) setFilterType('all');
+  }, [filterTypes, filterType]);
+
   // Type + text filter. Search matches the type label, any exercise name, or notes.
-  // Render + mutators both index into `filtered`, so originalIndex still routes
-  // edits/deletes to the right stored workout.
-  const q = search.trim().toLowerCase();
+  const q = activeSearch.trim().toLowerCase();
   const filtered = sortedWorkouts.filter((w: any) => {
-    if (filterType !== 'all' && w.type !== filterType) return false;
+    if (activeType !== 'all' && w.type !== activeType) return false;
     if (!q) return true;
     return labelForType(w.type, dayNames).toLowerCase().includes(q)
-      || w.exercises.some((ex: any) => ex.name.toLowerCase().includes(q))
+      // `ex.name` is guarded too: an exercise logged without one (legacy/corrupt row)
+      // would throw here on every keystroke and take History down with it.
+      || exercisesOf(w).some((ex: any) => typeof ex?.name === 'string' && ex.name.toLowerCase().includes(q))
       || (w.notes ?? '').toLowerCase().includes(q);
   });
 
-  const toggleWorkout = (i: number) => {
-    setExpandedWorkout(expandedWorkout === i ? null : i);
+  const toggleWorkout = (id: string) => {
+    setExpandedWorkout(expandedWorkout === id ? null : id);
     setViewingNotes(null);
     setEditingWorkout(null);
     setConfirmingDelete(null);
   };
 
-  const startEditing = (i: number, w: any) => {
-    setEditingWorkout(i);
+  const startEditing = (id: string, w: any) => {
+    setEditingWorkout(id);
     setEditData(JSON.parse(JSON.stringify(w)));
   };
 
   const cancelEditing = () => { setEditingWorkout(null); setEditData(null); };
 
-  // Rows are keyed by originalIndex (see the map below), so edits/deletes route
-  // straight through it — no `filtered[i]` lookup, which would be wrong once the
-  // calendar renders a single day's subset instead of the whole list.
-  const saveEditing = (oi: number) => {
-    updateWorkout(workouts[oi].id, editData);   // oi = originalIndex → resolve the row uuid
+  // Rows are keyed by uuid, so edits/deletes route straight through — no lookup
+  // by position, which would be wrong the moment the array is re-sorted, filtered
+  // down to one calendar day, or replaced by a hydrate mid-edit.
+  const saveEditing = (id: string) => {
+    const cleaned = normalizeEditedSets(editData);
+    // finishWorkout refuses to log a session with no sets; an edit must not be able
+    // to create one either. Deleting the last set is a request to delete the session.
+    if (cleaned.exercises.length === 0) { setConfirmingDelete(id); return; }
+    updateWorkout(id, cleaned);
     setEditingWorkout(null);
     setEditData(null);
   };
 
-  const confirmDelete = (oi: number) => {
-    deleteWorkout(workouts[oi].id);
+  const confirmDelete = (id: string) => {
+    deleteWorkout(id);
     setExpandedWorkout(null);
     setEditingWorkout(null);
     setConfirmingDelete(null);
+    setViewingNotes(null);   // else the next row opened inherits an open notes panel
   };
 
   const updateSetValue = (exIdx: number, setIdx: number, field: string, val: string) => {
     const u = { ...editData };
-    // Weight is typed in display units and stored in kg (blank → bodyweight/null);
-    // reps coerce to an integer, blank → 0 so a cleared field can't store NaN.
+    // Weight is typed in display units and stored in kg (blank → bodyweight/null),
+    // through the same range-checked parser as the live session, so a History edit
+    // can't introduce a negative or overflowing value the logger would reject.
+    //
+    // Reps keep the RAW string while the field is being edited. Coercing a cleared
+    // field straight to 0 meant selecting "12" and deleting it re-rendered the input
+    // as "0", so typing "8" gave "08" — you could never simply retype a number. The
+    // empty string is normalised away on save (see normalizeEditedSets); nothing that
+    // reads reps in the meantime treats '' as a number.
+    //
+    // Weight keeps the raw string for the same reason, and for a sharper one: a
+    // rejected weight comes back as `null`, and null MEANS BODYWEIGHT. Storing it
+    // straight would silently convert a loaded set into a bodyweight set — the field
+    // would blank, the placeholder would flip to "BW", and Save would persist that.
+    // Out-of-range input is held as typed and refused on save instead (see
+    // editInvalid / normalizeEditedSets).
     u.exercises[exIdx].sets[setIdx][field] =
-      field === 'weight' ? fromInputWeight(val, units) : (val === '' ? 0 : parseInt(val, 10) || 0);
+      val === '' ? (field === 'weight' ? null : '')
+      : field === 'weight' ? (fromInputWeight(val, units) == null ? val : fromInputWeight(val, units))
+      : fromInputReps(val);
     setEditData(u);
   };
+
+  // Any set value the parsers can't accept, held as a raw string by updateSetValue.
+  // Save is blocked while one exists, so nothing out-of-range can be persisted and
+  // nothing is silently reinterpreted.
+  const editInvalid = editData
+    ? typeof editData.bodyWeight === 'string' ||
+      exercisesOf(editData).some((ex: any) =>
+        (Array.isArray(ex.sets) ? ex.sets : []).some((s: any) =>
+          (typeof s.weight === 'string' && s.weight !== '') ||
+          (typeof s.reps === 'string' && s.reps !== '' && fromInputReps(s.reps) <= 0)))
+    : false;
+
+  // Reps may hold an in-progress '' (above); a set that still has no real reps when
+  // the edit is saved is dropped, and an exercise left with no sets goes with it —
+  // the same shape finishWorkout enforces for a new session.
+  const normalizeEditedSets = (w: any) => ({
+    ...w,
+    exercises: exercisesOf(w)
+      .map((ex: any) => ({
+        ...ex,
+        sets: (Array.isArray(ex.sets) ? ex.sets : [])
+          .map((s: any) => ({
+            ...s,
+            reps: typeof s.reps === 'number' ? s.reps : fromInputReps(String(s.reps ?? '')),
+            // A string here is a value the parser refused; drop back to bodyweight
+            // rather than storing the raw text. Save is blocked while any exists, so
+            // this is only a belt-and-braces normalisation.
+            weight: typeof s.weight === 'number' || s.weight == null ? s.weight : fromInputWeight(String(s.weight), units),
+          }))
+          .filter((s: any) => s.reps > 0),
+      }))
+      .filter((ex: any) => ex.sets.length > 0),
+  });
 
   const addSetToEdit = (exIdx: number) => {
     const u = { ...editData };
@@ -1918,17 +2261,22 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
     const d = new Date(k); return d.getFullYear() === calYear && d.getMonth() === calMon;
   });
   const newestMonthDay = monthDayKeys.length ? Math.max(...monthDayKeys) : null;
-  const activeDay = selectedDay != null ? selectedDay : newestMonthDay;
+  // A picked day can empty out under the user — delete its last session, or filter
+  // it away — and holding it then reads as "No sessions this month" while the rest
+  // of the month sits in the grid. Fall back to the default pick when that happens.
+  const activeDay = selectedDay != null && daysMap.has(selectedDay) ? selectedDay : newestMonthDay;
   const activeDayWorkouts = activeDay != null ? (daysMap.get(activeDay) ?? []) : [];
   const activeDayLabel = activeDay != null
     ? new Date(activeDay).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
     : '';
   // The row list draws from the whole filtered set in list mode, or just the
-  // selected day in calendar mode — same rows, keyed by originalIndex either way.
+  // selected day in calendar mode — same rows, keyed by uuid either way.
   const rowsToShow = viewMode === 'list' ? filtered : activeDayWorkouts;
 
   return (
-    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4">
+    // pb-24 clears the fixed bottom tab bar; without it the last session row (and
+    // its expanded editor) sat permanently behind the bar, unreachable by scrolling.
+    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 pb-24">
       <div className="flex items-center justify-between gap-3 mb-4">
         <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">History</h2>
         {sortedWorkouts.length > 0 && (
@@ -1941,10 +2289,10 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
       </div>
 
       {/* Filter + search — feeds both views; hidden until there's enough history. */}
-      {sortedWorkouts.length > 3 && (
+      {showFilters && (
         <div className="flex flex-wrap gap-2 mb-3">
           <select
-            value={filterType} onChange={e => { setFilterType(e.target.value); setExpandedWorkout(null); }}
+            value={activeType} onChange={e => { setFilterType(e.target.value); setExpandedWorkout(null); }}
             aria-label="Filter by session type"
             className={`${input} py-2 text-sm`}
           >
@@ -2042,20 +2390,22 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
             <h3 className={`${label} mb-1`}>{activeDayLabel}</h3>
           )}
           {rowsToShow.map((workout: any) => {
-            // Key by originalIndex, not list position — the same row renders in
-            // the list and the calendar day-detail, and every expand/edit/delete
-            // keyed below routes to the right stored workout regardless of subset.
-            const index          = workout.originalIndex;
-            const isEditing      = editingWorkout === index;
+            // Key by the row uuid, not list position — the same row renders in the
+            // list and the calendar day-detail, and every expand/edit/delete keyed
+            // below routes to the right stored workout regardless of subset, sort
+            // order, or a hydrate replacing the array while a row is open.
+            const rowId          = workout.id;
+            const isEditing      = editingWorkout === rowId;
             const displayWorkout = isEditing ? editData : workout;
             const typeCfg        = { label: labelForType(workout.type, dayNames) };
-            const isOpen         = expandedWorkout === index;
-            const sessionVolume  = workout.exercises.reduce((s: number, ex: any) => s + volumeOf(ex), 0);
+            const isOpen         = expandedWorkout === rowId;
+            const exerciseList   = exercisesOf(workout);
+            const sessionVolume  = exerciseList.reduce((s: number, ex: any) => s + volumeOf(ex), 0);
 
             return (
-              <div key={index} className={`${card} overflow-hidden`}>
+              <div key={rowId} className={`${card} overflow-hidden`}>
                 <button
-                  onClick={() => toggleWorkout(index)}
+                  onClick={() => toggleWorkout(rowId)}
                   aria-expanded={isOpen}
                   className="w-full p-4 text-left hover:bg-raised/60 transition-colors"
                 >
@@ -2080,7 +2430,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
                       <div className="text-right">
                         <p className={`${readout} text-lg text-accent`}>{fmtVolume(sessionVolume, units)}</p>
                         <p className="text-xs text-faint mt-0.5 tabular-nums">
-                          {workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''}
+                          {exerciseList.length} exercise{exerciseList.length !== 1 ? 's' : ''}
                         </p>
                       </div>
                       <ChevronRight size={16} className={`text-faint transition-transform ${isOpen ? 'rotate-90' : ''}`} />
@@ -2091,11 +2441,11 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
                 {isOpen && (
                   <div className="border-t border-line">
                     <div className="p-3 border-b border-line flex gap-2 flex-wrap items-center">
-                      {confirmingDelete === index ? (
+                      {confirmingDelete === rowId ? (
                         <>
                           <span className="text-sm text-ink">Delete this session?</span>
                           <div className="ml-auto flex gap-2">
-                            <button onClick={e => { e.stopPropagation(); confirmDelete(index); }} className={`${btnDanger} flex items-center gap-2 px-3 py-1.5 text-sm`}>
+                            <button onClick={e => { e.stopPropagation(); confirmDelete(rowId); }} className={`${btnDanger} flex items-center gap-2 px-3 py-1.5 text-sm`}>
                               <Trash2 size={13} /> Delete
                             </button>
                             <button onClick={e => { e.stopPropagation(); setConfirmingDelete(null); }} className={`${btnSecondary} px-3 py-1.5 text-sm`}>
@@ -2105,20 +2455,25 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
                         </>
                       ) : !isEditing ? (
                         <button
-                          onClick={e => { e.stopPropagation(); startEditing(index, workout); }}
+                          onClick={e => { e.stopPropagation(); startEditing(rowId, workout); }}
                           className={`${btnSecondary} flex items-center gap-2 px-3 py-1.5 text-sm`}
                         >
                           <Edit2 size={13} /> Edit
                         </button>
                       ) : (
                         <>
-                          <button onClick={e => { e.stopPropagation(); saveEditing(index); }} className={`${btnPrimary} flex items-center gap-2 px-3 py-1.5 text-sm`}>
+                          <button
+                            onClick={e => { e.stopPropagation(); saveEditing(rowId); }}
+                            disabled={editInvalid}
+                            title={editInvalid ? 'Some values are out of range' : undefined}
+                            className={`${btnPrimary} flex items-center gap-2 px-3 py-1.5 text-sm disabled:bg-raised disabled:text-faint disabled:cursor-not-allowed disabled:brightness-100`}
+                          >
                             <Save size={13} /> Save
                           </button>
                           <button onClick={e => { e.stopPropagation(); cancelEditing(); }} className={`${btnSecondary} flex items-center gap-2 px-3 py-1.5 text-sm`}>
                             <X size={13} /> Cancel
                           </button>
-                          <button onClick={e => { e.stopPropagation(); setConfirmingDelete(index); }} className={`${btnDanger} flex items-center gap-2 px-3 py-1.5 text-sm ml-auto`}>
+                          <button onClick={e => { e.stopPropagation(); setConfirmingDelete(rowId); }} className={`${btnDanger} flex items-center gap-2 px-3 py-1.5 text-sm ml-auto`}>
                             <Trash2 size={13} /> Delete
                           </button>
                         </>
@@ -2127,14 +2482,29 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
 
                     {isEditing && (
                       <div className="p-4 border-b border-line">
-                        <label htmlFor={`bw-${index}`} className={`${label} block mb-2`}>Body weight ({units})</label>
+                        <label htmlFor={`bw-${rowId}`} className={`${label} block mb-2`}>Body weight ({units})</label>
+                        {/* Held as a raw string when the parser refuses it. Clearing the
+                            field legitimately means "no weigh-in" and DELETES the paired
+                            row on save — so an out-of-range value must not resolve to the
+                            same null, or a typo would silently delete a weigh-in. */}
                         <input
-                          id={`bw-${index}`}
-                          type="number" step="0.1" inputMode="decimal"
-                          value={editData.bodyWeight == null ? '' : trim1(toDisplayWeight(editData.bodyWeight, units) as number)}
-                          onChange={e => setEditData({ ...editData, bodyWeight: fromInputWeight(e.target.value, units) })}
-                          className={`${input} w-full`}
+                          id={`bw-${rowId}`}
+                          type="number" min="0" step="0.1" inputMode="decimal"
+                          value={typeof editData.bodyWeight === 'string'
+                            ? editData.bodyWeight
+                            : editData.bodyWeight == null ? '' : trim1(toDisplayWeight(editData.bodyWeight, units) as number)}
+                          onChange={e => {
+                            const raw = e.target.value;
+                            const kg = raw === '' ? null : fromInputBodyWeight(raw, units);
+                            setEditData({ ...editData, bodyWeight: raw !== '' && kg == null ? raw : kg });
+                          }}
+                          className={`${input} w-full ${typeof editData.bodyWeight === 'string' ? 'border-crit' : ''}`}
                         />
+                        {typeof editData.bodyWeight === 'string' && (
+                          <p role="alert" className="mt-1 text-[11px] text-crit">
+                            Enter a body weight between 0 and {trim1(toDisplayWeight(MAX_WEIGHT_KG, units) as number)} {units}, or clear the field to remove the weigh-in.
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -2151,21 +2521,21 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
                     ) : displayWorkout.notes ? (
                       <div className="p-4 border-b border-line">
                         <button
-                          onClick={() => setViewingNotes(viewingNotes === index ? null : index)}
+                          onClick={() => setViewingNotes(viewingNotes === rowId ? null : rowId)}
                           className="flex items-center gap-2 text-muted hover:text-ink text-sm font-medium transition-colors"
                         >
                           <FileText size={14} className="text-accent" />
-                          {viewingNotes === index ? 'Hide notes' : 'View notes'}
-                          <ChevronDown size={13} className={`transition-transform ${viewingNotes === index ? 'rotate-180' : ''}`} />
+                          {viewingNotes === rowId ? 'Hide notes' : 'View notes'}
+                          <ChevronDown size={13} className={`transition-transform ${viewingNotes === rowId ? 'rotate-180' : ''}`} />
                         </button>
-                        {viewingNotes === index && (
+                        {viewingNotes === rowId && (
                           <p className="mt-3 text-sm text-muted bg-raised rounded-ctl p-3">{displayWorkout.notes}</p>
                         )}
                       </div>
                     ) : null}
 
                     <div className="p-4 flex flex-col gap-5">
-                      {displayWorkout.exercises.map((exercise: any, exIdx: number) => {
+                      {exercisesOf(displayWorkout).map((exercise: any, exIdx: number) => {
                         // A bodyweight set is null, not 0 — coalesce so Math.max
                         // isn't skewed and the top-set highlight tracks real load.
                         const topWeight = exercise.sets.length
@@ -2175,7 +2545,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
                         return (
                           <div key={exIdx}>
                             <div className="flex justify-between items-center gap-3 mb-2">
-                              <h4 className="font-semibold text-ink text-sm">{exercise.name}</h4>
+                              <h4 className="font-semibold text-ink text-sm truncate">{exercise.name}</h4>
                               {isEditing ? (
                                 <button
                                   onClick={() => {
@@ -2199,15 +2569,15 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
                                   <div key={si} className="flex justify-between items-center gap-2 bg-raised rounded-ctl px-3 py-2">
                                     <span className={`${label} text-faint`}>Set {si + 1}</span>
                                     <div className="flex gap-2 items-center">
-                                      <input type="number" inputMode="numeric" aria-label="Reps" value={set.reps} onChange={e => updateSetValue(exIdx, si, 'reps', e.target.value)} className={`${editInput} w-14`} />
+                                      <input type="number" inputMode="numeric" min="0" step="1" aria-label="Reps" value={set.reps} onChange={e => updateSetValue(exIdx, si, 'reps', e.target.value)} className={`${editInput} w-14 ${typeof set.reps === 'string' && set.reps !== '' && fromInputReps(set.reps) <= 0 ? 'border-crit' : ''}`} />
                                       <span className="text-faint text-sm">×</span>
                                       {/* '' keeps this controlled when the set is bodyweight; value shows display units. */}
-                                      <input type="number" inputMode="decimal" step="0.1" aria-label="Weight (blank for bodyweight)" placeholder="BW" value={set.weight == null ? '' : trim1(toDisplayWeight(set.weight, units) as number)} onChange={e => updateSetValue(exIdx, si, 'weight', e.target.value)} className={`${editInput} w-16`} />
+                                      <input type="number" inputMode="decimal" min="0" step="0.1" aria-label="Weight (blank for bodyweight)" placeholder="BW" value={typeof set.weight === 'string' ? set.weight : set.weight == null ? '' : trim1(toDisplayWeight(set.weight, units) as number)} onChange={e => updateSetValue(exIdx, si, 'weight', e.target.value)} className={`${editInput} w-16 ${typeof set.weight === 'string' && set.weight !== '' ? 'border-crit' : ''}`} />
                                       <span className="text-muted text-xs font-semibold">{units}</span>
                                       <button
                                         onClick={() => { const u = { ...editData }; u.exercises[exIdx].sets.splice(si, 1); setEditData(u); }}
                                         aria-label={`Remove set ${si + 1}`}
-                                        className="text-faint hover:text-crit transition-colors ml-1"
+                                        className="ml-1 -m-1 p-1.5 text-faint hover:text-crit transition-colors"
                                       >
                                         <X size={13} />
                                       </button>
@@ -2245,7 +2615,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', s
                               <p className="text-xs text-faint mt-2 pl-1">{exercise.notes}</p>
                             ) : null}
 
-                            {exIdx < displayWorkout.exercises.length - 1 && (
+                            {exIdx < exercisesOf(displayWorkout).length - 1 && (
                               <div className="h-px bg-line mt-4" />
                             )}
                           </div>
@@ -2299,14 +2669,38 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
   const data = muscleGroupBreakdown(workouts, metric);
 
   if (data.length === 0) {
-    return <p className="text-xs text-faint text-center py-6">{emptyMessage}</p>;
+    // "No sets logged" is a lie when sets EXIST but every one of them was loadless
+    // (planks, cardio) and the metric is volume — which zeroes them, so the breakdown
+    // comes back empty. The caption that explains this lives further down and was
+    // unreachable in exactly the case where it was needed.
+    const hasLoadlessSets = metric === 'volume' && muscleGroupBreakdown(workouts, 'sets').length > 0;
+    return (
+      <p className="text-xs text-faint text-center py-6">
+        {hasLoadlessSets
+          ? 'Sets were logged, but none carried external load — nothing to measure by volume. Switch the metric to Sets to see them.'
+          : emptyMessage}
+      </p>
+    );
   }
 
   // A ring of a dozen 2%-slivers is unreadable, so the top real groups keep their
   // own colour and everything past the budget — plus any free-text "Other" — folds
   // into one neutral arc. Folding only kicks in when it compresses ≥2 groups: a lone
   // leftover keeps its own colour rather than hiding behind an unlabelled catch-all.
+  // `total` is the denominator for the slice percentages, so it must stay the sum of
+  // the slice values for every metric.
   const total      = data.reduce((n, d) => n + d.value, 0);
+  // …but the CENTRE readout is a headline count, and for 'sessions' the sum is not
+  // one: that metric tallies each workout once PER MUSCLE GROUP it touched, so three
+  // full-body sessions across three groups summed to nine and the hole read
+  // "9 sessions". The real answer is how many workouts are represented in the ring —
+  // counted from the same rows the slices were built from, NOT `workouts.length`,
+  // which also counts rows that contributed no group at all (no exercises, or nothing
+  // attributable) and would put a headline above the chart that the chart can't
+  // account for.
+  const centreTotal = metric === 'sessions'
+    ? workouts.filter((w: any) => exercisesOf(w).some((ex: any) => groupForExercise(ex))).length
+    : total;
   const realGroups = data.filter(d => d.group !== OTHER_GROUP);
   const otherReal  = data.find(d => d.group === OTHER_GROUP);
   const leftover   = [...realGroups.slice(sliceLimit), ...(otherReal ? [otherReal] : [])];
@@ -2365,8 +2759,14 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
           {/* Centre readout — the metric total in the hole. Overlay so it needs no
               chart colour; pointer-events-none keeps slice hovers alive underneath. */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span className={`${readout} text-2xl`}>{metric === 'volume' ? fmtVolume(total, units).replace(/ (kg|lb)$/, '') : total}</span>
-            <span className={`${label} text-[10px] mt-0.5`}>{metric === 'volume' ? units : metric}</span>
+            {/* fmtVolume always ends in the unit now (it used to return "2.5t" for the
+                kg branch, which this strip missed — so 2500 kg rendered as "2.5" over
+                a "kg" caption, wrong by 1000×). The abbreviation marker stays. */}
+            <span className={`${readout} text-2xl`}>{metric === 'volume' ? fmtVolume(centreTotal, units).replace(/ (kg|lb)$/, '') : centreTotal}</span>
+            {/* For 'sessions' the centre counts workouts while the slices divide up
+                group-tallies, so the two are different quantities. Say which one the
+                headline is, rather than leaving "3" over slices reading 33% each. */}
+            <span className={`${label} text-[10px] mt-0.5`}>{metric === 'volume' ? units : metric === 'sessions' ? 'sessions total' : metric}</span>
           </div>
         </div>
 
@@ -2456,10 +2856,10 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   // doesn't split one exercise into two entries. Labelled with the current catalogue
   // name when known, else the most recent name it was logged under.
   const exerciseOptions = (() => {
-    const lastName: Record<string, string> = {};
-    for (const w of workouts) for (const e of w.exercises) lastName[exerciseIdOf(e)] = e.name;
+    const lastName: Record<string, string> = bareMap();
+    for (const w of workouts) for (const e of exercisesOf(w)) lastName[exerciseIdOf(e)] = e.name;
     return Object.keys(lastName)
-      .map(id => ({ id, label: EXERCISE_NAME_BY_ID[id] ?? lastName[id] }))
+      .map(id => ({ id, label: pick(EXERCISE_NAME_BY_ID, id) ?? pick(lastName, id) ?? id }))
       .sort((a, b) => a.label.localeCompare(b.label));
   })();
   const labelForId = (id: string) => exerciseOptions.find(o => o.id === id)?.label ?? id;
@@ -2479,10 +2879,25 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
       return items.filter(i => { const d = new Date(i.date); return d >= s && d <= e; });
     }
     if (timeframe === 'all') return items;
-    const start = new Date();
+    const start = new Date(now);
     if (timeframe === '30days')  start.setDate(now.getDate() - 30);
-    if (timeframe === '3months') start.setMonth(now.getMonth() - 3);
-    return items.filter(i => new Date(i.date) >= start);
+    if (timeframe === '3months') {
+      // setMonth alone overflows on a long month: on 31 May it asks for "31 Feb" and
+      // Date rolls that forward to 3 Mar, quietly clipping the first days of the
+      // window. Pin to day 1 first, subtract the months, then clamp the day to one
+      // that exists in the target month.
+      const day = now.getDate();
+      start.setDate(1);
+      start.setMonth(now.getMonth() - 3);
+      const lastOfTarget = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+      start.setDate(Math.min(day, lastOfTarget));
+    }
+    // Unparseable dates compare as NaN (always false), so they'd vanish from every
+    // window including "all" — filter them explicitly instead of by accident.
+    return items.filter(i => {
+      const t = new Date(i.date).getTime();
+      return Number.isFinite(t) && t >= start.getTime();
+    });
   };
 
   // The workouts inside the selected window, computed once per (data, timeframe)
@@ -2504,11 +2919,17 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   // all-exercise views. Reads the pre-filtered window, not the full history.
   const seriesForExercise = (id: string) =>
     windowedWorkouts.flatMap((w: any) => {
-      const ex = w.exercises.find((e: any) => exerciseIdOf(e) === id);
-      if (!ex || ex.sets.length === 0) return [];
-      // Bodyweight sets carry no load, so they count as 0 here rather than NaN.
-      const maxWeight    = Math.max(...ex.sets.map((s: any) => s.weight ?? 0));
-      const maxWeightSet = ex.sets.find((s: any) => (s.weight ?? 0) === maxWeight);
+      const ex = exercisesOf(w).find((e: any) => exerciseIdOf(e) === id);
+      if (!ex || !Array.isArray(ex.sets) || ex.sets.length === 0) return [];
+      // A session in which EVERY set was bodyweight has no top weight to plot.
+      // Coercing null to 0 drew a line pinned at zero with tooltips reading
+      // "0 kg × 30 reps" — a chart asserting data that was never recorded. Such a
+      // session contributes no point; an exercise that is always bodyweight
+      // therefore yields an empty series, and the caller renders the empty state.
+      const loaded = ex.sets.filter((s: any) => s.weight != null);
+      if (loaded.length === 0) return [];
+      const maxWeight    = Math.max(...loaded.map((s: any) => s.weight));
+      const maxWeightSet = loaded.find((s: any) => s.weight === maxWeight);
       return [{
         date: new Date(w.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         maxWeight: Math.round((toDisplayWeight(maxWeight, units) as number) * 10) / 10,
@@ -2520,16 +2941,16 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   // so the All-exercises view echoes the Muscle group balance card above it.
   const getExercisesByGroup = () => {
     const inWindow: any[] = windowedWorkouts;
-    const lastName: Record<string, string> = {};
-    for (const w of inWindow) for (const e of w.exercises) lastName[exerciseIdOf(e)] = e.name;
+    const lastName: Record<string, string> = bareMap();
+    for (const w of inWindow) for (const e of exercisesOf(w)) lastName[exerciseIdOf(e)] = e.name;
     const order = muscleGroupBreakdown(inWindow, muscleMetric).map(d => d.group);
     const rank  = (g: string) => { const i = order.indexOf(g); return i === -1 ? order.length : i; };
-    const groups: Record<string, { id: string; name: string; data: any[] }[]> = {};
+    const groups: Record<string, { id: string; name: string; data: any[] }[]> = bareMap();
     for (const id of Object.keys(lastName)) {
       const data = seriesForExercise(id);
       if (data.length === 0) continue;
-      const g    = MUSCLE_BY_ID[id] ?? MUSCLE_BY_NAME[lastName[id]] ?? OTHER_GROUP;
-      const name = EXERCISE_NAME_BY_ID[id] ?? lastName[id];
+      const g    = pick(MUSCLE_BY_ID, id) ?? pick(MUSCLE_BY_NAME, pick(lastName, id)) ?? OTHER_GROUP;
+      const name = pick(EXERCISE_NAME_BY_ID, id) ?? pick(lastName, id) ?? id;
       (groups[g] ?? (groups[g] = [])).push({ id, name, data });
     }
     return Object.entries(groups)
@@ -2537,11 +2958,16 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
       .sort((a, b) => rank(a.group) - rank(b.group));
   };
 
+  // Sorted before mapping: the stored log is in INSERTION order, so a back-dated
+  // weigh-in (editing an old session's body weight) landed at the end of the array
+  // and the line doubled back across the X axis instead of reading left-to-right.
   const getBodyWeightData = () =>
-    filterByDate(bodyWeightLog).map((e: any) => ({
-      date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
-    }));
+    [...filterByDate(bodyWeightLog)]
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map((e: any) => ({
+        date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
+      }));
 
   // Chart datasets, memoised on their real inputs so an unrelated re-render
   // (theme or colour-pref change) doesn't recompute the series.
@@ -2573,6 +2999,13 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
   const topSetCard = (name: string, data: any[]) => (
     <div key={name} className={`${card} p-4 mb-3`}>
       <h3 className={`${label} mb-4`}>{name} — top set</h3>
+      {data.length === 0 ? (
+        // Every set in range was bodyweight, so there is no load to trend. Say so
+        // rather than drawing a flat line at zero.
+        <p className="py-8 text-center text-xs text-faint">
+          Logged as bodyweight — no external load to chart.
+        </p>
+      ) : (
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={data} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
           <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
@@ -2589,11 +3022,15 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
           <Line type="monotone" dataKey="maxWeight" stroke={accent} strokeWidth={2} dot={{ fill: accent, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
         </LineChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 
   return (
-    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4">
+    // pb-24 clears the fixed bottom tab bar. Without it the last card on the screen
+    // (the body-weight chart, and its X-axis labels) sat permanently behind the bar
+    // with no way to scroll it into view.
+    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 pb-24">
       <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink mb-4">Progress</h2>
 
       <div className={`${card} p-4 mb-3`}>
@@ -2751,12 +3188,17 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteBusy, setDeleteBusy]             = useState(false);
   const [deleteMsg, setDeleteMsg]               = useState<string | null>(null);
+  // Deleting the account is the single most destructive action the app offers, and it
+  // used to need nothing but two clicks — while merely CHANGING the password correctly
+  // required the current one. Anyone with a borrowed unlocked phone could wipe the
+  // account irreversibly. Same bar as the password change now.
+  const [deletePw, setDeletePw]                 = useState('');
 
   const deleteAccount = async () => {
-    if (deleteBusy) return;
+    if (deleteBusy || !deletePw) return;
     setDeleteBusy(true); setDeleteMsg(null);
-    const err = await onDeleteAccount();
-    if (err) { setDeleteBusy(false); setConfirmingDelete(false); setDeleteMsg(err); }
+    const err = await onDeleteAccount(deletePw);
+    if (err) { setDeleteBusy(false); setDeleteMsg(err); setDeletePw(''); }
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2965,6 +3407,7 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             onBlur={e => { const t = e.target.value.trim(); if (t !== prefs.name) updatePrefs({ name: t }); }}
             placeholder="Your name"
             autoComplete="given-name"
+            maxLength={MAX_NAME_LEN}
             className={`${input} w-full`}
           />
         </div>
@@ -3048,16 +3491,25 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-ink">Permanently delete your account and all its data? This can't be undone.</p>
+            <label htmlFor="delete-pw" className="text-xs text-muted">Enter your password to confirm.</label>
+            <input
+              id="delete-pw"
+              type="password"
+              autoComplete="current-password"
+              value={deletePw}
+              onChange={e => setDeletePw(e.target.value)}
+              className={`${input} w-full py-2 text-sm`}
+            />
             <div className="flex gap-2">
               <button
                 onClick={deleteAccount}
-                disabled={deleteBusy}
+                disabled={deleteBusy || !deletePw}
                 className={`${btnDanger} flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50`}
               >
                 {deleteBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 {deleteBusy ? 'Deleting…' : 'Delete permanently'}
               </button>
-              <button onClick={() => setConfirmingDelete(false)} disabled={deleteBusy} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
+              <button onClick={() => { setConfirmingDelete(false); setDeletePw(''); }} disabled={deleteBusy} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
             </div>
           </div>
         )}
@@ -3234,14 +3686,19 @@ const LoginScreen = () => {
       options: { emailRedirectTo: window.location.origin },
     });
     if (error) { setStatus('error'); setErrMsg(authErrorText(error)); return; }
-    // Already-registered email: Supabase returns an obfuscated user with an empty
-    // identities[] and NO error (anti-enumeration). Detect and steer to sign-in.
-    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-      setStatus('error'); setErrMsg('That email is already registered. Try signing in instead.'); return;
-    }
+    // An already-registered email comes back as an obfuscated user with an empty
+    // identities[] and NO error — that is Supabase deliberately refusing to confirm
+    // whether the address has an account. We used to un-obfuscate it with "That email
+    // is already registered", which handed anyone an account-existence oracle: signup
+    // is open, so a stranger could test any address without knowing a password. It
+    // also contradicted the ambiguity signIn and sendReset are careful to preserve.
+    //
+    // Supabase still emails the existing owner (a "someone tried to sign up" notice),
+    // so the real user is told; the person at the keyboard is not. Both cases show
+    // the identical check-your-inbox screen.
+    //
     // data.session present → "Confirm email" is off, onAuthStateChange logs us in.
     if (data.session) return;
-    // Otherwise confirmation is on: no session yet, tell them to check their inbox.
     setSentKind('confirm'); setStatus('sent');
   };
 
@@ -3510,6 +3967,7 @@ const OnboardingScreen = ({ initialPrefs, onDone }: any) => {
             onChange={e => setName(e.target.value)}
             placeholder="What should we call you?"
             autoComplete="given-name"
+            maxLength={MAX_NAME_LEN}
             autoFocus
             className={`${input} w-full`}
           />
@@ -3566,6 +4024,44 @@ const GymTrackerApp = () => {
   const [authReady, setAuthReady] = useState(false);
   const [hydrated, setHydrated]   = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);  // first login on a brand-new account
+  // True once a localStorage write has thrown (quota full, or Safari private mode,
+  // where setItem always throws). The offline banner promises unsynced rows are
+  // "saved on this device" — if the cache write failed that promise is false and the
+  // row lives only in memory, so the user needs telling rather than a swallowed catch.
+  const [cacheWriteFailed, setCacheWriteFailed] = useState(false);
+  // Bumping this re-runs the hydrate effect. It exists because hydrate is keyed on
+  // the USER id (so a tab focus or token refresh no longer re-fetches), which also
+  // removed the accidental retry those events used to provide: open the app offline
+  // and the fetch throws, and without this nothing would ever re-fetch for the life
+  // of the tab — no cross-device changes, and a first-ever hydrate that failed would
+  // leave `isFirstLogin` unevaluated and skip onboarding permanently.
+  const [hydrateNonce, setHydrateNonce] = useState(0);
+  const [hydrateFailed, setHydrateFailed] = useState(false);
+  const reHydrate = () => setHydrateNonce(n => n + 1);
+
+  // Coming back online is the moment a failed hydrate can succeed, so retry then.
+  useEffect(() => {
+    const onOnline = () => reHydrate();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
+
+  // Live mirrors of the two row arrays. Effects read these when they need "the state
+  // right now" rather than the state captured by the render that scheduled them —
+  // hydrate uses them to snapshot which ids existed when its fetch was issued.
+  const workoutsRef = useRef<any[]>([]);
+  const bwRef       = useRef<any[]>([]);
+
+  // Drop this device's cached copy of the account. Used only where the user ASKED to
+  // leave (sign-out, clear-all-data, account deletion) — never on an involuntary
+  // session loss, which would take unsynced rows with it. The keys are per-origin, so
+  // a stale cache is also a cross-user leak; `CACHE_OWNER_KEY` is what makes that
+  // safe without deleting anything (see the hydrate effect).
+  const clearLocalCache = () => {
+    try {
+      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, CACHE_OWNER_KEY].forEach(k => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+  };
   // ── Offline sync safety (roadmap Phase 0) ────────────────────────────────────
   // Rows carry a client-only `_sync` marker: 'pending' (write in flight) or
   // 'error' (write failed — saved on THIS device only). Absent = server-confirmed.
@@ -3594,8 +4090,20 @@ const GymTrackerApp = () => {
   // real session, so without this flag the gate below would drop them straight
   // into the app; instead it pins them on ResetPasswordScreen until they set a
   // new password (or explicitly sign out).
-  const [recovery, setRecovery]   = useState(false);
-  const clampGoal = (g: number) => Math.min(GOAL_MAX, Math.max(GOAL_MIN, g));
+  // The password-recovery gate. It has to survive a RELOAD: supabase-js consumes
+  // and strips the URL hash on the first load, so a refresh on the reset screen
+  // fires no second PASSWORD_RECOVERY — the flag went false while the recovery
+  // session was still valid, and the gate fell straight through to the dashboard
+  // with the password never changed. sessionStorage scopes it to this tab, so it
+  // dies with the tab rather than pinning a future visit.
+  const RECOVERY_KEY = 'gym-recovery';
+  const [recovery, setRecoveryState] = useState(() => {
+    try { return sessionStorage.getItem(RECOVERY_KEY) === '1'; } catch { return false; }
+  });
+  const setRecovery = (on: boolean) => {
+    setRecoveryState(on);
+    try { on ? sessionStorage.setItem(RECOVERY_KEY, '1') : sessionStorage.removeItem(RECOVERY_KEY); } catch { /* ignore */ }
+  };
 
   const { theme, mode, setMode, toggle } = useTheme();
 
@@ -3634,62 +4142,88 @@ const GymTrackerApp = () => {
 
   // Load from localStorage. Reads synchronously before the write-back effects
   // below fire on mount — don't reorder or early-return past this.
-  useEffect(() => {
+  //
+  // Each key is read in its OWN try. They used to share one, so a single unparsable
+  // value (`gym-workouts` holding `null`, `{}`, or a truncated string — anything
+  // `.map` can't run on) threw past the reads of prefs, the weigh-in log AND the
+  // in-progress session, silently discarding all three. The write-backs then
+  // serialised the empty initial state over them. One bad key now costs that key only.
+  const readCache = <T,>(key: string, parse: (raw: string) => T): T | undefined => {
     try {
-      const stored     = localStorage.getItem(STORAGE_KEY);
-      const storedBW   = localStorage.getItem(BW_LOG_KEY);
-      const storedGoal = localStorage.getItem(GOAL_KEY);
-      const storedPrefs = localStorage.getItem(PREFS_KEY);
+      const raw = localStorage.getItem(key);
+      return raw ? parse(raw) : undefined;
+    } catch (e) {
+      console.error(`Ignoring unreadable cache key ${key}`, e);
+      return undefined;
+    }
+  };
+  // JSON.parse gives back whatever was stored, including `null` or an object; every
+  // caller below expects a list, so anything else becomes an empty one.
+  const parseArray = (raw: string): any[] => {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter(r => r && typeof r === 'object') : [];
+  };
 
-      // A `_sync: 'pending'` in the cache is stale — its in-flight write died with
-      // the previous page load, so it will never resolve on its own. Demote it to
-      // 'error' so it surfaces in the unsynced banner and re-uploads on the next
-      // successful write/hydrate, instead of sitting invisible forever.
-      const normalizeSync = (r: any) => (r._sync === 'pending' ? { ...r, _sync: 'error' } : r);
-      // Back-fill a local id on cache entries that predate row ids, so the cached
-      // list is editable until hydrate swaps in the server rows.
-      const loadedWorkouts = (stored ? JSON.parse(stored) : [])
-        .map((w: any) => normalizeSync({ ...w, id: w.id ?? crypto.randomUUID() }));
-      if (loadedWorkouts.length > 0) setWorkouts(loadedWorkouts);
-      // Clamp on read: a goal saved before the 7/week cap would otherwise survive it.
-      if (storedGoal) {
-        const g = parseInt(storedGoal);
-        if (!Number.isNaN(g)) setWeeklyGoal(clampGoal(g));
-      }
-      // Merge over defaults so a blob saved by an older build (missing fields) still
-      // loads; guard hidden is an array in case of hand-edited/corrupt storage.
-      if (storedPrefs) {
-        const p = JSON.parse(storedPrefs);
-        setPrefs({ ...DEFAULT_PREFS, ...p, hidden: Array.isArray(p?.hidden) ? p.hidden : [], dayNames: safeDayNames(p?.dayNames) });
-      }
+  useEffect(() => {
+    // A `_sync: 'pending'` in the cache is stale — its in-flight write died with
+    // the previous page load, so it will never resolve on its own. Demote it to
+    // 'error' so it surfaces in the unsynced banner and re-uploads on the next
+    // successful write/hydrate, instead of sitting invisible forever.
+    const normalizeSync = (r: any) => (r._sync === 'pending' ? { ...r, _sync: 'error' } : r);
 
-      // Cache entries may predate row ids (old localStorage) — back-fill a local id
-      // so keys/edits work until hydrate replaces them with the server rows. Carry
-      // `_sync` through: a weigh-in that failed to sync must keep its mark across a
-      // reload, or the hydrate merge would treat it as synced and drop it.
-      const withId = (e: any) => normalizeSync({ id: e.id ?? crypto.randomUUID(), date: e.date, weight: e.weight, ...(e._sync ? { _sync: e._sync } : {}), ...(e.workoutId != null ? { workoutId: e.workoutId } : {}) });
-      if (storedBW) {
-        setBodyWeightLog(JSON.parse(storedBW).map(withId));
-      } else if (loadedWorkouts.length > 0) {
-        // Migrate existing workout body weights into the log — but only REAL
-        // weigh-ins. A skipped one is bodyWeight null, and toDisplayWeight(null) * 10
-        // coerces to 0, which would plot a phantom 0 kg point and drag the chart.
-        setBodyWeightLog(loadedWorkouts.filter((w: any) => w.bodyWeight != null).map((w: any) => withId({ date: w.date, weight: w.bodyWeight })));
-      }
+    // Back-fill a local id on cache entries that predate row ids, so the cached
+    // list is editable until hydrate swaps in the server rows.
+    const loadedWorkouts = (readCache(STORAGE_KEY, parseArray) ?? [])
+      .map((w: any) => normalizeSync({ ...w, id: w.id ?? crypto.randomUUID() }));
+    if (loadedWorkouts.length > 0) setWorkouts(loadedWorkouts);
 
-      // Resume an in-progress session if one was persisted (a refresh, phone lock,
-      // or tab reap mid-workout). Drop us straight back onto the workout screen.
-      const storedActive = localStorage.getItem(ACTIVE_KEY);
-      if (storedActive) {
-        const a = JSON.parse(storedActive);
-        if (a && a.workout && Array.isArray(a.workout.exercises)) {
-          setCurrentWorkout(a.workout);
-          setSelectedWorkoutType(a.type ?? a.workout.type ?? 'custom');
-          setWorkoutNotes(a.notes ?? '');
-          setCurrentScreen('workout');
-        }
-      }
-    } catch { /* ignore */ }
+    // Clamp on read: a goal saved before the 7/week cap would otherwise survive it.
+    const storedGoal = readCache(GOAL_KEY, raw => parseInt(raw, 10));
+    if (storedGoal != null && Number.isFinite(storedGoal)) setWeeklyGoal(clampGoal(storedGoal));
+
+    // Pin every field to a known-good value — a hand-edited blob could otherwise set
+    // an unknown `base`/`accent`, which the theme resolver then threw on.
+    const storedPrefs = readCache(PREFS_KEY, raw => JSON.parse(raw));
+    if (storedPrefs) setPrefs(sanitizePrefs(storedPrefs));
+
+    // Cache entries may predate row ids (old localStorage) — back-fill a local id
+    // so keys/edits work until hydrate replaces them with the server rows. Carry
+    // `_sync` through: a weigh-in that failed to sync must keep its mark across a
+    // reload, or the hydrate merge would treat it as synced and drop it.
+    const withId = (e: any) => normalizeSync({ id: e.id ?? crypto.randomUUID(), date: e.date, weight: e.weight, ...(e._sync ? { _sync: e._sync } : {}), ...(e.workoutId != null ? { workoutId: e.workoutId } : {}) });
+    const storedBW = readCache(BW_LOG_KEY, parseArray);
+    if (storedBW) {
+      setBodyWeightLog(storedBW.map(withId));
+    } else if (loadedWorkouts.length > 0) {
+      // Migrate existing workout body weights into the log — but only REAL
+      // weigh-ins. A skipped one is bodyWeight null, and toDisplayWeight(null) * 10
+      // coerces to 0, which would plot a phantom 0 kg point and drag the chart.
+      setBodyWeightLog(loadedWorkouts.filter((w: any) => w.bodyWeight != null).map((w: any) => withId({ date: w.date, weight: w.bodyWeight })));
+    }
+
+    // Resume an in-progress session if one was persisted (a refresh, phone lock,
+    // or tab reap mid-workout). Drop us straight back onto the workout screen.
+    //
+    // A session older than MAX_RESUME_MS (dead phone overnight, tab restored days
+    // later) is resumed too — the SETS are the user's work and must never be thrown
+    // away to tidy up a clock. Only the timing is untrustworthy, so the timer is
+    // switched off for the resumed session and the elapsed clock is not shown;
+    // finishWorkout then logs no duration at all rather than "13h".
+    const active = readCache(ACTIVE_KEY, raw => JSON.parse(raw));
+    if (active?.workout && Array.isArray(active.workout.exercises)) {
+      const startedMs = new Date(active.workout.date).getTime();
+      const stale = !Number.isFinite(startedMs) || Date.now() - startedMs > MAX_RESUME_MS;
+      // Back-fill `_uid` on a session persisted by an older build, so its cards get
+      // stable React keys rather than falling back to index-keyed drafts.
+      setCurrentWorkout({
+        ...active.workout,
+        ...(stale ? { workoutTimer: false, pausedMs: 0, pausedAt: null } : {}),
+        exercises: active.workout.exercises.map((ex: any) => (ex?._uid ? ex : { ...ex, _uid: crypto.randomUUID() })),
+      });
+      setSelectedWorkoutType(active.type ?? active.workout.type ?? 'custom');
+      setWorkoutNotes(active.notes ?? '');
+      setCurrentScreen('workout');
+    }
   }, []);
 
   // ── Supabase: track the auth session ─────────────────────────────────────────
@@ -3707,7 +4241,23 @@ const GymTrackerApp = () => {
       // supabase-js parses the URL hash) — catch it so the gate shows the
       // set-new-password screen instead of the app.
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
-      if (!s) { setHydrated(false); setNeedsOnboarding(false); }   // signed out → fresh hydrate/onboarding check next login
+      if (!s) {
+        // A session can end WITHOUT the user asking: an expired or revoked refresh
+        // token, the account deleted elsewhere, a sign-out in another tab. Those are
+        // exactly the moments most likely to coincide with being offline, so this
+        // must NOT wipe the cache — rows marked `_sync: 'error'` exist only there,
+        // and deleting them would destroy the very data the "saved on this device"
+        // banner promised was safe. An in-progress workout is the same: dropping
+        // `currentWorkout` would clear ACTIVE_KEY and bin every set just logged.
+        //
+        // Nothing of the previous user is VISIBLE meanwhile — the `!session` gate
+        // renders LoginScreen over the whole app. The cross-user leak only becomes
+        // real if a DIFFERENT account then signs in, and that is caught by the cache
+        // owner check in the hydrate effect, which wipes on a genuine user change.
+        // Explicit sign-out still clears everything (see signOut) — that's intent.
+        setHydrated(false);
+        setNeedsOnboarding(false);
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -3721,25 +4271,46 @@ const GymTrackerApp = () => {
       const rawBW    = localStorage.getItem(BW_LOG_KEY);
       const rawGoal  = localStorage.getItem(GOAL_KEY);
       const rawPrefs = localStorage.getItem(PREFS_KEY);
-      const localWorkouts = rawW  ? JSON.parse(rawW)  : [];
-      const localBW       = rawBW ? JSON.parse(rawBW) : [];
-      if (localWorkouts.length === 0 && localBW.length === 0 && !rawGoal && !rawPrefs) return null;
+      const asArray = (v: any) => (Array.isArray(v) ? v : []);
+      const localWorkouts = asArray(rawW  ? JSON.parse(rawW)  : []);
+      const localBW       = asArray(rawBW ? JSON.parse(rawBW) : []);
+      // Only genuine logged data is worth migrating. `rawGoal`/`rawPrefs` used to be
+      // enough to trigger this, but the write-back effects mean BOTH keys exist on
+      // any browser that has ever run the app — including straight after a sign-out,
+      // which re-writes `gym-prefs` with DEFAULT_PREFS. So signing up a second
+      // account on one browser ran a "migration" of nothing, whose only effect was
+      // the settings upsert below — and that row's existence is exactly what
+      // `isFirstLogin` reads, so a reload mid-onboarding skipped the gate forever.
+      if (localWorkouts.length === 0 && localBW.length === 0) return null;
+
+      // The cache is as untrusted as a backup file: it may predate a schema change or
+      // have been hand-edited. Migration used to insert it raw, so one bad row (a null
+      // weight, a 1e39 weight, an unparseable date) failed the whole batch — and the
+      // catch below then discarded the rest of the migration silently.
+      const cleanW  = localWorkouts.map(cleanImportedWorkout).filter(Boolean);
+      const cleanBW = localBW.map(cleanImportedBW).filter(Boolean);
 
       let workoutRows: any[] = [];
-      if (localWorkouts.length) {
-        const { data, error } = await supabase.from('workouts').insert(localWorkouts.map(workoutToRow)).select();
+      if (cleanW.length) {
+        const { data, error } = await supabase.from('workouts').insert(cleanW.map(workoutToRow)).select();
         if (error) throw error;
         workoutRows = data ?? [];
       }
       let bwRows: any[] = [];
-      if (localBW.length) {
+      if (cleanBW.length) {
         const { data, error } = await supabase.from('body_weight_log')
-          .insert(localBW.map(bwToRow)).select();
-        if (error) throw error;
+          .insert(cleanBW.map(bwToRow)).select();
+        if (error) {
+          // Don't leave the workouts migrated but the weigh-ins lost: undo and let the
+          // caller fall back to a plain hydrate, which keeps the cache intact.
+          const ids = workoutRows.map((r: any) => r.id);
+          if (ids.length) await supabase.from('workouts').delete().in('id', ids);
+          throw error;
+        }
         bwRows = data ?? [];
       }
       const goal     = rawGoal  ? clampGoal(parseInt(rawGoal, 10)) : null;
-      const prefsObj = rawPrefs ? JSON.parse(rawPrefs) : null;
+      const prefsObj = rawPrefs ? sanitizePrefs(JSON.parse(rawPrefs)) : null;
       let settingsRow: any = null;
       if (goal != null || prefsObj) {
         const { data, error } = await supabase.from('settings')
@@ -3761,6 +4332,35 @@ const GymTrackerApp = () => {
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
+
+    // Whose cache is on this device? If it belongs to somebody else, this is a
+    // different account signing in on a shared browser: drop the previous user's
+    // rows, prefs and in-progress session BEFORE merging, or their data would paint
+    // this dashboard and `mergeUnsynced` would re-append their unsynced rows into
+    // this account (and upload them under this user's id on the next write).
+    //
+    // This is the ONLY place the cache is wiped for a user change — an involuntary
+    // sign-out deliberately leaves it alone, because it usually happens offline and
+    // the cache may hold the only copy of unsynced work.
+    const uid = session.user.id;
+    let cacheOwner: string | null = null;
+    try { cacheOwner = localStorage.getItem(CACHE_OWNER_KEY); } catch { /* ignore */ }
+    const foreignCache = cacheOwner != null && cacheOwner !== uid;
+    if (foreignCache) {
+      clearLocalCache();
+      resetLocalState();
+      workoutsRef.current = [];
+      bwRef.current = [];
+    }
+    // Claim the cache for this user. Written before the fetch so an interrupted
+    // hydrate still leaves the ownership recorded for whatever was cached.
+    try { localStorage.setItem(CACHE_OWNER_KEY, uid); } catch { /* ignore */ }
+
+    // Snapshot the ids present BEFORE the fetch is issued (see mergeUnsynced). Read
+    // from refs rather than the closure so this is the state as of right now, not as
+    // of the render that scheduled the effect.
+    const knownWorkoutIds = new Set<string>(foreignCache ? [] : workoutsRef.current.map((r: any) => r.id));
+    const knownBWIds      = new Set<string>(foreignCache ? [] : bwRef.current.map((r: any) => r.id));
     (async () => {
       try {
         const [wRes, bwRes, sRes] = await Promise.all([
@@ -3797,7 +4397,20 @@ const GymTrackerApp = () => {
         // insert whose id never reached the server. On the migration path we plain-
         // replace — migration already consumed the whole cache, so merging would
         // duplicate every row.
-        const mergeUnsynced = (serverRows: any[], mapRow: (r: any) => any, prev: any[]) => {
+        // `knownIds` is the set of row ids that existed in state when this fetch was
+        // ISSUED. It's what makes "the server doesn't have it" mean "it was deleted"
+        // rather than "it hadn't been written yet": the snapshot is a point-in-time
+        // read, and a row inserted WHILE it was in flight is legitimately absent from
+        // it. Without this, pressing Finish during a hydrate (which a token refresh
+        // or a tab focus can trigger at any moment) dropped the just-saved session
+        // from state, and the write-back then flushed the truncated array to the
+        // cache. Only rows the snapshot could have seen are eligible to be removed.
+        // Defaults to "every current row was already known", i.e. the pre-existing
+        // behaviour, so a caller that omits it can only be conservative.
+        const mergeUnsynced = (
+          serverRows: any[], mapRow: (r: any) => any, prev: any[],
+          knownIds: Set<string> = new Set(prev.map((r: any) => r.id)),
+        ) => {
           const unsynced = prev.filter(r => r._sync);
           const byId = new Map(unsynced.map(r => [r.id, r]));
           const serverIds = new Set(serverRows.map(r => r.id));
@@ -3810,28 +4423,53 @@ const GymTrackerApp = () => {
           // copy. (Session/weigh-in dates are ms-precision ISO strings, so a genuine
           // offline insert on a new day won't false-match an existing server date.)
           const orphans = unsynced.filter(r => !serverIds.has(r.id) && !serverDates.has(r.date));
-          return [...merged, ...orphans];
+          // Rows that appeared after the fetch was issued: keep them regardless of
+          // their sync mark. `knownIds` guards the mirror case too — a row the user
+          // just deleted was in knownIds, so it stays deleted rather than being
+          // resurrected by the stale snapshot.
+          const fresh = prev.filter(r =>
+            !r._sync && !knownIds.has(r.id) && !serverIds.has(r.id) && !serverDates.has(r.date));
+          return [...merged, ...orphans, ...fresh];
         };
         if (migrated) {
           setWorkouts(workoutRows.map(rowToWorkout));
           setBodyWeightLog(bwRows.map(rowToBW));
         } else {
-          setWorkouts(prev => mergeUnsynced(workoutRows, rowToWorkout, prev));
-          setBodyWeightLog(prev => mergeUnsynced(bwRows, rowToBW, prev));
+          setWorkouts(prev => mergeUnsynced(workoutRows, rowToWorkout, prev, knownWorkoutIds));
+          setBodyWeightLog(prev => mergeUnsynced(bwRows, rowToBW, prev, knownBWIds));
         }
         if (settingsRow) {
           if (Number.isFinite(settingsRow.weekly_goal)) setWeeklyGoal(clampGoal(settingsRow.weekly_goal));
-          if (settingsRow.prefs) setPrefs({ ...DEFAULT_PREFS, ...settingsRow.prefs, hidden: Array.isArray(settingsRow.prefs.hidden) ? settingsRow.prefs.hidden : [], dayNames: safeDayNames(settingsRow.prefs.dayNames) });
+          // Same sanitiser as the cache and import paths. The server blob is NOT
+          // trustworthy just because it came from Postgres — whatever a hostile or
+          // buggy import wrote there is what syncs back down, to every device.
+          if (settingsRow.prefs) setPrefs(sanitizePrefs(settingsRow.prefs));
         }
         if (isFirstLogin) setNeedsOnboarding(true);   // greet the new account for name/units/gender
+        if (!cancelled) setHydrateFailed(false);
       } catch (e) {
         console.error('Hydrate failed', e);   // keep the localStorage cache; app still usable offline
+        // Record it so (a) the banner can offer a retry and (b) the settings
+        // write-back stays out. Without the flag, a first-ever hydrate that failed
+        // offline let the debounced upsert create a settings row from DEFAULT_PREFS —
+        // after which `isFirstLogin` is false forever and onboarding never runs.
+        if (!cancelled) setHydrateFailed(true);
       } finally {
         if (!cancelled) setHydrated(true);
       }
     })();
     return () => { cancelled = true; };
-  }, [session]);
+    // Keyed on the USER, not the session object. supabase-js re-emits an auth event
+    // carrying a freshly-parsed session on every tab focus / phone unlock (and on
+    // each token refresh), and setSession made each one a new object identity — so
+    // this effect re-ran a full three-table hydrate every time the app came to the
+    // foreground, replacing state from the server mid-edit. A settings toggle made in
+    // the second before a tab switch was reverted (hydrate read the row before the
+    // 600ms-debounced upsert committed), and a just-finished onboarding was re-raised
+    // because its settings row hadn't been written yet. There is nothing to re-fetch
+    // while the same user stays signed in.
+    // `hydrateNonce` is the manual/automatic retry hook — see reHydrate.
+  }, [session?.user?.id, hydrateNonce]);
 
   // Persist the active session on every change so it survives a reload. Skips the
   // first run (mount) so the empty initial state can't clear a just-loaded session
@@ -3847,21 +4485,50 @@ const GymTrackerApp = () => {
     } catch { /* ignore */ }
   }, [currentWorkout, selectedWorkoutType, workoutNotes]);
 
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(workouts)); } catch { /* ignore */ }
-  }, [workouts]);
+  // The four cache write-backs. All gated on `signedIn`, which fixes two things at
+  // once: (1) on mount they used to fire with the EMPTY initial state and blank the
+  // cache before the load effect's setState re-rendered — safe only by effect
+  // ordering, and NOT safe if the load effect threw; (2) after a sign-out they
+  // re-wrote the defaults straight back over the keys `clearLocalCache` had just
+  // removed, so a wipe never actually stuck.
+  //
+  // `cacheWriteFailed` surfaces a quota/private-mode failure instead of swallowing
+  // it — the header banner promises unsynced rows are "saved on this device", and
+  // that promise is false if setItem threw.
+  const writeCache = (key: string, value: string) => {
+    try { localStorage.setItem(key, value); setCacheWriteFailed(false); }
+    catch { setCacheWriteFailed(true); }
+  };
+
+  // A STABLE gate, not the session object. supabase-js hands us a new session object
+  // on every token refresh and tab focus, so depending on `session` itself would
+  // re-serialise the whole workouts array into localStorage each time the app came
+  // back to the foreground — pure waste that grows with history length.
+  const signedIn = !!session;
+
+  // Keep the refs in step on every render, before any effect can read them.
+  workoutsRef.current = workouts;
+  bwRef.current       = bodyWeightLog;
 
   useEffect(() => {
-    try { localStorage.setItem(BW_LOG_KEY, JSON.stringify(bodyWeightLog)); } catch { /* ignore */ }
-  }, [bodyWeightLog]);
+    if (!signedIn) return;
+    writeCache(STORAGE_KEY, JSON.stringify(workouts));
+  }, [workouts, signedIn]);
 
   useEffect(() => {
-    try { localStorage.setItem(GOAL_KEY, String(weeklyGoal)); } catch { /* ignore */ }
-  }, [weeklyGoal]);
+    if (!signedIn) return;
+    writeCache(BW_LOG_KEY, JSON.stringify(bodyWeightLog));
+  }, [bodyWeightLog, signedIn]);
 
   useEffect(() => {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
-  }, [prefs]);
+    if (!signedIn) return;
+    writeCache(GOAL_KEY, String(weeklyGoal));
+  }, [weeklyGoal, signedIn]);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    writeCache(PREFS_KEY, JSON.stringify(prefs));
+  }, [prefs, signedIn]);
 
   // Sync weekly goal + prefs to Supabase (one row per user). Debounced so a slider
   // drag or colour-picker sweep is one upsert, not dozens. Gated on `hydrated` so
@@ -3871,14 +4538,20 @@ const GymTrackerApp = () => {
   // so writing one here would make a reload mid-onboarding skip the gate forever.
   // Completing onboarding clears the flag and changes prefs, firing this write.
   useEffect(() => {
-    if (!hydrated || !session || needsOnboarding) return;
+    // `hydrateFailed` matters as much as `hydrated`: if the initial fetch threw we do
+    // not KNOW whether a settings row exists, and writing one would permanently
+    // suppress onboarding for a brand-new account (its absence is the sentinel).
+    if (!hydrated || hydrateFailed || !session || needsOnboarding) return;
     const t = setTimeout(() => {
       supabase.from('settings')
         .upsert({ user_id: session.user.id, weekly_goal: weeklyGoal, prefs, updated_at: new Date().toISOString() })
         .then(({ error }: any) => { if (error) console.error('Settings save failed', error); });
     }, 600);
     return () => clearTimeout(t);
-  }, [weeklyGoal, prefs, hydrated, session, needsOnboarding]);
+    // Keyed on the user id, not the session object: supabase-js hands us a new session
+    // object on every tab focus and token refresh, and depending on it scheduled a
+    // redundant settings upsert each time the app returned to the foreground.
+  }, [weeklyGoal, prefs, hydrated, hydrateFailed, session?.user?.id, needsOnboarding]);
 
   // ── Workout actions ──────────────────────────────────────────────────────────
   const startWorkout = (type: string) => {
@@ -3891,7 +4564,7 @@ const GymTrackerApp = () => {
     // (fromInputWeight already maps blank → null), and finish won't log a null.
     setCurrentWorkout({
       type: selectedWorkoutType,
-      bodyWeight: fromInputWeight(bodyWeight, units),   // typed in display units → stored kg
+      bodyWeight: fromInputBodyWeight(bodyWeight, units),   // typed in display units → stored kg
       // The day's starter exercises, already on screen — the user only fills in
       // reps and weight. Untouched cards are dropped by finishWorkout.
       exercises: starterExercises(selectedWorkoutType!),
@@ -3913,16 +4586,19 @@ const GymTrackerApp = () => {
   const addExercise = (name: string) => {
     // Stamp the stable id at write time (see idForName) so a later display-name
     // rename doesn't orphan this session. name is kept for display + legacy reads.
-    setCurrentWorkout((w: any) => ({ ...w, exercises: [...w.exercises, { name, exerciseId: idForName(name), sets: [], notes: '' }] }));
+    setCurrentWorkout((w: any) => ({ ...w, exercises: [...w.exercises, newExerciseCard(name)] }));
   };
 
   const addSet = (exIdx: number, reps: string, weight: string) => {
     // Weight is typed in display units and stored in kg; blank = bodyweight (null),
-    // never the NaN that parseFloat('') would give.
+    // never the NaN that parseFloat('') would give. Both parsers reject out-of-range
+    // input, so a stray '-' can't log a negative set.
     const load = fromInputWeight(weight, units);
+    const count = fromInputReps(reps);
+    if (count <= 0) return;   // nothing to log; the button's canAddSet guard agrees
     setCurrentWorkout((w: any) => {
       const exercises = w.exercises.map((ex: any, i: number) =>
-        i === exIdx ? { ...ex, sets: [...ex.sets, { reps: parseInt(reps, 10) || 0, weight: load }] } : ex
+        i === exIdx ? { ...ex, sets: [...ex.sets, { reps: count, weight: load }] } : ex
       );
       return { ...w, exercises };
     });
@@ -3953,8 +4629,11 @@ const GymTrackerApp = () => {
 
   const finishWorkout = async () => {
     // Drop exercises that never got a set — an empty card is nothing to log and
-    // would just clutter history.
-    const exercises = currentWorkout.exercises.filter((ex: any) => ex.sets.length > 0);
+    // would just clutter history. `_uid` is per-card React bookkeeping, not part of
+    // the record, so it's stripped here rather than riding into the exercises JSONB.
+    const exercises = currentWorkout.exercises
+      .filter((ex: any) => ex.sets.length > 0)
+      .map(({ _uid, ...ex }: any) => ex);
     if (exercises.length === 0) return;   // the Finish button also guards this
     // Session length = wall-clock from start, minus any paused time (freeze at the
     // pause point if still paused). Logged only when the session timer is on — read
@@ -3962,7 +4641,11 @@ const GymTrackerApp = () => {
     const startMs   = new Date(currentWorkout.date).getTime();
     const pausedMs  = currentWorkout.pausedMs || 0;
     const endMs     = currentWorkout.pausedAt != null ? new Date(currentWorkout.pausedAt).getTime() : Date.now();
-    const duration  = Number.isFinite(startMs) ? Math.max(0, Math.round((endMs - startMs - pausedMs) / 1000)) : 0;
+    // Capped: a session restored from an old cache (or a device whose clock moved)
+    // would otherwise log a multi-day duration as a permanent record. MAX_RESUME_MS
+    // normally prevents that on load; this is the belt to its braces.
+    const rawDuration = Number.isFinite(startMs) ? Math.round((endMs - startMs - pausedMs) / 1000) : 0;
+    const duration    = Math.min(Math.max(0, rawDuration), MAX_DURATION_S);
     const timerOn   = currentWorkout.workoutTimer ?? prefs.workoutTimer;
     // Strip the per-session timer bookkeeping from the permanent record.
     const { workoutTimer: _wt, restTimer: _rt, pausedMs: _pm, pausedAt: _pa, ...base } = currentWorkout;
@@ -4011,7 +4694,7 @@ const GymTrackerApp = () => {
 
   const logBodyWeight = async () => {
     if (!quickBWInput) return;
-    const kg = fromInputWeight(quickBWInput, units);   // typed in display units → stored kg
+    const kg = fromInputBodyWeight(quickBWInput, units);   // typed in display units → stored kg
     if (kg == null) return;
     const temp = { id: crypto.randomUUID(), date: new Date().toISOString(), weight: kg, _sync: 'pending' };
     setBodyWeightLog(prev => [...prev, temp]);
@@ -4072,9 +4755,9 @@ const GymTrackerApp = () => {
     }
   };
 
-  // Identity is the row uuid now (not the array index): HistoryScreen resolves
-  // workouts[originalIndex].id and passes it here, so a sorted/filtered/calendar
-  // subset always routes to the right row.
+  // Identity is the row uuid, never the array index: HistoryScreen keys its rows
+  // by uuid and passes it straight here, so a sorted/filtered/calendar subset —
+  // or an array replaced by hydrate mid-edit — always routes to the right row.
   const deleteWorkout = async (id: string) => {
     const removed = workouts.find(w => w.id === id);
     // Remove the paired finish-time weigh-in too, so deleting a workout doesn't
@@ -4103,18 +4786,69 @@ const GymTrackerApp = () => {
     }
   };
 
+  // Rows whose insert-fallback is in flight (see below). Without this, two Saves on
+  // the same device-only row both see a zero-row UPDATE and both INSERT, leaving a
+  // duplicate session on the server that the id-adoption never claims.
+  const insertFallbackInFlight = useRef<Set<string>>(new Set());
+
   const updateWorkout = async (id: string, updated: any) => {
     setWorkouts(w => w.map(item => item.id === id ? { ...updated, id, _sync: 'pending' } : item));   // optimistic
-    const { error } = await supabase.from('workouts').update(workoutToRow(updated)).eq('id', id);
-    // Mark 'error' so the merge in hydrate prefers this local edit over the stale
-    // server row (same id); clear the mark on success so it reads as synced.
-    if (error) { console.error('Update workout failed', error); setWorkouts(prev => markSync(prev, id, 'error')); }
-    else setWorkouts(prev => markSync(prev, id, null));
+    // The id this row ends up under: the fallback below may adopt a server-assigned
+    // one, and the paired weigh-in must be linked to THAT, not the dead local id.
+    let effectiveId = id;
+    // `.select()` so we learn how many rows the UPDATE actually matched. Editing a
+    // workout that only exists on this device (its insert failed offline) matched
+    // ZERO rows and returned NO error — so the row's `_sync` mark was cleared as if
+    // it had synced, and the next hydrate, seeing an unmarked row the server didn't
+    // have, dropped it from state, cache and server alike. Editing a session was
+    // enough to delete it.
+    const { data, error } = await supabase.from('workouts').update(workoutToRow(updated)).eq('id', id).select();
+    if (error) {
+      // Mark 'error' so the merge in hydrate prefers this local edit over the stale
+      // server row (same id).
+      console.error('Update workout failed', error);
+      setWorkouts(prev => markSync(prev, id, 'error'));
+    } else if (!data || data.length === 0) {
+      // Nothing to update — this row never reached the server. Insert it instead, so
+      // the edit is what finally syncs it. Guarded so a double-Save can't insert twice.
+      if (insertFallbackInFlight.current.has(id)) return;
+      insertFallbackInFlight.current.add(id);
+      try {
+        const { data: inserted, error: insErr } = await supabase.from('workouts')
+          .insert(workoutToRow(updated)).select().single();
+        if (insErr) {
+          console.error('Update fell back to insert and failed', insErr);
+          setWorkouts(prev => markSync(prev, id, 'error'));
+        } else {
+          // Adopt the server's uuid so later edits/deletes address the real row. If
+          // the row was deleted locally while the insert was in flight, nothing here
+          // matches — so delete the row we just created rather than orphaning it on
+          // the server, where it would reappear at the next hydrate.
+          let adopted = false;
+          setWorkouts(prev => {
+            const hit = prev.some(w => w.id === id);
+            adopted = hit;
+            return hit ? prev.map(w => (w.id === id ? rowToWorkout(inserted) : w)) : prev;
+          });
+          // setWorkouts' updater runs synchronously during the dispatch, so `adopted`
+          // is settled by the time this reads it.
+          if (!adopted) {
+            await supabase.from('workouts').delete().eq('id', inserted.id);
+            return;   // the row is gone; there is no weigh-in left to reconcile
+          }
+          effectiveId = inserted.id;
+        }
+      } finally {
+        insertFallbackInFlight.current.delete(id);
+      }
+    } else {
+      setWorkouts(prev => markSync(prev, id, null));   // clear the mark: it reads as synced
+    }
 
     // Keep the body-weight log in step: the finish-time entry shares the workout's
     // date, so edit/clear it here too — otherwise the chart and readout keep the
     // old (or wrong) number the History edit was meant to fix.
-    await reconcilePairedWeighIn(updated.date, updated.bodyWeight, id);
+    await reconcilePairedWeighIn(updated.date, updated.bodyWeight, effectiveId);
   };
 
   // Remove a body-weight data point (a fat-fingered entry, say). Keyed by row uuid.
@@ -4172,6 +4906,11 @@ const GymTrackerApp = () => {
         try {
           const d = JSON.parse(String(reader.result));
           if (!Array.isArray(d.workouts) || !session) { resolve(false); return; }
+          // A backup we didn't write (or one from a future schema) can't be trusted
+          // to mean what this code thinks it means. `app` was only added alongside
+          // `version`, so a file carrying neither is an early export and is allowed.
+          if (d.app != null && d.app !== 'FitPulse') { resolve(false); return; }
+          if (d.version != null && d.version !== 1)  { resolve(false); return; }
           const uid = session.user.id;
 
           // Sanitise before we touch the account: a file that parsed but yields no
@@ -4181,6 +4920,11 @@ const GymTrackerApp = () => {
           if (d.workouts.length && !cleanWorkouts.length) { resolve(false); return; }
           const cleanBW = (Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : [])
             .map(cleanImportedBW).filter(Boolean);
+          // An import that would REPLACE everything with nothing is a truncated or
+          // half-written file, not an intentional wipe — and the old guard above only
+          // fires when `workouts` is non-empty, so `{"workouts":[]}` used to sail
+          // through and delete the account. Wiping has its own button; this isn't it.
+          if (!cleanWorkouts.length && !cleanBW.length) { resolve(false); return; }
 
           // Non-destructive replace: INSERT the new rows first, and only once every
           // insert has succeeded delete the old ones. A failed import then leaves the
@@ -4200,6 +4944,18 @@ const GymTrackerApp = () => {
             if (error) throw error;
             wRows = data ?? [];
           }
+          // Undo the inserts we've already made. Its own failure must not mask the
+          // error that triggered it, so it reports rather than throws — a rollback
+          // that can't run is exactly the case where the user needs to be told the
+          // account is now holding both sets of rows.
+          const rollback = async (rows: any[], table: string) => {
+            const ids = rows.map((r: any) => r.id);
+            if (!ids.length) return true;
+            const { error } = await supabase.from(table).delete().in('id', ids);
+            if (error) console.error(`Import rollback of ${table} failed`, error);
+            return !error;
+          };
+
           let bwRows: any[] = [];
           if (cleanBW.length) {
             const { data, error } = await supabase.from('body_weight_log')
@@ -4207,29 +4963,47 @@ const GymTrackerApp = () => {
             if (error) {
               // Roll back the workouts we just inserted so a half-done import doesn't
               // leave new rows sitting duplicated alongside the still-present old set.
-              const newWIds = wRows.map((r: any) => r.id);
-              if (newWIds.length) await supabase.from('workouts').delete().in('id', newWIds);
+              await rollback(wRows, 'workouts');
               throw error;
             }
             bwRows = data ?? [];
           }
 
-          // Every insert landed — now it's safe to drop the old rows.
-          if (oldWIds.length)  await supabase.from('workouts').delete().in('id', oldWIds);
-          if (oldBWIds.length) await supabase.from('body_weight_log').delete().in('id', oldBWIds);
+          // The settings upsert used to run AFTER the old rows were deleted, so its
+          // failure reported "import failed" on an account that had already been
+          // replaced. Write it while everything is still reversible.
           const goal     = Number.isFinite(d.weeklyGoal) ? clampGoal(d.weeklyGoal) : GOAL_DEFAULT;
-          const rawPrefs = d.prefs && typeof d.prefs === 'object' ? d.prefs : {};
-          const prefsObj = {
-            ...DEFAULT_PREFS,
-            ...rawPrefs,
-            name:   typeof rawPrefs.name   === 'string' ? rawPrefs.name   : '',
-            gender: typeof rawPrefs.gender === 'string' ? rawPrefs.gender : '',
-            hidden:   Array.isArray(rawPrefs.hidden)   ? rawPrefs.hidden   : [],
-            dayNames: safeDayNames(rawPrefs.dayNames),
-          };
+          const prefsObj = sanitizePrefs(d.prefs);
           const { error: sErr } = await supabase.from('settings')
             .upsert({ user_id: uid, weekly_goal: goal, prefs: prefsObj, updated_at: new Date().toISOString() });
-          if (sErr) throw sErr;
+          if (sErr) {
+            await rollback(bwRows, 'body_weight_log');
+            await rollback(wRows, 'workouts');
+            throw sErr;
+          }
+
+          // Every insert landed — now it's safe to drop the old rows. These deletes
+          // used to discard their result, so a failure (offline, or an `in()` list
+          // long enough to blow the URL limit) left the old rows in place next to the
+          // new ones and still reported success: history silently doubled on the next
+          // hydrate. Chunk the ids to stay well inside the query-string limit, and
+          // treat a failure as a failed import.
+          const deleteByIds = async (ids: string[], table: string) => {
+            for (let i = 0; i < ids.length; i += 200) {
+              const { error } = await supabase.from(table).delete().in('id', ids.slice(i, i + 200));
+              if (error) throw error;
+            }
+          };
+          try {
+            await deleteByIds(oldWIds, 'workouts');
+            await deleteByIds(oldBWIds, 'body_weight_log');
+          } catch (delErr) {
+            // The new rows are live and the old ones are (partly) still there. Undo the
+            // import so the account is left as it was rather than holding both sets.
+            await rollback(bwRows, 'body_weight_log');
+            await rollback(wRows, 'workouts');
+            throw delErr;
+          }
 
           setWorkouts(wRows.map(rowToWorkout));
           setBodyWeightLog(bwRows.map(rowToBW));
@@ -4242,18 +5016,31 @@ const GymTrackerApp = () => {
       reader.readAsText(file);
     });
 
-  // Drop all in-memory data back to defaults — shared by a full wipe and sign-out.
+  // Drop all in-memory data back to defaults — shared by a full wipe, sign-out, and
+  // any session loss (expiry, revocation, sign-out in another tab). It must clear
+  // EVERYTHING user-identifying: the localStorage cache is per-origin, not per-user,
+  // so whatever survives here is what the next account to sign in on this browser
+  // sees. That included the live session — the next user could land inside the
+  // previous user's workout and press Finish, filing it under their own account.
   const resetLocalState = () => {
     setWorkouts([]);
     setBodyWeightLog([]);
     setWeeklyGoal(GOAL_DEFAULT);
     setPrefs(DEFAULT_PREFS);
     setCurrentWorkout(null);
+    setSelectedWorkoutType(null);
+    setWorkoutNotes('');
+    setBodyWeight('');
+    setQuickBWInput('');
+    setCurrentScreen('home');
   };
 
   const clearAllData = async () => {
-    resetLocalState();
-    try { localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
+    // Delete the settings row BEFORE resetting state. The other order armed the
+    // 600ms-debounced settings write-back (resetLocalState changes `prefs`), which
+    // then recreated the row just after the DELETE landed — so the account kept a
+    // settings row, `isFirstLogin` stayed false, and the user was never re-onboarded
+    // despite every other trace of them being gone.
     if (session) {
       const uid = session.user.id;
       const results = await Promise.all([
@@ -4262,14 +5049,35 @@ const GymTrackerApp = () => {
         supabase.from('settings').delete().eq('user_id', uid),
       ]);
       results.forEach(({ error }: any) => { if (error) console.error('Clear data failed', error); });
+      // The settings row is gone, so re-raise onboarding for this same signed-in user
+      // rather than leaving them on a nameless dashboard until they sign out.
+      setNeedsOnboarding(true);
     }
+    resetLocalState();
+    clearLocalCache();
   };
 
   // End the session and drop the in-memory data (the next sign-in re-hydrates).
   const signOut = async () => {
-    try { await supabase.auth.signOut(); } catch (e) { console.error('Sign out failed', e); }
-    resetLocalState();
-    setCurrentScreen('home');
+    let failed = false;
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('Sign out failed', e);
+      failed = true;
+    }
+    // Only clear on a sign-out that actually happened. If the call threw (offline),
+    // supabase-js may have left the session in place — and clearing anyway used to
+    // leave the user apparently still signed in, looking at an empty dashboard,
+    // while the write-backs (still gated on a truthy `signedIn`) immediately
+    // re-serialised those defaults over the cache we had just deleted.
+    if (!failed) {
+      setSession(null);          // don't wait for the event; the gate must close now
+      resetLocalState();
+      clearLocalCache();
+    } else {
+      flash("Couldn't sign out — you may be offline. Your data is untouched.");
+    }
     setRecovery(false);   // signing out from the reset screen must clear the flag, or it re-pins us there
   };
 
@@ -4292,12 +5100,27 @@ const GymTrackerApp = () => {
   // cascade FKs wipe every workout/weigh-in/setting. Returns null on success or
   // friendly error copy. On success we sign out — which drops us to the login
   // gate and clears the in-memory + cached state.
-  const deleteAccount = async (): Promise<string | null> => {
+  const deleteAccount = async (password: string): Promise<string | null> => {
+    // Re-authenticate first. The RPC is SECURITY DEFINER and irreversible, and a
+    // session token alone (which lives in localStorage, so a borrowed unlocked device
+    // has it) was previously enough to invoke it. Re-signing in with the same email
+    // proves the person at the keyboard knows the password; it refreshes the session
+    // rather than creating a second one, so the RPC below still runs as this user.
+    const email = session?.user?.email;
+    if (!email) return 'You need to be signed in to delete your account.';
+    const { error: authErr } = await supabase.auth.signInWithPassword({ email, password });
+    // Map properly rather than blaming the password for everything: this endpoint is
+    // rate-limited, so a retry after one typo would otherwise report "incorrect
+    // password" for the CORRECT password, and an offline attempt would say the same.
+    if (authErr) return authErrorText(authErr);
+
     const { error } = await supabase.rpc('delete_account');
     if (error) { console.error('Delete account failed', error); return 'Could not delete your account. Please try again.'; }
     // Drop the local cache so a later signup on this device can't re-migrate the
-    // deleted account's data, then sign out.
-    try { [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY].forEach(k => localStorage.removeItem(k)); } catch { /* ignore */ }
+    // deleted account's data. signOut clears it again after the state reset settles,
+    // which is what makes the wipe stick — the write-backs are gated on `session`, so
+    // nothing re-serialises the defaults over these keys in between.
+    clearLocalCache();
     await signOut();
     return null;
   };
@@ -4309,42 +5132,63 @@ const GymTrackerApp = () => {
   // 1 day vs 2 — which let a streak read as alive while its head check killed it).
   const STREAK_GAP_DAYS = 2;
   const getWorkoutStreak = () => {
-    if (workouts.length === 0) return 0;
     const todayMs = startOfDayMs(new Date());
-    const dayMs   = 86400000;
 
+    // Drop unparseable dates before they reach the maths. One of them (an imported
+    // "last tuesday") produced NaN here, and because every NaN comparison is false
+    // the head check below could not declare the streak broken — so a user who
+    // hadn't trained in months still read as being on a streak.
     const uniqueDays = [...new Set(
-      workouts.map((w: any) => startOfDayMs(new Date(w.date)))
+      workouts
+        .map((w: any) => startOfDayMs(new Date(w.date)))
+        .filter((ms: number) => Number.isFinite(ms))
     )].sort((a, b) => b - a);
+    if (uniqueDays.length === 0) return 0;
 
     // Broken if the most recent session is already beyond the rest-day tolerance.
-    if ((todayMs - uniqueDays[0]) / dayMs > STREAK_GAP_DAYS) return 0;
+    // A future-dated session (clock skew, a hand-edited import) gives a negative
+    // gap, which must not read as "trained recently" — clamp it to today.
+    if (daysBetween(todayMs, Math.min(uniqueDays[0], todayMs)) > STREAK_GAP_DAYS) return 0;
 
     let streak = 1;
     for (let i = 1; i < uniqueDays.length; i++) {
-      if ((uniqueDays[i - 1] - uniqueDays[i]) / dayMs <= STREAK_GAP_DAYS) streak++;
+      if (daysBetween(uniqueDays[i - 1], uniqueDays[i]) <= STREAK_GAP_DAYS) streak++;
       else break;
     }
     return streak;
   };
 
+  // Sessions in a trailing window. Bounded at BOTH ends: the upper bound stops a
+  // future-dated session (clock skew, or a hand-edited backup) counting toward a
+  // week it isn't in — which let the goal tile read 100% off sessions that hadn't
+  // happened yet. An unparseable date is excluded rather than compared as NaN.
+  const workoutsSince = (days: number) => {
+    // Step the DATE, don't subtract milliseconds. `startOfDayMs(now) - n*86400000`
+    // lands at 23:00 or 01:00 of the target day across a DST boundary, so a session
+    // logged in the first or last hour of the window fell in or out arbitrarily —
+    // the same class of bug `daysBetween` exists to avoid.
+    const from = new Date();
+    from.setDate(from.getDate() - (days - 1));
+    const cutoff = startOfDayMs(from);
+    const now = Date.now();
+    return workouts.filter((w: any) => {
+      const t = new Date(w.date).getTime();
+      return Number.isFinite(t) && t >= cutoff && t <= now;
+    });
+  };
+
   // Sessions logged in the trailing 7 days — the raw count (used by the plates tile)
-  // and the goal percentage (capped at 100, used by every other tile).
-  const weeklyCount = (() => {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 7);
-    return workouts.filter((w: any) => new Date(w.date) >= cutoff).length;
-  })();
-  const getWeeklyGoalProgress = () => Math.min((weeklyCount / weeklyGoal) * 100, 100);
+  // and the goal percentage (capped at 100, used by every other tile). Measured in
+  // whole calendar days rather than 7×24h from the current time of day, so a session
+  // doesn't drop out of "this week" partway through the day it was logged on.
+  const weeklyCount = workoutsSince(7).length;
+  const getWeeklyGoalProgress = () =>
+    weeklyGoal > 0 ? Math.min((weeklyCount / weeklyGoal) * 100, 100) : 0;
 
   // The dashboard muscle-focus donut is scoped to the last 30 days — a rolling
   // "what have I been hitting lately" read, distinct from Progress's selectable
   // window. The heading carries the range so the number isn't mistaken for all-time.
-  const last30Workouts = (() => {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    return workouts.filter((w: any) => new Date(w.date) >= cutoff);
-  })();
+  const last30Workouts = workoutsSince(30);
 
   // The most recent session by actual date, not array position — every "latest"
   // readout keys off this so an out-of-order workouts array (e.g. a re-appended
@@ -4356,25 +5200,36 @@ const GymTrackerApp = () => {
   const getDaysSinceLastWorkout = () => {
     if (!latestWorkout) return 'No workouts yet';
     const lastDay  = startOfDayMs(new Date(latestWorkout.date));
-    const todayDay = startOfDayMs(new Date());
-    const diff     = Math.round((todayDay - lastDay) / 86400000);
-    if (diff === 0) return 'Today';
+    if (!Number.isFinite(lastDay)) return '—';
+    const diff = daysBetween(startOfDayMs(new Date()), lastDay);
+    if (diff <= 0) return 'Today';
     if (diff === 1) return 'Yesterday';
     return `${diff} days ago`;
   };
 
+  // The weigh-in log in date order, oldest first. The stored array is in INSERTION
+  // order, which stops matching date order the moment a back-dated entry is appended
+  // — editing a three-month-old session's body weight pushed that entry to the end,
+  // and the charts below (which just walk the array) then drew a line that jumped
+  // backwards across the whole X axis. Everything date-ordered reads this.
+  const bwByDate = useMemo(
+    () => [...bodyWeightLog]
+      .filter(e => Number.isFinite(new Date(e.date).getTime()))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    [bodyWeightLog]
+  );
+
   // Latest logged body weight in kg, or null. The card converts to display units.
-  const latestBodyWeightKg: number | null = bodyWeightLog.length === 0
-    ? null
-    : [...bodyWeightLog].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight;
+  const latestBodyWeightKg: number | null = bwByDate.length === 0 ? null : bwByDate[bwByDate.length - 1].weight;
 
   const getLatestWorkoutType = () => {
     if (!latestWorkout) return '—';
     return labelForType(latestWorkout.type, prefs.dayNames);
   };
 
-  // Body weight chart data for home (last 15 entries), in display units.
-  const bwChartData = bodyWeightLog.slice(-15).map(e => ({
+  // Body weight chart data for home — the 15 most RECENT entries by date (not the
+  // last 15 inserted), in display units.
+  const bwChartData = bwByDate.slice(-15).map(e => ({
     date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
   }));
@@ -4385,7 +5240,7 @@ const GymTrackerApp = () => {
   // on a session card ("Last: 80 × 8 · 80 × 8"), so you know what to beat without
   // leaving the session. Newest wins, so the walk is oldest-first.
   const lastByExercise = useMemo(() => {
-    const map: Record<string, { date: string; sets: any[] }> = {};
+    const map: Record<string, { date: string; sets: any[] }> = bareMap();
     [...workouts]
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .forEach(w => (w.exercises ?? []).forEach((ex: any) => {
@@ -4400,6 +5255,10 @@ const GymTrackerApp = () => {
   // writes `split` implicitly), so the pref keeps meaning "the user picked this".
   const splitId       = prefs.split || (workouts.length ? 'ppl' : '');
   const choosingSplit = pickingSplit || !splitId;
+
+  // A typed body weight the parser won't accept (negative, zero, past the storable
+  // ceiling). Drives the Log button's disabled state and the message beneath it.
+  const quickBWInvalid = quickBWInput !== '' && fromInputBodyWeight(quickBWInput, units) == null;
 
   const goalPct    = getWeeklyGoalProgress();
   const goalMet    = goalPct >= 100;
@@ -4475,12 +5334,35 @@ const GymTrackerApp = () => {
 
       {/* Persistent sync warning — shown whenever a write is saved on this device
           but hasn't reached the server. Clears itself once a retry succeeds. */}
-      {unsyncedCount > 0 && (
+      {unsyncedCount > 0 && !cacheWriteFailed && (
         <div role="status" className="bg-warn/15 border-b border-warn/30">
           <div className="max-w-3xl mx-auto px-4 py-2 flex items-center gap-2 text-warn">
             <CloudOff size={15} className="flex-shrink-0" />
             <span className="text-xs font-medium">
               {unsyncedCount} change{unsyncedCount !== 1 ? 's' : ''} saved on this device only — not synced yet. They'll upload when you're back online.
+            </span>
+            {/* A failed hydrate no longer self-heals on the next tab focus (that churn
+                was removed deliberately), so offer the retry explicitly. */}
+            <button onClick={reHydrate} className="ml-auto shrink-0 rounded-chip border border-warn/40 px-2 py-0.5 text-[11px] font-semibold hover:bg-warn/10">
+              Retry now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* The stronger warning: the on-device cache itself couldn't be written (quota
+          full, or Safari private browsing where setItem always throws). The banner
+          above would be actively wrong here — nothing is saved anywhere, so a reload
+          loses it. This used to be a swallowed catch. */}
+      {cacheWriteFailed && (
+        <div role="alert" className="bg-crit/15 border-b border-crit/30">
+          <div className="max-w-3xl mx-auto px-4 py-2 flex items-center gap-2 text-crit">
+            <CloudOff size={15} className="flex-shrink-0" />
+            <span className="text-xs font-medium">
+              This device's storage is full or unavailable, so nothing is being saved locally.
+              {unsyncedCount > 0
+                ? ` ${unsyncedCount} unsynced change${unsyncedCount !== 1 ? 's' : ''} would be lost by a reload — reconnect before closing the app.`
+                : ' Your sessions still sync to the server while you’re online.'}
             </span>
           </div>
         </div>
@@ -4492,7 +5374,7 @@ const GymTrackerApp = () => {
 
           {/* Greeting — only once the user has set a name at onboarding. */}
           {prefs.name && (
-            <h2 className="font-display text-2xl font-bold text-ink -mb-1">Hi, {prefs.name}</h2>
+            <h2 className="font-display text-2xl font-bold text-ink -mb-1 truncate">Hi, {prefs.name}</h2>
           )}
 
           {/* Stat row */}
@@ -4638,7 +5520,7 @@ const GymTrackerApp = () => {
 
             <div className="flex gap-2 mb-3">
               <input
-                type="number" step="0.1" inputMode="decimal"
+                type="number" min="0" step="0.1" inputMode="decimal"
                 placeholder={`Log today's weight (${units})`}
                 aria-label={`Log today's body weight in ${units}`}
                 value={quickBWInput}
@@ -4648,12 +5530,19 @@ const GymTrackerApp = () => {
               />
               <button
                 onClick={logBodyWeight}
-                disabled={!quickBWInput}
+                disabled={!quickBWInput || quickBWInvalid}
                 className={`${btnPrimary} px-4 text-sm disabled:bg-raised disabled:text-faint disabled:cursor-not-allowed disabled:brightness-100`}
               >
                 Log
               </button>
             </div>
+            {/* logBodyWeight silently returns on an unusable value, so say why rather
+                than letting the Log button look broken. */}
+            {quickBWInvalid && (
+              <p role="alert" className="-mt-2 mb-3 text-[11px] text-crit">
+                Enter a body weight between 0 and {trim1(toDisplayWeight(MAX_WEIGHT_KG, units) as number)} {units}.
+              </p>
+            )}
 
             {bwChartData.length >= 2 ? (
               <BodyWeightTrend data={bwChartData} theme={theme} prefs={prefs} chartType={prefs.bwChart} units={units} height={140} compact />
@@ -4687,7 +5576,7 @@ const GymTrackerApp = () => {
                             <button
                               onClick={() => deleteBodyWeightEntry(e.id)}
                               aria-label={`Delete body weight entry from ${new Date(e.date).toLocaleDateString()}`}
-                              className="text-faint hover:text-crit transition-colors"
+                              className="-m-1.5 p-1.5 text-faint hover:text-crit transition-colors"
                             >
                               <X size={13} />
                             </button>
@@ -4749,7 +5638,7 @@ const GymTrackerApp = () => {
             <label htmlFor="entry-bw" className={`${label} block mb-2`}>Body weight ({units}) — optional</label>
             <input
               id="entry-bw"
-              type="number" step="0.1" inputMode="decimal"
+              type="number" min="0" step="0.1" inputMode="decimal"
               value={bodyWeight}
               onChange={e => setBodyWeight(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && confirmBodyWeight()}
@@ -4863,4 +5752,55 @@ const GymTrackerApp = () => {
   );
 };
 
-export default GymTrackerApp;
+// ─── ErrorBoundary ─────────────────────────────────────────────────────────────
+// Without one, ANY render/effect throw unmounts the whole tree and leaves a blank
+// white page with no way back — and the throws that matter here are the ones fed by
+// persisted state (a corrupt cache, a hostile backup, a prefs blob that syncs from
+// the server), so a reload reproduces the crash forever. Hence the second button:
+// dropping the local caches is the one recovery a user can perform themselves, and
+// it's safe because the server is the source of truth for everything except
+// device-only unsynced rows. `resetTokens` also strips the pre-paint theme stamp,
+// which is what a poisoned appearance pref would have corrupted.
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: any) { console.error('App crashed', error, info); }
+
+  private recover = () => {
+    try {
+      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, THEME_KEY, 'gym-theme-vars']
+        .forEach(k => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+    window.location.reload();
+  };
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="min-h-screen bg-ground flex items-center justify-center p-4">
+        <div className={`${card} w-full max-w-md p-6 text-center animate-fade-rise`}>
+          <h1 className="font-display text-xl font-bold uppercase tracking-wide text-ink">Something broke</h1>
+          <p className="mt-2 text-sm text-muted">
+            The app hit an error it couldn't recover from. Your workouts are saved on the server — reloading is safe.
+          </p>
+          <p className="mt-3 rounded-ctl bg-raised p-2 text-left text-[11px] font-mono text-faint break-words">
+            {this.state.error.message || String(this.state.error)}
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            <button onClick={() => window.location.reload()} className={`${btnPrimary} p-3`}>Reload</button>
+            <button onClick={this.recover} className={`${btnSecondary} p-3`}>Reload and clear this device's cache</button>
+          </div>
+          <p className="mt-3 text-[11px] text-faint">
+            Clearing the cache only removes local copies. Anything not yet synced to the server would be lost.
+          </p>
+        </div>
+      </div>
+    );
+  }
+}
+
+const GymTrackerAppWithBoundary = () => (
+  <ErrorBoundary><GymTrackerApp /></ErrorBoundary>
+);
+
+export default GymTrackerAppWithBoundary;
