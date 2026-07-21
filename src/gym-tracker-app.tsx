@@ -20,7 +20,7 @@ import customImg from '../Assets/pexels-koolshooters-8544616.jpg';
 //   • Storage keys .............. STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, THEME_KEY
 //   • Prefs schema .............. DEFAULT_PREFS, Prefs
 //   • Design tokens ............. card, input, btnPrimary/Secondary/Danger, label, readout
-//   • Type & theme config ....... TYPE_CONFIG, SESSION_TYPES, CHART, ACCENTS, BASES, SEMANTICS
+//   • Type & theme config ....... SPLITS, TYPE_CONFIG, CHART, ACCENTS, BASES, SEMANTICS
 //   • Units ..................... LB_PER_KG, KG_PER_LB
 //
 // HOOKS & UI PRIMITIVES
@@ -117,7 +117,7 @@ const EXERCISES: Record<string, ExerciseGroup[]> = {
       'Cable Crossover', 'Low-to-High Cable Fly', 'High-to-Low Cable Fly',
       // Bodyweight
       'Chest Dips', 'Push-ups', 'Incline Push-ups', 'Decline Push-ups',
-      'Wide Grip Push-ups', 'Diamond Push-ups', 'Plyometric Push-ups',
+      'Wide Grip Push-ups', 'Plyometric Push-ups',   // Diamond Push-ups are triceps — filed there
     ] },
     { group: 'Shoulders', items: [
       // Presses
@@ -137,6 +137,7 @@ const EXERCISES: Record<string, ExerciseGroup[]> = {
     { group: 'Triceps', items: [
       // Compound
       'Close Grip Bench Press', 'JM Press', 'Tricep Dips', 'Bench Dips',
+      'Diamond Push-ups',
       // Pushdowns
       'Tricep Pushdowns', 'Rope Pushdown', 'V-Bar Pushdown',
       'Reverse Grip Pushdown', 'Single Arm Pushdown',
@@ -261,6 +262,41 @@ const ALL_GROUPS: ExerciseGroup[] = [
   CARDIO,
 ];
 
+// ── Day types beyond push/pull/legs ──────────────────────────────────────────
+// The other splits (upper/lower, full body, bro, Arnold — see SPLITS) train the
+// same muscles in different combinations, so their picker lists are COMPOSED from
+// the groups above rather than re-declared. Re-declaring would duplicate exercise
+// names, and names must stay unique (they're React keys, and ALL_GROUPS flattens
+// them). CORE and CARDIO are stripped and re-appended last, same as ALL_GROUPS.
+const groupsOf = (type: string, ...names: string[]): ExerciseGroup[] =>
+  names.map(n => EXERCISES[type].find(g => g.group === n)!);
+
+const dayFrom = (...groups: ExerciseGroup[]): ExerciseGroup[] =>
+  [...groups.filter(g => !isShared(g)), CORE, CARDIO];
+
+const PUSH_GROUPS = groupsOf('push', 'Chest', 'Shoulders', 'Triceps');
+const PULL_GROUPS = groupsOf('pull', 'Lats & Deadlifts', 'Rows', 'Rear Delts & Traps', 'Biceps');
+const BACK_GROUPS = groupsOf('pull', 'Lats & Deadlifts', 'Rows', 'Rear Delts & Traps');
+const [CHEST_G, SHOULDER_G, TRICEP_G] = PUSH_GROUPS;
+const REAR_DELT_G = groupsOf('pull', 'Rear Delts & Traps')[0];
+const BICEP_G     = groupsOf('pull', 'Biceps')[0];
+
+Object.assign(EXERCISES, {
+  // Upper / lower
+  upper:    dayFrom(...PUSH_GROUPS, ...PULL_GROUPS),
+  lower:    EXERCISES.legs,
+  // Full body — everything, in the same order Custom gets it
+  fullbody: ALL_GROUPS,
+  // Bro split (legs reuses EXERCISES.legs via the shared 'legs' day type)
+  chest:     dayFrom(CHEST_G),
+  back:      dayFrom(...BACK_GROUPS),
+  shoulders: dayFrom(SHOULDER_G, REAR_DELT_G),
+  arms:      dayFrom(BICEP_G, TRICEP_G),
+  // Arnold split
+  chestback:     dayFrom(CHEST_G, ...BACK_GROUPS),
+  shouldersarms: dayFrom(SHOULDER_G, REAR_DELT_G, BICEP_G, TRICEP_G),
+});
+
 // A free-text exercise the user typed isn't in the catalogue — it lands here.
 const OTHER_GROUP = 'Other';
 
@@ -331,7 +367,19 @@ const MUSCLE_OVERRIDES_BY_NAME: Record<string, string> = {
   // Pull day — shrugs, upright rows and high pulls are trapezius-dominant
   'Shrugs': 'Traps', 'Barbell Shrugs': 'Traps', 'Dumbbell Shrugs': 'Traps',
   'Trap Bar Shrugs': 'Traps', 'Cable Shrugs': 'Traps',
-  'Upright Row': 'Traps', 'Cable Upright Row': 'Traps', 'High Pull': 'Traps',
+  'High Pull': 'Traps',
+  // …but the upright row is a lateral-delt movement with the traps assisting (ExRx),
+  // and the Y raise is lower-trap work the group's rear-delt default would miss.
+  'Upright Row': 'Side Delts', 'Cable Upright Row': 'Side Delts', 'Y Raise': 'Traps',
+  // Loaded carries score as the traps holding them, not as conditioning — the same
+  // call already made for Suitcase Carry (obliques). They stay in the Cardio list so
+  // they're pickable on any day; only the muscle they credit changes.
+  'Farmers Walk': 'Traps', 'Yoke Carry': 'Traps',
+  // Pressing behind the neck shifts the emphasis off the front delt
+  'Behind the Neck Press': 'Side Delts',
+  // The dumbbell pullover is a sternal-pec movement (lats assist); the cable versions
+  // above it really are lat work, so only this one is overridden.
+  'Dumbbell Pullover': 'Chest',
   // Floor deadlifts load the spinal erectors; the pure hip-hinges live in legs
   'Deadlift': 'Lower Back', 'Trap Bar Deadlift': 'Lower Back', 'Deficit Deadlift': 'Lower Back',
   'Snatch Grip Deadlift': 'Lower Back', 'Rack Pull': 'Lower Back', 'Block Pull': 'Lower Back',
@@ -343,6 +391,13 @@ const MUSCLE_OVERRIDES_BY_NAME: Record<string, string> = {
   'Machine Hip Thrust': 'Glutes', 'Glute Bridge': 'Glutes', 'Frog Pump': 'Glutes',
   'Glute Kickback': 'Glutes', 'Cable Pull Through': 'Glutes', 'Kettlebell Swing': 'Glutes',
   'Sumo Deadlift': 'Glutes', 'Reverse Hyperextension': 'Glutes',
+  'Single Leg Deadlift': 'Glutes',        // unilateral hinge is glute-dominant
+  // Lunges & Split Squats defaults to Quads, but the hip-dominant single-leg
+  // patterns are glute work — without these no lunge could ever score as glutes.
+  'Curtsy Lunges': 'Glutes', 'Reverse Lunges': 'Glutes', 'Walking Lunges': 'Glutes',
+  'Step-ups': 'Glutes', 'Lateral Step-ups': 'Glutes', 'Bulgarian Split Squat': 'Glutes',
+  // Frontal-plane lunges are loaded-stretch adductor work, not quads
+  'Lateral Lunges': 'Adductors', 'Cossack Squat': 'Adductors',
   // Calves & Hips — split the hip accessories out of the calf default
   'Hip Adduction': 'Adductors',
   'Hip Abduction': 'Abductors', 'Cable Hip Abduction': 'Abductors',
@@ -351,6 +406,8 @@ const MUSCLE_OVERRIDES_BY_NAME: Record<string, string> = {
   'Side Plank': 'Obliques', 'Bicycle Crunch': 'Obliques', 'Russian Twist': 'Obliques',
   'Woodchopper': 'Obliques', 'Landmine Twist': 'Obliques', 'Side Bend': 'Obliques',
   'Pallof Press': 'Obliques', 'Suitcase Carry': 'Obliques', 'Hanging Windshield Wiper': 'Obliques',
+  // Bird dog is spinal-stability work — the erectors and glutes do it, not the abs
+  'Bird Dog': 'Lower Back',
 };
 
 // The primary muscle for a catalogue name (override first, else the group default).
@@ -431,12 +488,14 @@ type Prefs = {
   restSeconds: number;           // its default duration
   workoutTimer: boolean;         // time the whole session and log its duration
   goalCardStyle: GoalCardStyle;  // how the "This week" tile visualises goal progress
+  split: string;                 // SPLITS id — '' = not chosen yet (home shows the chooser)
+  dayNames: Record<string, string>;  // type id → the user's own name for that day (display only)
 };
 const DEFAULT_PREFS: Prefs = {
   name: '', gender: '',
   units: 'kg', hidden: [], muscleMetric: 'sets', bwChart: 'line',
   accent: 'blue', base: 'graphite', semantics: 'plates', restTimer: true, restSeconds: 90,
-  workoutTimer: true, goalCardStyle: 'liquid',
+  workoutTimer: true, goalCardStyle: 'liquid', split: '', dayNames: {},
 };
 
 // Hideable stat widgets, keyed per screen so the same kind can be hidden on one
@@ -717,13 +776,6 @@ const WeekGoalTile = ({ style, pct, met, count, goal }: any) => {
   );
 };
 
-const TYPE_CONFIG: Record<string, { label: string }> = {
-  push:   { label: 'Push Day' },
-  pull:   { label: 'Pull Day' },
-  legs:   { label: 'Leg Day' },
-  custom: { label: 'Custom' },
-};
-
 // ── Import sanitisation ──────────────────────────────────────────────────────
 // A backup file is user-supplied and may be hand-edited or corrupt. Coerce every
 // imported record into a known-good shape before it reaches the DB, so a malformed
@@ -783,12 +835,107 @@ const cleanImportedBW = (e: any) => {
 // scanner to emit the rule.
 type SessionType = { name: string; label: string; sub: string; img?: string; pos?: string };
 
-const SESSION_TYPES: SessionType[] = [
-  { name: 'push',   label: 'Push Day', sub: 'Chest · Shoulders · Triceps', img: pushImg, pos: 'object-[center_80%]' },
-  { name: 'pull',   label: 'Pull Day', sub: 'Back · Biceps · Deadlifts',   img: pullImg, pos: 'object-[center_50%]' },
-  { name: 'legs',   label: 'Leg Day',  sub: 'Quads · Hamstrings · Glutes', img: legsImg, pos: 'object-[center_55%]' },
-  { name: 'custom', label: 'Custom',   sub: 'Build your own',              img: customImg, pos: 'object-[center_55%]' },
+// The session tiles are the user's SPLIT, not a fixed PPL assumption. `prefs.split`
+// picks one; the home card renders its days (plus Custom, which every split gets).
+//
+// `name` IS the stored `workout.type`, so the ids must be stable and shared wherever
+// the day is the same — 'legs' is one id across PPL, bro and Arnold, and history
+// logged under a split you've since left keeps rendering (TYPE_CONFIG holds every
+// label, forever). Only PPL carries photos; the rest are flat tiles, which the tile
+// markup already handles by falling back to bg-raised when `img` is absent.
+type Split = { id: string; label: string; sub: string; days: SessionType[] };
+
+const CUSTOM_DAY: SessionType = { name: 'custom', label: 'Custom', sub: 'Build your own', img: customImg, pos: 'object-[center_55%]' };
+
+const SPLITS: Split[] = [
+  { id: 'ppl', label: 'Push / Pull / Legs', sub: 'Three days, by movement', days: [
+    { name: 'push', label: 'Push Day', sub: 'Chest · Shoulders · Triceps', img: pushImg, pos: 'object-[center_80%]' },
+    { name: 'pull', label: 'Pull Day', sub: 'Back · Biceps · Deadlifts',   img: pullImg, pos: 'object-[center_50%]' },
+    { name: 'legs', label: 'Leg Day',  sub: 'Quads · Hamstrings · Glutes', img: legsImg, pos: 'object-[center_55%]' },
+  ] },
+  { id: 'upperLower', label: 'Upper / Lower', sub: 'Two days, alternating', days: [
+    { name: 'upper', label: 'Upper Body', sub: 'Chest · Back · Shoulders · Arms' },
+    { name: 'lower', label: 'Lower Body', sub: 'Quads · Hamstrings · Glutes' },
+  ] },
+  { id: 'fullBody', label: 'Full Body', sub: 'Everything, every session', days: [
+    { name: 'fullbody', label: 'Full Body', sub: 'Whole body in one' },
+  ] },
+  { id: 'bro', label: 'Bro Split', sub: 'Five days, one muscle each', days: [
+    { name: 'chest',     label: 'Chest',     sub: 'Press · Fly · Dips' },
+    { name: 'back',      label: 'Back',      sub: 'Pulls · Rows · Deadlifts' },
+    { name: 'shoulders', label: 'Shoulders', sub: 'Press · Laterals · Rear delts' },
+    { name: 'arms',      label: 'Arms',      sub: 'Biceps · Triceps' },
+    { name: 'legs',      label: 'Legs',      sub: 'Quads · Hamstrings · Glutes' },
+  ] },
+  { id: 'arnold', label: 'Arnold Split', sub: 'Antagonist pairs', days: [
+    { name: 'chestback',     label: 'Chest & Back',     sub: 'Press · Pull · Row' },
+    { name: 'shouldersarms', label: 'Shoulders & Arms', sub: 'Delts · Biceps · Triceps' },
+    { name: 'legs',          label: 'Legs',             sub: 'Quads · Hamstrings · Glutes' },
+  ] },
+  // No fixed days — daysOfSplit still appends CUSTOM_DAY, so this split is exactly
+  // the one Custom tile: build every session from the full catalogue.
+  { id: 'custom', label: 'Custom', sub: 'No fixed days', days: [] },
 ];
+
+const SPLIT_BY_ID: Record<string, Split> = Object.fromEntries(SPLITS.map(s => [s.id, s]));
+
+// A session starts with its day's exercises already on screen, so logging is
+// "type reps and weight", not "go find the exercise first". They're plain cards —
+// reorder or bin any you're not doing, add anything missing from the picker, and
+// finishWorkout drops the ones that never got a set, so an untouched card costs
+// nothing. Names must match the catalogue exactly or the card is a one-off with a
+// different id and its history won't join up (tests/exercise-identity.test.mjs
+// checks every name here against EXERCISES). Custom is deliberately empty.
+const STARTER_TEMPLATES: Record<string, string[]> = {
+  push:  ['Bench Press', 'Incline Dumbbell Press', 'Shoulder Press', 'Lateral Raises', 'Tricep Pushdowns'],
+  pull:  ['Deadlift', 'Pull-ups', 'Barbell Row', 'Face Pulls', 'Barbell Curl'],
+  legs:  ['Squat', 'Romanian Deadlift', 'Leg Press', 'Leg Curl', 'Calf Raises'],
+
+  upper: ['Bench Press', 'Barbell Row', 'Shoulder Press', 'Lat Pulldown', 'Barbell Curl', 'Tricep Pushdowns'],
+  lower: ['Squat', 'Romanian Deadlift', 'Leg Press', 'Leg Curl', 'Calf Raises'],
+
+  fullbody: ['Squat', 'Bench Press', 'Barbell Row', 'Shoulder Press', 'Romanian Deadlift'],
+
+  chest:     ['Bench Press', 'Incline Dumbbell Press', 'Cable Crossover', 'Chest Dips'],
+  back:      ['Deadlift', 'Pull-ups', 'Barbell Row', 'Seated Cable Row', 'Face Pulls'],
+  shoulders: ['Overhead Press', 'Lateral Raises', 'Front Raises', 'Rear Delt Fly', 'Shrugs'],
+  arms:      ['Barbell Curl', 'Hammer Curl', 'Preacher Curl', 'Close Grip Bench Press', 'Tricep Pushdowns'],
+
+  chestback:     ['Bench Press', 'Barbell Row', 'Incline Dumbbell Press', 'Lat Pulldown', 'Cable Crossover'],
+  shouldersarms: ['Overhead Press', 'Lateral Raises', 'Barbell Curl', 'Hammer Curl', 'Skull Crushers'],
+
+  custom: [],
+};
+
+// The exercise cards a session opens with. Ids are stamped here, same as addExercise.
+const starterExercises = (type: string) =>
+  (STARTER_TEMPLATES[type] ?? []).map(name => ({ name, exerciseId: idForName(name), sets: [], notes: '' }));
+
+// The tiles a split shows: its days, then Custom (always available, whatever you train).
+const daysOfSplit = (id: string): SessionType[] => [...(SPLIT_BY_ID[id]?.days ?? []), CUSTOM_DAY];
+
+// Type → label, derived from SPLITS so a day is named in exactly one place. It holds
+// EVERY day type from every split (not just the current one): it labels history and
+// it's the import sanitiser's whitelist, so a type missing here would fold imported
+// sessions to 'custom'. First declaration wins, so a day shared by two splits keeps
+// the name the split that defines it first gives it ('legs' → "Leg Day").
+const TYPE_CONFIG: Record<string, { label: string }> = [...SPLITS.flatMap(s => s.days), CUSTOM_DAY]
+  .reduce((acc, d) => (acc[d.name] ??= { label: d.label }, acc), {} as Record<string, { label: string }>);
+
+// What a day is CALLED. The user can rename any tile ("Push Day" → "Chest & Delts");
+// the override lives in `prefs.dayNames`, keyed by the same type id, so renaming is
+// display-only — history, stats and the import whitelist all still key off the id.
+// Every label read goes through here rather than TYPE_CONFIG directly.
+const labelForType = (type: string, dayNames: Record<string, string> = {}) =>
+  dayNames[type] || (TYPE_CONFIG[type] ?? TYPE_CONFIG.custom).label;
+
+// `dayNames` comes from a cache, a server JSON column or an imported backup, so it
+// gets the same treatment as `hidden`: coerce anything that isn't a string→string
+// map back to empty rather than letting a bad blob render as a label.
+const safeDayNames = (v: any): Record<string, string> =>
+  v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v).filter(([, name]) => typeof name === 'string' && name)) as Record<string, string>
+    : {};
 
 // Recharts takes colour strings, not classes, so the tokens are mirrored here.
 // `accent` is the single-series line colour and `series2` the bodyweight amber; the
@@ -1116,7 +1263,7 @@ const SetRow = ({ index, set, isTop, onRemove, units = 'kg' }: any) => {
 };
 
 // ─── ExerciseCard ──────────────────────────────────────────────────────────────
-const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, units = 'kg' }: any) => {
+const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, last, units = 'kg' }: any) => {
   const [reps, setReps]     = useState('');
   const [weight, setWeight] = useState('');
 
@@ -1137,6 +1284,15 @@ const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, remo
   const topWeight = noSets ? null : Math.max(...exercise.sets.map((s: any) => s.weight ?? 0));
   const volume    = volumeOf(exercise);
 
+  // What this lift did last time, as a target to beat. Long sessions get trimmed
+  // rather than wrapping the card — the first few sets are the working ones.
+  const LAST_SHOWN = 4;
+  const lastLine = last?.sets?.length
+    ? last.sets.slice(0, LAST_SHOWN)
+        .map((s: any) => `${s.weight == null ? 'BW' : trim1(toDisplayWeight(s.weight, units) as number)} × ${s.reps}`)
+        .join(' · ') + (last.sets.length > LAST_SHOWN ? ' …' : '')
+    : null;
+
   return (
     <div className={`${card} ${noSets ? 'border-dashed' : ''} p-4`}>
       <div className="flex justify-between items-start gap-3 mb-3">
@@ -1149,6 +1305,11 @@ const ExerciseCard = ({ exercise, exerciseIndex, exerciseCount = 1, addSet, remo
                 // Unloaded sets move nothing, so "0 kg moved" would be noise.
                 (volume > 0 ? ` · ${fmtVolume(volume, units)} moved` : '')}
           </p>
+          {lastLine && (
+            <p className="text-xs text-muted mt-1 tabular-nums truncate">
+              <span className="text-faint">Last</span> {lastLine}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0 -mr-1.5">
           {moveExercise && exerciseCount > 1 && (
@@ -1351,7 +1512,7 @@ const ExercisePicker = ({ workoutType, onAdd, closeOnAdd = true }: any) => {
 };
 
 // ─── WorkoutScreen ─────────────────────────────────────────────────────────────
-const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, patchWorkout, units = 'kg', restTimer = false, restSeconds = 90, workoutTimer = false }: any) => {
+const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, removeExercise, moveExercise, updateExerciseNotes, finishWorkout, cancelWorkout, workoutNotes, setWorkoutNotes, patchWorkout, lastByExercise = {}, dayNames = {}, units = 'kg', restTimer = false, restSeconds = 90, workoutTimer = false }: any) => {
   const [showCancelConfirm, setShowCancelConfirm]   = useState(false);
 
   // Per-session timer state lives on the workout object, seeded from the saved
@@ -1456,7 +1617,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
 
   const fmtClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-  const cfg                = TYPE_CONFIG[workoutType] ?? TYPE_CONFIG.custom;
+  const cfg                = { label: labelForType(workoutType, dayNames) };
 
   const totalVolume = workout.exercises.reduce((sum: number, ex: any) => sum + volumeOf(ex), 0);
   const totalSets   = workout.exercises.reduce((sum: number, ex: any) => sum + ex.sets.length, 0);
@@ -1526,6 +1687,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
             removeExercise={removeExercise}
             moveExercise={moveExercise}
             updateExerciseNotes={updateExerciseNotes}
+            last={lastByExercise[exerciseIdOf(exercise)]}
             units={units}
           />
         ))}
@@ -1621,7 +1783,7 @@ const WorkoutScreen = ({ workout, workoutType, addExercise, addSet, removeSet, r
 };
 
 // ─── HistoryScreen ─────────────────────────────────────────────────────────────
-const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }: any) => {
+const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg', split = '', dayNames = {} }: any) => {
   const [expandedWorkout, setExpandedWorkout] = useState<number | null>(null);
   const [viewingNotes, setViewingNotes]       = useState<number | null>(null);
   const [editingWorkout, setEditingWorkout]   = useState<number | null>(null);
@@ -1640,6 +1802,17 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
     return new Date(base.getFullYear(), base.getMonth(), 1);
   });
 
+  // Every day type of every split lives in TYPE_CONFIG, which would make this an
+  // eleven-item list of mostly-empty options. Offer only what's useful: the types
+  // actually logged, plus the current split's days (so a fresh split still filters).
+  const filterTypes = useMemo(() => {
+    const wanted = new Set<string>([
+      ...workouts.map((w: any) => w.type),
+      ...daysOfSplit(split).map(d => d.name),
+    ]);
+    return Object.keys(TYPE_CONFIG).filter(t => wanted.has(t));
+  }, [workouts, split]);
+
   // Display order is newest-first, but the mutators index into the unsorted
   // array — so originalIndex has to survive the sort.
   const sortedWorkouts = workouts
@@ -1653,7 +1826,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
   const filtered = sortedWorkouts.filter((w: any) => {
     if (filterType !== 'all' && w.type !== filterType) return false;
     if (!q) return true;
-    return (TYPE_CONFIG[w.type]?.label ?? '').toLowerCase().includes(q)
+    return labelForType(w.type, dayNames).toLowerCase().includes(q)
       || w.exercises.some((ex: any) => ex.name.toLowerCase().includes(q))
       || (w.notes ?? '').toLowerCase().includes(q);
   });
@@ -1776,7 +1949,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
             className={`${input} py-2 text-sm`}
           >
             <option value="all">All types</option>
-            {Object.keys(TYPE_CONFIG).map(t => <option key={t} value={t}>{TYPE_CONFIG[t].label}</option>)}
+            {filterTypes.map(t => <option key={t} value={t}>{labelForType(t, dayNames)}</option>)}
           </select>
           <input
             type="text" value={search} onChange={e => { setSearch(e.target.value); setExpandedWorkout(null); }}
@@ -1875,7 +2048,7 @@ const HistoryScreen = ({ workouts, deleteWorkout, updateWorkout, units = 'kg' }:
             const index          = workout.originalIndex;
             const isEditing      = editingWorkout === index;
             const displayWorkout = isEditing ? editData : workout;
-            const typeCfg        = TYPE_CONFIG[workout.type] ?? TYPE_CONFIG.custom;
+            const typeCfg        = { label: labelForType(workout.type, dayNames) };
             const isOpen         = expandedWorkout === index;
             const sessionVolume  = workout.exercises.reduce((s: number, ex: any) => s + volumeOf(ex), 0);
 
@@ -2679,6 +2852,24 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         <p className="text-xs text-faint mt-2">Changes the display only — your workouts stay stored in kilograms.</p>
       </div>
 
+      {/* Training split — the same choice the home card makes; five options is one
+          too many for Segmented, so it's a select. */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Training</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-ink">Split</span>
+          <select
+            value={prefs.split || 'ppl'}
+            onChange={e => updatePrefs({ split: e.target.value })}
+            aria-label="Training split"
+            className={`${input} py-2 text-sm`}
+          >
+            {SPLITS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </div>
+        <p className="text-xs text-faint mt-2">Sets which sessions the home screen offers. Past workouts keep their own type.</p>
+      </div>
+
       {/* Display */}
       <div className={`${card} p-4`}>
         <h3 className={`${label} mb-3`}>Display</h3>
@@ -3356,6 +3547,8 @@ const GymTrackerApp = () => {
   const [workoutNotes, setWorkoutNotes]               = useState('');
   const [quickBWInput, setQuickBWInput]               = useState('');
   const [manageBW, setManageBW]                       = useState(false);   // show the BW-entry editor
+  const [pickingSplit, setPickingSplit]               = useState(false);   // re-opened the split chooser from "Change split"
+  const [renamingDays, setRenamingDays]               = useState(false);   // the home card is showing the day-name editor
   const [prefs, setPrefs]                             = useState<Prefs>(DEFAULT_PREFS);
   // The tab Settings was opened from, so Back returns there instead of always Home.
   const [settingsFrom, setSettingsFrom]               = useState('home');
@@ -3411,6 +3604,15 @@ const GymTrackerApp = () => {
   const toggleHidden = (key: string) =>
     setPrefs(p => ({ ...p, hidden: p.hidden.includes(key) ? p.hidden.filter(k => k !== key) : [...p.hidden, key] }));
 
+  // Rename a day tile. Blank (or all-whitespace) clears the override so the day
+  // falls back to its catalogue name — that's also what the reset button sends.
+  const renameDay = (type: string, name: string) =>
+    setPrefs(p => {
+      const dayNames = { ...p.dayNames };
+      if (name.trim()) dayNames[type] = name; else delete dayNames[type];
+      return { ...p, dayNames };
+    });
+
   // Colour choices → CSS tokens. One effect applies every override (accent, base
   // neutrals, semantics) for the active theme; overriding the tokens cascades to
   // every utility across the app.
@@ -3458,7 +3660,7 @@ const GymTrackerApp = () => {
       // loads; guard hidden is an array in case of hand-edited/corrupt storage.
       if (storedPrefs) {
         const p = JSON.parse(storedPrefs);
-        setPrefs({ ...DEFAULT_PREFS, ...p, hidden: Array.isArray(p?.hidden) ? p.hidden : [] });
+        setPrefs({ ...DEFAULT_PREFS, ...p, hidden: Array.isArray(p?.hidden) ? p.hidden : [], dayNames: safeDayNames(p?.dayNames) });
       }
 
       // Cache entries may predate row ids (old localStorage) — back-fill a local id
@@ -3619,7 +3821,7 @@ const GymTrackerApp = () => {
         }
         if (settingsRow) {
           if (Number.isFinite(settingsRow.weekly_goal)) setWeeklyGoal(clampGoal(settingsRow.weekly_goal));
-          if (settingsRow.prefs) setPrefs({ ...DEFAULT_PREFS, ...settingsRow.prefs, hidden: Array.isArray(settingsRow.prefs.hidden) ? settingsRow.prefs.hidden : [] });
+          if (settingsRow.prefs) setPrefs({ ...DEFAULT_PREFS, ...settingsRow.prefs, hidden: Array.isArray(settingsRow.prefs.hidden) ? settingsRow.prefs.hidden : [], dayNames: safeDayNames(settingsRow.prefs.dayNames) });
         }
         if (isFirstLogin) setNeedsOnboarding(true);   // greet the new account for name/units/gender
       } catch (e) {
@@ -3690,7 +3892,9 @@ const GymTrackerApp = () => {
     setCurrentWorkout({
       type: selectedWorkoutType,
       bodyWeight: fromInputWeight(bodyWeight, units),   // typed in display units → stored kg
-      exercises: [],
+      // The day's starter exercises, already on screen — the user only fills in
+      // reps and weight. Untouched cards are dropped by finishWorkout.
+      exercises: starterExercises(selectedWorkoutType!),
       date: new Date().toISOString(),
       notes: '',
       // Per-session timer state — seeded from the saved defaults but overridden only
@@ -4021,6 +4225,7 @@ const GymTrackerApp = () => {
             name:   typeof rawPrefs.name   === 'string' ? rawPrefs.name   : '',
             gender: typeof rawPrefs.gender === 'string' ? rawPrefs.gender : '',
             hidden:   Array.isArray(rawPrefs.hidden)   ? rawPrefs.hidden   : [],
+            dayNames: safeDayNames(rawPrefs.dayNames),
           };
           const { error: sErr } = await supabase.from('settings')
             .upsert({ user_id: uid, weekly_goal: goal, prefs: prefsObj, updated_at: new Date().toISOString() });
@@ -4165,8 +4370,7 @@ const GymTrackerApp = () => {
 
   const getLatestWorkoutType = () => {
     if (!latestWorkout) return '—';
-    const cfg = TYPE_CONFIG[latestWorkout.type];
-    return cfg?.label ?? '—';
+    return labelForType(latestWorkout.type, prefs.dayNames);
   };
 
   // Body weight chart data for home (last 15 entries), in display units.
@@ -4175,7 +4379,27 @@ const GymTrackerApp = () => {
     bodyWeight: Math.round((toDisplayWeight(e.weight, units) as number) * 10) / 10,
   }));
 
-  const entryTypeCfg  = TYPE_CONFIG[selectedWorkoutType ?? 'custom'] ?? TYPE_CONFIG.custom;
+  const entryTypeCfg  = { label: labelForType(selectedWorkoutType ?? 'custom', prefs.dayNames) };
+
+  // What each exercise was last logged at, keyed by stable id — the reference line
+  // on a session card ("Last: 80 × 8 · 80 × 8"), so you know what to beat without
+  // leaving the session. Newest wins, so the walk is oldest-first.
+  const lastByExercise = useMemo(() => {
+    const map: Record<string, { date: string; sets: any[] }> = {};
+    [...workouts]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .forEach(w => (w.exercises ?? []).forEach((ex: any) => {
+        if (ex.sets?.length) map[exerciseIdOf(ex)] = { date: w.date, sets: ex.sets };
+      }));
+    return map;
+  }, [workouts]);
+
+  // Which split's days the home card offers. An account that already has history
+  // predates the pref, and its sessions are push/pull/legs — so it reads as PPL
+  // rather than being stopped by a chooser. The inference stays here (nothing
+  // writes `split` implicitly), so the pref keeps meaning "the user picked this".
+  const splitId       = prefs.split || (workouts.length ? 'ppl' : '');
+  const choosingSplit = pickingSplit || !splitId;
 
   const goalPct    = getWeeklyGoalProgress();
   const goalMet    = goalPct >= 100;
@@ -4292,11 +4516,55 @@ const GymTrackerApp = () => {
           </div>
           )}
 
-          {/* Start a session — the reason the app is open. */}
+          {/* Start a session — the reason the app is open. Which days appear is the
+              user's split; until one is chosen (or inferred) this card is the chooser. */}
           <div className={`${card} p-4`}>
-            <h2 className={`${label} mb-3`}>Start a session</h2>
+            <h2 className={`${label} mb-3`}>{choosingSplit ? 'Choose your split' : renamingDays ? 'Name your days' : 'Start a session'}</h2>
+
+            {choosingSplit ? (
+              <div className="grid grid-cols-2 gap-2">
+                {SPLITS.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => { updatePrefs({ split: s.id }); setPickingSplit(false); }}
+                    className={`flex flex-col justify-end text-left p-4 min-h-[84px] rounded-ctl border bg-raised active:scale-[0.99] transition-all ${s.id === splitId ? 'border-accent' : 'border-line hover:border-accent'}`}
+                  >
+                    <span className="block font-semibold text-sm text-ink">{s.label}</span>
+                    <span className="block text-[11px] mt-1 leading-tight text-faint">{s.sub}</span>
+                  </button>
+                ))}
+              </div>
+            ) : renamingDays ? (
+              /* Rename — the tile order, one row each. The name is display-only:
+                 it's stored against the type id, so history keeps its thread. */
+              <div className="flex flex-col gap-2">
+                {daysOfSplit(splitId).map(({ name, label: defaultLabel }) => (
+                  <div key={name} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={prefs.dayNames[name] ?? ''}
+                      onChange={e => renameDay(name, e.target.value)}
+                      placeholder={defaultLabel}
+                      aria-label={`Name for ${defaultLabel}`}
+                      maxLength={24}
+                      className={`${input} flex-1 py-2 text-sm`}
+                    />
+                    <button
+                      onClick={() => renameDay(name, '')}
+                      disabled={!prefs.dayNames[name]}
+                      aria-label={`Reset ${defaultLabel} to its default name`}
+                      title="Reset to default"
+                      className="p-2 text-faint hover:text-ink disabled:opacity-30 disabled:hover:text-faint transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+                <p className="text-xs text-faint">Renaming is display only — past sessions keep their history.</p>
+              </div>
+            ) : (
             <div className="grid grid-cols-2 gap-2">
-              {SESSION_TYPES.map(({ name, label: btnLabel, sub, img, pos }) => (
+              {daysOfSplit(splitId).map(({ name, sub, img, pos }) => (
                 <button
                   key={name}
                   onClick={() => startWorkout(name)}
@@ -4316,11 +4584,35 @@ const GymTrackerApp = () => {
                     </>
                   )}
                   <span className="relative">
-                    <span className={`block font-semibold text-sm ${img ? 'text-white' : 'text-ink'}`}>{btnLabel}</span>
+                    <span className={`block font-semibold text-sm ${img ? 'text-white' : 'text-ink'}`}>{labelForType(name, prefs.dayNames)}</span>
                     <span className={`block text-[11px] mt-1 leading-tight ${img ? 'text-white/75' : 'text-faint'}`}>{sub}</span>
                   </span>
                 </button>
               ))}
+            </div>
+            )}
+
+            {/* The card's own controls. They sit under the tiles, not beside the
+                heading — starting a session is the card's job, these are the ways
+                out of it — but the primary one carries the accent so it reads as an
+                action, not fine print. */}
+            <div className="flex gap-2 mt-3">
+              {(!choosingSplit || splitId) && (
+                <button
+                  onClick={() => { if (renamingDays) { setRenamingDays(false); return; } setPickingSplit(!choosingSplit); }}
+                  className={`${btnPrimary} ${label} !text-accent-ink flex-1 py-2.5`}
+                >
+                  {renamingDays ? 'Done' : choosingSplit ? 'Cancel' : 'Change split'}
+                </button>
+              )}
+              {!choosingSplit && !renamingDays && (
+                <button
+                  onClick={() => setRenamingDays(true)}
+                  className={`${btnSecondary} ${label} !text-ink px-4 py-2.5`}
+                >
+                  Rename days
+                </button>
+              )}
             </div>
           </div>
 
@@ -4497,6 +4789,8 @@ const GymTrackerApp = () => {
           workoutNotes={workoutNotes}
           setWorkoutNotes={setWorkoutNotes}
           patchWorkout={patchCurrentWorkout}
+          lastByExercise={lastByExercise}
+          dayNames={prefs.dayNames}
           units={units}
           restTimer={prefs.restTimer}
           restSeconds={prefs.restSeconds}
@@ -4506,7 +4800,7 @@ const GymTrackerApp = () => {
 
       {/* ── History ── */}
       {currentScreen === 'history' && (
-        <HistoryScreen workouts={workouts} deleteWorkout={deleteWorkout} updateWorkout={updateWorkout} units={units} />
+        <HistoryScreen workouts={workouts} deleteWorkout={deleteWorkout} updateWorkout={updateWorkout} units={units} split={splitId} dayNames={prefs.dayNames} />
       )}
 
       {/* ── Progress ── */}

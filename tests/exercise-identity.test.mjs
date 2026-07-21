@@ -47,19 +47,50 @@ check('slug strips punctuation/edges', slug('  Push-ups!! ') === 'push-ups');
   check('stored id beats name', exerciseIdOf(relabelled) === 'bench-press');
 }
 
-// 5 — catalogue slug-collision guard (reads the real source)
-{
-  const src = fs.readFileSync(new URL('../src/gym-tracker-app.tsx', import.meta.url), 'utf8').split(/\r?\n/);
-  const region = src.slice(25, 217).join('\n');   // CORE/CARDIO/EXERCISES catalogue block
+// The real catalogue, sliced out by marker (not line number — the file moves).
+const src = fs.readFileSync(new URL('../src/gym-tracker-app.tsx', import.meta.url), 'utf8');
+const between = (from, to) => src.slice(src.indexOf(from), src.indexOf(to));
+
+const catalogueNames = (() => {
+  const region = between('const CORE', 'const ALL_GROUPS');
   const groupLabels = new Set();
   for (const m of region.matchAll(/group:\s*'([^']+)'/g)) groupLabels.add(m[1]);
   const names = [];
   for (const m of region.matchAll(/'([^']+)'/g)) if (!groupLabels.has(m[1])) names.push(m[1]);
+  return names;
+})();
+
+// 5 — catalogue slug-collision guard (reads the real source)
+{
   const bySlug = {};
-  for (const n of names) (bySlug[slug(n)] ||= []).push(n);
+  for (const n of catalogueNames) (bySlug[slug(n)] ||= []).push(n);
   const collisions = Object.entries(bySlug).filter(([, ns]) => new Set(ns).size > 1);
   if (collisions.length) for (const [s, ns] of collisions) console.log('     collision:', s, JSON.stringify([...new Set(ns)]));
-  check(`catalogue has no slug collisions (${names.length} names)`, collisions.length === 0);
+  check(`catalogue has no slug collisions (${catalogueNames.length} names)`, collisions.length === 0);
+}
+
+// 6 — every STARTER_TEMPLATES name is a real catalogue name. A typo there would
+//     still log fine, but as a one-off with its own id — so its history would never
+//     join up with the catalogue exercise it was meant to be.
+{
+  const known = new Set(catalogueNames);
+  const region = between('const STARTER_TEMPLATES', 'const starterExercises');
+  const used = [...region.matchAll(/'([^']+)'/g)].map(m => m[1]);
+  const unknown = [...new Set(used.filter(n => !known.has(n)))];
+  if (unknown.length) console.log('     not in catalogue:', JSON.stringify(unknown));
+  check(`starter templates use catalogue names (${used.length} names)`, unknown.length === 0);
+}
+
+// 7 — every MUSCLE_OVERRIDES_BY_NAME key is a real catalogue name. A typo (or a name
+//     moved between groups and mis-keyed) fails silently: the exercise just keeps its
+//     group default and quietly scores as the wrong muscle in the donut.
+{
+  const known = new Set(catalogueNames);
+  const region = between('const MUSCLE_OVERRIDES_BY_NAME', 'const muscleForCatalogueName');
+  const keys = [...region.matchAll(/'([^']+)':\s*'/g)].map(m => m[1]);
+  const unknown = keys.filter(k => !known.has(k));
+  if (unknown.length) console.log('     not in catalogue:', JSON.stringify(unknown));
+  check(`muscle overrides name real exercises (${keys.length} overrides)`, unknown.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
