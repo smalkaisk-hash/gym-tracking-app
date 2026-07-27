@@ -5,3 +5,8 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local DB backups (may contain every user's data) and Playwright output.
+backups/
+test-results/
+playwright-report/

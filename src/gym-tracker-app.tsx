@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, ChevronRight, ChevronDown, ChevronUp, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound, CloudOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW, bwToRow } from './supabase';
+import { reportError } from './monitoring';
 
 // Vite hashes and copies these into dist/assets at build time.
 import pushImg from '../Assets/pexels-tima-miroshnichenko-5327522.jpg';
@@ -4321,6 +4322,7 @@ const GymTrackerApp = () => {
       return { workoutRows, bwRows, settingsRow };
     } catch (e) {
       console.error('Migration failed', e);
+      reportError(e, { at: 'migrateLocalToServer' });
       return null;
     }
   };
@@ -4449,6 +4451,7 @@ const GymTrackerApp = () => {
         if (!cancelled) setHydrateFailed(false);
       } catch (e) {
         console.error('Hydrate failed', e);   // keep the localStorage cache; app still usable offline
+        reportError(e, { at: 'hydrate' });
         // Record it so (a) the banner can offer a retry and (b) the settings
         // write-back stays out. Without the flag, a first-ever hydrate that failed
         // offline let the debounced upsert create a settings row from DEFAULT_PREFS —
@@ -4545,7 +4548,7 @@ const GymTrackerApp = () => {
     const t = setTimeout(() => {
       supabase.from('settings')
         .upsert({ user_id: session.user.id, weekly_goal: weeklyGoal, prefs, updated_at: new Date().toISOString() })
-        .then(({ error }: any) => { if (error) console.error('Settings save failed', error); });
+        .then(({ error }: any) => { if (error) { console.error('Settings save failed', error); reportError(error, { at: 'settingsUpsert' }); } });
     }, 600);
     return () => clearTimeout(t);
     // Keyed on the user id, not the session object: supabase-js hands us a new session
@@ -4952,7 +4955,7 @@ const GymTrackerApp = () => {
             const ids = rows.map((r: any) => r.id);
             if (!ids.length) return true;
             const { error } = await supabase.from(table).delete().in('id', ids);
-            if (error) console.error(`Import rollback of ${table} failed`, error);
+            if (error) { console.error(`Import rollback of ${table} failed`, error); reportError(error, { at: 'importRollback', table }); }
             return !error;
           };
 
@@ -5764,7 +5767,10 @@ const GymTrackerApp = () => {
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  componentDidCatch(error: Error, info: any) { console.error('App crashed', error, info); }
+  componentDidCatch(error: Error, info: any) {
+    console.error('App crashed', error, info);
+    reportError(error, { boundary: 'root', componentStack: info?.componentStack });
+  }
 
   private recover = () => {
     try {

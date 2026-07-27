@@ -139,10 +139,13 @@ most conflicts stop existing.
   runs the merge semantics with `node`, no framework added. Caveat: it *mirrors* the inline
   logic rather than importing it (the app keeps state logic inside the one big component);
   extracting the reconcile helpers into an importable module is the follow-up.
-- 🔲 **Error reporting (Sentry or equivalent).** Needs your Sentry account + DSN, so it's a
-  hand-off: the SDK wiring is small once the DSN exists (an env var like the Supabase keys).
-  Highest-priority Phase 3 item — visibility is the whole point of Phase 0, and right now a
-  production sync failure still only reaches `console.error`.
+- ✅ **Error reporting (Sentry).** Done — `src/monitoring.ts` (a second infra file beside
+  `supabase.ts`) wires Sentry, env-gated on `VITE_SENTRY_DSN`. It's a NO-OP with no network
+  and zero bundle weight until a DSN is set (the SDK is a dynamic import, so Vite dead-code-
+  eliminates it when the DSN constant is empty and code-splits it when it isn't). The root
+  `ErrorBoundary` and the four silent-failure sites (migrate/hydrate/settings-upsert/import-
+  rollback) forward through `reportError`. **Hand-off remaining:** paste a DSN from a free
+  sentry.io project into `.env.local` and rebuild — that's the whole activation.
 - 🔲 **Enable leaked-password protection** in Supabase Auth (HaveIBeenPwned check). Auth is
   email + password, so this lint is live, not moot. **Dashboard toggle — you must flip it**
   (Auth → Providers → Email → "Leaked password protection"); the MCP doesn't expose it.
@@ -151,7 +154,12 @@ most conflicts stop existing.
   - ✅ **Account deletion (GDPR)** — done: a `delete_account()` SECURITY DEFINER function
     (scoped to `auth.uid()`, cascades wipe the user's rows) + a two-step confirm in
     Settings calling it via RPC. Captured as migration `0002`; verify it's applied on prod.
-  - 🔲 Point-in-time recovery / backups and auth rate limiting still raise the floor.
+  - ◻️ **Backups — tooling done, one manual drill remaining.** `npm run backup` writes a
+    logical JSON backup of all three tables; `npm run restore` restores it, defaulting to a
+    SCRATCH target so a restore can be rehearsed without risking prod (`--force-prod` to
+    override). Runbook + verification checklist in [BACKUP-RESTORE.md](BACKUP-RESTORE.md).
+    **Do the restore drill once** — an untested restore is still just hope. Point-in-time
+    recovery (a Supabase add-on) and auth rate limiting still raise the floor further.
 
 ---
 

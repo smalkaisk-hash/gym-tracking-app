@@ -14,15 +14,21 @@ One-time Supabase dashboard setup (auth redirect URLs, email-confirmation choice
 npm run dev       # Vite dev server
 npm run build     # tsc && vite build  — tsc is the only typecheck; there is no separate typecheck script
 npm run preview   # serve the production build from dist/
+npm run backup    # logical JSON backup of the three tables (needs SUPABASE_URL + service_role key) — see BACKUP-RESTORE.md
+npm run restore   # restore a backup (defaults to a scratch target; --force-prod to overwrite prod)
+npm run test:e2e  # Playwright screenshot baselines for the auth screens (needs `npx playwright install chromium` once)
 ```
 
-There is no test framework, linter, or formatter installed, but there are three plain-Node assertion suites (no framework — just `node <file>`). `npm run build` plus all three is the full check; run them after non-trivial edits.
+There is no test framework, linter, or formatter installed, but there are four plain-Node assertion suites (no framework — just `node <file>`). `npm run build` plus all four is the full check; run them after non-trivial edits. There's also a Playwright screenshot suite (`npm run test:e2e`, baselines in `tests/e2e/*-snapshots/`) that guards the auth screens against silent visual regressions — it's not part of the four-suite gate but re-baseline it intentionally (`-- --update-snapshots`) if you change those screens.
 
 ```bash
+node tests/unit-logic.test.mjs        # value assertions for the pure helpers (num/volume/units/duration/dates/goal)
 node tests/sync-merge.test.mjs        # offline sync-reconcile (mergeUnsynced)
 node tests/exercise-identity.test.mjs # slug/id collisions, starter templates, muscle overrides
 node tests/qa/fuzz.test.mjs           # ~105 assertions over the REAL src/ bytes
 ```
+
+`tests/unit-logic.test.mjs` is the "given X, expect exactly Y" pass — it loads the real bytes through the same `load-app.mjs` harness as `fuzz.test.mjs` and asserts what the conversion/formatting/date helpers *compute*, where fuzz only asserts they stay total and in-range. A refactor that keeps a function total but changes its result is caught here, not there.
 
 `tests/qa/load-app.mjs` is the interesting one: it reads `src/gym-tracker-app.tsx`, strips its imports, stubs them, appends an export of every top-level binding and compiles it with the project's own TypeScript — so `fuzz.test.mjs` exercises the shipping code rather than a copy of it. **A failure there is a bug in `src/`, not a broken test.** Nested helpers (defined inside `GymTrackerApp`) are sliced out by name with `extractFn`, which brace-matches — so a nested helper written as an expression body (`const f = x => x + 1;`) cannot be extracted. Prefer a block body, or lift the helper to module scope (as `clampGoal` now is).
 
@@ -34,7 +40,9 @@ Its last block, `guards — fixes that live outside the pure surface`, asserts a
 
 ## Architecture
 
-**The entire app is one file: [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx).** [src/main.tsx](src/main.tsx) mounts it and imports the self-hosted font weights. Adding a feature means editing the one file, not creating new ones — match that convention unless the user asks to split things up.
+**The entire app is one file: [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx).** [src/main.tsx](src/main.tsx) mounts it and imports the self-hosted font weights. Adding a feature means editing the one file, not creating new ones — match that convention unless the user asks to split things up. The exception is backend-facing *infra*, which lives in its own small module: [src/supabase.ts](src/supabase.ts) (the client + row mappers) and [src/monitoring.ts](src/monitoring.ts) (error reporting). Both are env-gated and both are auto-stubbed by the QA harness, so importing from them in the app file is safe for the Node suites.
+
+**Error reporting is env-gated and off by default.** [src/monitoring.ts](src/monitoring.ts) exposes `initMonitoring()` (called once in `main.tsx`) and `reportError(err, ctx)`. Both are total no-ops until `VITE_SENTRY_DSN` is set — with no DSN the Sentry SDK is never loaded (it's a dynamic `import()`, so Vite dead-code-eliminates it at build when the DSN constant is empty, and code-splits it into its own chunk when it isn't). The root `ErrorBoundary` and the four otherwise-silent failure sites (migrate/hydrate/settings-upsert/import-rollback) call `reportError` *alongside* their existing `console.error` — don't remove the `console.error`s, several are asserted by the fuzz guards. To activate reporting: paste a DSN into `.env.local` and rebuild.
 
 In file order: constants → `useTheme` → `SetRow` → `ExerciseCard` → `WorkoutScreen` → `HistoryScreen` → `ProgressScreen` → `SettingsScreen` → `LoginScreen` → `ResetPasswordScreen` → `OnboardingScreen` → `GymTrackerApp` (the default export, at the bottom).
 
