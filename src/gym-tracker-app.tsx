@@ -588,7 +588,7 @@ const label = 'font-display text-[11px] font-semibold uppercase tracking-[0.14em
 const readout = 'font-display font-bold tabular-nums leading-none';
 
 // ─── Weekly-goal progress tile ──────────────────────────────────────────────────
-// The home "This week" stat tile can visualise goal progress four ways, chosen in
+// The home "This week" stat tile can visualise goal progress seven ways, chosen in
 // Settings (prefs.goalCardStyle). Colour is driven by `tone` (a text-colour class:
 // always text-accent — the user's chosen accent, at every fill level) and SVG fills
 // use currentColor, so themes come from the token system — no raw hex here. Each fill
@@ -1137,6 +1137,39 @@ const REST_SECONDS = [30, 60, 90, 120, 180] as const;
 const GOAL_CARD_STYLES: GoalCardStyle[] = ['liquid', 'bubbles', 'mosaic', 'glow', 'ring', 'plates', 'liquidNumber'];
 const SPLIT_IDS = SPLITS.map(s => s.id);
 const WIDGET_KEYS = Object.keys(WIDGET_LABELS);
+
+// ── Legal pages ───────────────────────────────────────────────────────────────
+// The two published policies. They are static files in public/, generated from the
+// repo's markdown by `npm run legal` — deliberately NOT app screens, so they stay
+// readable when the app itself fails to mount, and so they keep a real URL that can
+// be linked from a store listing. Both stores require the privacy policy to be
+// reachable *inside* the app as well (Apple 5.1.1(i), Google Play's User Data
+// policy, which also bars PDFs and geofenced URLs). Washington's My Health My Data
+// Act adds a second, separate requirement: the consumer-health-data policy needs its
+// own prominent link on the landing page, which for a single-page app is the
+// signed-out LoginScreen — hence LegalLinks renders on every auth state, not just
+// signup. See PRIVACY-POLICY-GUIDE.md for why each of those is worded that way.
+const PRIVACY_URL     = '/privacy.html';
+const CHD_PRIVACY_URL = '/consumer-health-data-privacy.html';
+const TERMS_URL       = '/terms.html';
+// Play requires account deletion to be startable from OUTSIDE the app too — a web
+// page a user can reach without reinstalling — and that URL goes in the Data safety
+// form. The in-app "Delete account" button satisfies Apple 5.1.1(v) but not this.
+const DELETE_REQUEST_URL = '/delete-account.html';
+// Stamped into the consent/acceptance records at signup so a later revision is
+// distinguishable from the version the user actually agreed to. Bump POLICY_VERSION
+// whenever a change would require re-consent (a new health-data category, purpose or
+// recipient); bump TERMS_VERSION when the Terms change under legal/TERMS.md § 16.
+const POLICY_VERSION  = '1.0';
+// 1.1 (2026-08-02): legal/TERMS.md v1.1 answers an external review — it defines the terms
+// v1.0 left vague and states practices the app already has (device-clock dating, offline
+// reconciliation, what survives deletion). §§ 8, 9, 12, 13 and 14 changed, which § 16.3
+// makes material, so the acceptance record has to name the version the user actually read.
+const TERMS_VERSION   = '1.1';
+// Minimum age. legal/TERMS.md § 4.1 sets this at 18 and § 4.3 commits to closing any
+// account found to belong to someone younger — so 18 is the number the whole app must
+// use. Do not lower it here without changing the Terms: they are the binding document.
+const MIN_AGE = 18;
 
 const sanitizePrefs = (raw: any): Prefs => {
   const p = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -3150,15 +3183,17 @@ const Segmented = ({ value, onChange, options }: any) => (
   </div>
 );
 
-const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'dark', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, onDeleteAccount, userEmail, onDone }: any) => {
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'dark', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, onDeleteAccount, userEmail, consentAt, consentVersion, termsAt, termsVersion, onDone }: any) => {
   const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
   const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearBusy, setClearBusy]             = useState(false);
+  const [clearMsg, setClearMsg]               = useState<string | null>(null);
   const [importMsg, setImportMsg]             = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  // Change-password, inline in the Account card (the "Clear all data" confirm
-  // pattern, not a sub-screen — auth isn't part of the router).
+  // Change-password, inline in the Account card (the same inline-confirm pattern the
+  // destructive Data actions use, not a sub-screen — auth isn't part of the router).
   const [pwOpen, setPwOpen]         = useState(false);
   const [currentPw, setCurrentPw]   = useState('');
   const [newPw, setNewPw]           = useState('');
@@ -3486,9 +3521,22 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         {/* Delete account — irreversible: removes the login and every synced row. */}
         <div className="h-px bg-line my-4" />
         {!confirmingDelete ? (
-          <button onClick={() => { setConfirmingDelete(true); setDeleteMsg(null); }} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
-            <Trash2 size={14} /> Delete account
-          </button>
+          <>
+            <button onClick={() => { setConfirmingDelete(true); setDeleteMsg(null); }} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+              <Trash2 size={14} /> Delete account
+            </button>
+            {/* The out-of-app deletion route. Google Play requires deletion to be
+                startable by someone who has uninstalled the app or can't sign in, via
+                a web URL that also goes in the Data safety form — the button above
+                satisfies Apple 5.1.1(v) but not that. Linking it here as well keeps
+                the two routes described in one place. */}
+            <p className="text-xs text-faint mt-2">
+              Can't reach the app?{' '}
+              <a href={DELETE_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:brightness-110">
+                Request deletion another way
+              </a>.
+            </p>
+          </>
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-ink">Permanently delete your account and all its data? This can't be undone.</p>
@@ -3534,19 +3582,73 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         <p className="text-xs text-faint mt-2">Your data syncs to your Supabase account, with a local cache for offline reads. Export gives you a portable backup.</p>
 
         <div className="h-px bg-line my-4" />
+        {/* Named "Delete all my data", never "Clear all data". This wipes the SERVER
+            rows as well as this device's cache, and the privacy policy used to describe
+            it as the way to clear the device copy — so somebody tidying a shared computer
+            would have destroyed their whole training history. The device-only action is
+            Sign out, which is what the policy now points at. */}
         {!confirmingClear ? (
-          <button onClick={() => setConfirmingClear(true)} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
-            <Trash2 size={14} /> Clear all data
-          </button>
+          <>
+            <button onClick={() => { setConfirmingClear(true); setClearMsg(null); }} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+              <Trash2 size={14} /> Delete all my data
+            </button>
+            <p className="text-xs text-faint mt-2">
+              Erases your workouts, weigh-ins and settings everywhere — this device and the server —
+              but keeps your login. To clear only this device, sign out.
+            </p>
+          </>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-ink">Delete every workout, weight and setting?</span>
+            <span className="text-sm text-ink">Delete every workout, weight and setting, on all your devices?</span>
             <div className="ml-auto flex gap-2">
-              <button onClick={() => { onClearData && onClearData(); setConfirmingClear(false); }} className={`${btnDanger} flex items-center gap-2 px-3 py-2 text-sm`}>
-                <Trash2 size={14} /> Delete everything
+              <button
+                disabled={clearBusy}
+                onClick={async () => {
+                  // Awaited: the handler reports a failed server delete, and closing the
+                  // confirm before knowing the outcome is what made a failure look like
+                  // a success.
+                  setClearBusy(true);
+                  const err = onClearData ? await onClearData() : null;
+                  setClearBusy(false);
+                  setClearMsg(err);
+                  if (!err) setConfirmingClear(false);
+                }}
+                className={`${btnDanger} flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50`}
+              >
+                <Trash2 size={14} /> {clearBusy ? 'Deleting…' : 'Delete everything'}
               </button>
-              <button onClick={() => setConfirmingClear(false)} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
+              <button disabled={clearBusy} onClick={() => { setConfirmingClear(false); setClearMsg(null); }} className={`${btnSecondary} px-3 py-2 text-sm disabled:opacity-50`}>Cancel</button>
             </div>
+          </div>
+        )}
+        {clearMsg && <p className="text-xs text-crit mt-2">{clearMsg}</p>}
+      </div>
+
+      {/* Legal — both stores require the privacy policy to be reachable from inside
+          the app (Apple 5.1.1(i); Google Play's User Data policy), and the consent
+          record is surfaced here because a consent you can't see is one you can't
+          meaningfully withdraw. */}
+      <div className={`${card} p-4`}>
+        <h3 className={`${label} mb-3`}>Legal</h3>
+        <div className="flex flex-col gap-2">
+          <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:brightness-110 transition-all">Terms of Service</a>
+          <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:brightness-110 transition-all">Privacy Policy</a>
+          <a href={CHD_PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:brightness-110 transition-all">Consumer Health Data Privacy</a>
+        </div>
+        {/* The acceptance record TERMS.md § 3.2 promises the user can ask for — shown
+            rather than only stored, since a consent you can't see is one you can't
+            meaningfully withdraw. */}
+        {(consentAt || termsAt) && (
+          <div className="text-xs text-faint mt-3 space-y-1">
+            {consentAt && (
+              <p>
+                Health-data consent given {new Date(consentAt).toLocaleDateString()}
+                {consentVersion && <> under policy v{consentVersion}</>}. Withdraw it by deleting your account above.
+              </p>
+            )}
+            {termsAt && (
+              <p>Terms {termsVersion && <>v{termsVersion} </>}accepted {new Date(termsAt).toLocaleDateString()}.</p>
+            )}
           </div>
         )}
       </div>
@@ -3569,6 +3671,22 @@ const AuthShell = ({ children }: any) => (
   <div className="min-h-screen bg-ground text-ink flex flex-col items-center justify-center px-6">
     <div className="w-full max-w-sm animate-fade-rise">{children}</div>
   </div>
+);
+
+// The landing-page policy links. Rendered on every LoginScreen state (sign-in,
+// sign-up, forgot, sent) because the signed-out screen IS this app's homepage, and
+// My Health My Data Act §19.373.020 requires the consumer-health-data policy to
+// carry its own prominent homepage link — a link to the general privacy policy does
+// not satisfy it, so the two are listed separately and never collapsed into one.
+// target=_blank so following one never discards a half-typed sign-up form.
+const LegalLinks = () => (
+  <p className="text-[11px] text-faint text-center mt-5 leading-relaxed">
+    <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors underline underline-offset-2">Terms</a>
+    <span className="mx-1.5">·</span>
+    <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors underline underline-offset-2">Privacy Policy</a>
+    <span className="mx-1.5">·</span>
+    <a href={CHD_PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors underline underline-offset-2">Consumer Health Data Privacy</a>
+  </p>
 );
 
 const FullScreenLoader = () => (
@@ -3666,12 +3784,24 @@ const LoginScreen = () => {
   const [status, setStatus]   = useState<'idle' | 'working' | 'sent' | 'error'>('idle');
   const [errMsg, setErrMsg]   = useState('');
   const [sentKind, setSentKind] = useState<'confirm' | 'reset'>('confirm');
+  // TWO separate boxes, and they must stay separate.
+  //   `accepted` — acceptance of the Terms, which legal/TERMS.md § 3.1 defines as
+  //     "ticking the acceptance box and selecting Create account". That action forms
+  //     the contract, so the box has to exist for the Terms to be true.
+  //   `consent`  — explicit consent to health-data processing (GDPR Art. 9(2)(a)).
+  // Merging them into one tick would void the second: MHMDA § 19.373.010 says consent
+  // may not be obtained through "a consumer's agreement to general terms of use", and
+  // Art. 9 explicit consent must be specific to the sensitive data. Neither is ever
+  // pre-ticked — a pre-ticked box fails both regimes and reads as a dark pattern.
+  const [accepted, setAccepted] = useState(false);
+  const [consent, setConsent]   = useState(false);
 
   const addr = email.trim();
   const busy = status === 'working';
   const mismatch = mode === 'signup' && confirm.length > 0 && password !== confirm;
+  const unagreed = mode === 'signup' && (!accepted || !consent);
 
-  const reset = () => { setStatus('idle'); setErrMsg(''); setPassword(''); setConfirm(''); setShow(false); };
+  const reset = () => { setStatus('idle'); setErrMsg(''); setPassword(''); setConfirm(''); setShow(false); setAccepted(false); setConsent(false); };
   const switchMode = (m: 'signin' | 'signup') => { setMode(m); setForgot(false); reset(); };
 
   const signIn = async () => {
@@ -3681,10 +3811,30 @@ const LoginScreen = () => {
   };
 
   const signUp = async () => {
+    // The consent + acceptance record. Written as user metadata in the same call that
+    // creates the account, so it exists before any settings row does and survives an
+    // abandoned onboarding — the settings row is written later and only once
+    // onboarding finishes, so it is the wrong place to keep proof of consent. The
+    // Terms half is not optional bookkeeping: legal/TERMS.md § 3.2 promises "we keep a
+    // record of which version of these Terms you accepted and when", and § 16 needs it
+    // to know who accepted what. Caveat worth knowing: user metadata is writable by the
+    // user it belongs to, so this is a record, not tamper-proof evidence. An
+    // insert-only `consents` table with RLS would be; that's a migration, and
+    // migrations here are applied by hand in the SQL editor.
+    const consentAt = new Date().toISOString();
     const { data, error } = await supabase.auth.signUp({
       email: addr,
       password,
-      options: { emailRedirectTo: window.location.origin },
+      options: {
+        emailRedirectTo: window.location.origin,
+        data: {
+          health_data_consent_at: consentAt,
+          health_data_consent_version: POLICY_VERSION,
+          terms_accepted_at: consentAt,
+          terms_version: TERMS_VERSION,
+          age_confirmed_at: consentAt,
+        },
+      },
     });
     if (error) { setStatus('error'); setErrMsg(authErrorText(error)); return; }
     // An already-registered email comes back as an obfuscated user with an empty
@@ -3705,6 +3855,11 @@ const LoginScreen = () => {
 
   const submit = () => {
     if (!addr || !password || busy) return;
+    // Belt and braces — the button is already disabled. These are the one pair of
+    // gates that must never be bypassable: without the consent tick every subsequent
+    // row of health data is unlawfully processed rather than merely undocumented, and
+    // without the Terms tick no contract was ever formed.
+    if (unagreed) return;
     if (mode === 'signup' && (password !== confirm || password.length < MIN_PASSWORD)) {
       setStatus('error');
       setErrMsg(password !== confirm ? "Passwords don't match." : `Password must be at least ${MIN_PASSWORD} characters.`);
@@ -3744,6 +3899,7 @@ const LoginScreen = () => {
             Back to sign in
           </button>
         </div>
+        <LegalLinks />
       </AuthShell>
     );
   }
@@ -3781,6 +3937,7 @@ const LoginScreen = () => {
             Back to sign in
           </button>
         </form>
+        <LegalLinks />
       </AuthShell>
     );
   }
@@ -3824,12 +3981,51 @@ const LoginScreen = () => {
             />
             {mismatch && <p className="text-xs text-crit mt-2">Passwords don't match.</p>}
             <p className="text-xs text-faint mt-2">At least {MIN_PASSWORD} characters.</p>
+
+            {/* Box 1 — the contract. legal/TERMS.md § 3.1 defines acceptance as this
+                tick plus Create account, and § 4.1 sets the age floor at 18. */}
+            <label htmlFor="signup-terms" className="flex items-start gap-2.5 mt-4 cursor-pointer">
+              <input
+                id="signup-terms"
+                type="checkbox"
+                checked={accepted}
+                onChange={e => setAccepted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-accent cursor-pointer"
+              />
+              <span className="text-xs text-muted leading-relaxed">
+                I'm {MIN_AGE} or older and I accept the{' '}
+                <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:brightness-110">Terms of Service</a>
+                {' '}and the{' '}
+                <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:brightness-110">Privacy Policy</a>.
+              </span>
+            </label>
+
+            {/* Box 2 — explicit consent to health-data processing (GDPR Art. 9(2)(a)),
+                deliberately NOT merged with box 1. Named categories, named purpose and
+                the withdrawal route stated inline, because Art. 9 consent must be
+                specific and informed, and MHMDA's consent request must disclose the
+                categories, the purpose, who it is shared with, and how to withdraw. */}
+            <label htmlFor="signup-consent" className="flex items-start gap-2.5 mt-3 cursor-pointer">
+              <input
+                id="signup-consent"
+                type="checkbox"
+                checked={consent}
+                onChange={e => setConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-accent cursor-pointer"
+              />
+              <span className="text-xs text-muted leading-relaxed">
+                I explicitly consent to FitPulse storing the health data I log — my body weight,
+                my training history, and my gender if I choose to give it — for the sole purpose
+                of showing me my own history. It is never sold, shared or advertised against.
+                I can withdraw consent at any time by deleting my account.
+              </span>
+            </label>
           </div>
         )}
 
         <button
           type="submit"
-          disabled={busy || !addr || !password || mismatch}
+          disabled={busy || !addr || !password || mismatch || unagreed}
           className={`${btnPrimary} w-full mt-4 p-3 flex items-center justify-center gap-2 disabled:opacity-50`}
         >
           {busy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
@@ -3860,6 +4056,7 @@ const LoginScreen = () => {
           </button>
         </p>
       </form>
+      <LegalLinks />
     </AuthShell>
   );
 };
@@ -4883,10 +5080,27 @@ const GymTrackerApp = () => {
   const toggleSettings = () => (currentScreen === 'settings' ? closeSettings() : openSettings());
 
   // ── Data management (export / import / wipe) ─────────────────────────────────
+  // The export doubles as the GDPR Art. 15 (access) and Art. 20 (portability) response —
+  // the privacy policy points at this button for both — so it has to carry everything we
+  // hold about the person, not just the rows the app draws charts from. `account` adds
+  // the three things that used to be missing: the email address (which is the login and
+  // is not in `prefs`), when the account was created, and the consent/acceptance record
+  // that TERMS.md § 3.2 separately promises on request. It is a sibling key rather than
+  // a change to the existing four, so `importData` — which reads only the keys it knows
+  // and ignores the rest — still accepts a file written by this version.
   const exportData = () => {
     try {
+      const meta = session?.user?.user_metadata ?? {};
       const payload = {
         app: 'FitPulse', version: 1, exportedAt: new Date().toISOString(),
+        account: {
+          email: session?.user?.email ?? null,
+          createdAt: session?.user?.created_at ?? null,
+          healthDataConsentAt: meta.health_data_consent_at ?? null,
+          healthDataConsentVersion: meta.health_data_consent_version ?? null,
+          termsAcceptedAt: meta.terms_accepted_at ?? null,
+          termsVersion: meta.terms_version ?? null,
+        },
         workouts, bodyWeightLog, weeklyGoal, prefs,
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -5038,7 +5252,14 @@ const GymTrackerApp = () => {
     setCurrentScreen('home');
   };
 
-  const clearAllData = async () => {
+  // Erase this account's data — server rows AND the device cache — while keeping the
+  // login. Returns null on success or friendly error copy, like the other destructive
+  // handlers, because a deletion the user was TOLD succeeded and which silently did not
+  // is a GDPR Art. 17 / MHMDA failure, not a cosmetic bug. The old version swallowed
+  // every delete error into console.error, cleared the local cache regardless, and let
+  // the confirm close — so an offline wipe emptied the screen, convinced the user their
+  // data was gone, and left every row on the server.
+  const clearAllData = async (): Promise<string | null> => {
     // Delete the settings row BEFORE resetting state. The other order armed the
     // 600ms-debounced settings write-back (resetLocalState changes `prefs`), which
     // then recreated the row just after the DELETE landed — so the account kept a
@@ -5051,13 +5272,27 @@ const GymTrackerApp = () => {
         supabase.from('body_weight_log').delete().eq('user_id', uid),
         supabase.from('settings').delete().eq('user_id', uid),
       ]);
-      results.forEach(({ error }: any) => { if (error) console.error('Clear data failed', error); });
+      const failures = results.filter(({ error }: any) => error);
+      if (failures.length) {
+        // Stop here. Leaving the cache in place is deliberate: it is now the only
+        // copy of anything that never reached the server, and the rows we failed to
+        // delete are still up there — so wiping the screen would claim a deletion
+        // that did not happen.
+        failures.forEach(({ error }: any) => {
+          console.error('Clear data failed', error);
+          reportError(error, { at: 'clearAllData' });
+        });
+        // Deliberately not "nothing was deleted": the three deletes run in parallel and
+        // some may have landed, so the only honest report is that it is incomplete.
+        return "Couldn't delete everything — you may be offline. Some data may still be on the server. Please try again when you're back online.";
+      }
       // The settings row is gone, so re-raise onboarding for this same signed-in user
       // rather than leaving them on a nameless dashboard until they sign out.
       setNeedsOnboarding(true);
     }
     resetLocalState();
     clearLocalCache();
+    return null;
   };
 
   // End the session and drop the in-memory data (the next sign-in re-hydrates).
@@ -5118,7 +5353,17 @@ const GymTrackerApp = () => {
     if (authErr) return authErrorText(authErr);
 
     const { error } = await supabase.rpc('delete_account');
-    if (error) { console.error('Delete account failed', error); return 'Could not delete your account. Please try again.'; }
+    if (error) {
+      // Reported, not just logged. Four published documents promise immediate
+      // self-service erasure, and the most likely cause of a failure here is that
+      // migration 0002 was never run against prod — in which case this button has
+      // never worked and nothing else would ever tell us. The copy names the
+      // out-of-app route rather than only saying "try again", because a user who
+      // came here to exercise a deletion right must leave with a way to exercise it.
+      console.error('Delete account failed', error);
+      reportError(error, { at: 'deleteAccount' });
+      return `Could not delete your account. Please try again, or email us — see ${DELETE_REQUEST_URL} for the other ways to request deletion.`;
+    }
     // Drop the local cache so a later signup on this device can't re-migrate the
     // deleted account's data. signOut clears it again after the state reset settles,
     // which is what makes the wipe stick — the write-backs are gated on `session`, so
@@ -5707,6 +5952,10 @@ const GymTrackerApp = () => {
           theme={theme} themeMode={mode} setThemeMode={setMode}
           onExport={exportData} onImport={importData} onClearData={clearAllData}
           onSignOut={signOut} onChangePassword={changePassword} onDeleteAccount={deleteAccount} userEmail={session?.user?.email}
+          consentAt={session?.user?.user_metadata?.health_data_consent_at}
+          consentVersion={session?.user?.user_metadata?.health_data_consent_version}
+          termsAt={session?.user?.user_metadata?.terms_accepted_at}
+          termsVersion={session?.user?.user_metadata?.terms_version}
           onDone={closeSettings}
         />
       )}

@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "legal": "node scripts/build-legal.mjs",
+    "legal:check": "node scripts/build-legal.mjs --check",
+    "legal:release": "node scripts/build-legal.mjs --release",
+    "build": "npm run legal && tsc && vite build",
     "preview": "vite preview",
     "backup": "node scripts/backup.mjs",
     "restore": "node scripts/restore.mjs",

@@ -11,7 +11,7 @@ React + TypeScript + Vite + Tailwind on the front end, Supabase (Postgres) on th
 
 A few choices look unusual until you know the constraint behind them:
 
-- **The whole UI is one file** — [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx) (~4k
+- **The whole UI is one file** — [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx) (~5.8k
   lines). Not an accident: at one contributor it keeps everything in one place with no
   import archaeology. Splitting it is deferred until there's a second editor
   ([PRODUCT-ROADMAP.md](PRODUCT-ROADMAP.md), "Deliberately deferred"). Adding a feature
@@ -88,17 +88,30 @@ choice, optional email-template copy). It's a one-time walkthrough in
 
 ```bash
 npm run dev       # Vite dev server
-npm run build     # tsc && vite build — tsc is the only typecheck (no separate script)
+npm run legal     # publish legal/*.md → public/*.html (policies, terms, deletion page)
+npm run build     # npm run legal && tsc && vite build — tsc is the only typecheck
 npm run preview   # serve the production build from dist/
+npm run backup    # logical JSON backup of the three tables — see BACKUP-RESTORE.md
+npm run restore   # restore a backup (scratch target by default; --force-prod to overwrite prod)
+npm run test:e2e  # Playwright screenshot baselines for the auth screens
 ```
 
-`npm run build` is the only automated check — there's no linter or formatter, and the test
-framework is just plain Node:
+There's no linter or formatter, and no test framework — the suites are plain Node
+assertion scripts you run directly. `npm run build` plus all five is the full check:
 
 ```bash
+node tests/unit-logic.test.mjs         # value assertions for the pure helpers
 node tests/sync-merge.test.mjs         # offline sync-reconcile merge semantics
 node tests/exercise-identity.test.mjs  # exercise-catalogue slug-collision guard
+node tests/legal-pages.test.mjs        # published policies exist, are current, leak nothing
+node tests/qa/fuzz.test.mjs            # fuzz + guards over the real src/ bytes
 ```
+
+`tests/qa/` compiles and exercises the actual shipping source rather than a copy, so a
+failure there is a bug in `src/`, not a broken test. The Playwright suite
+(`npm run test:e2e`, one-time `npx playwright install chromium`) guards the auth screens
+against silent visual regressions; re-baseline deliberately with
+`npm run test:e2e -- --update-snapshots`.
 
 ## Database
 
@@ -121,3 +134,8 @@ blob). A `delete_account()` `SECURITY DEFINER` function backs self-service delet
 | [SUPABASE-SETUP.md](SUPABASE-SETUP.md) | One-time dashboard setup for the auth flows |
 | [schema.sql](schema.sql) | Canonical Postgres schema, with design notes inline |
 | [supabase/migrations/README.md](supabase/migrations/README.md) | Migration chain + apply runbook |
+| [legal/](legal/) | The legal documents as source. `TERMS.md`, `PRIVACY.md`, `CONSUMER-HEALTH-DATA-PRIVACY.md` and `DELETE-ACCOUNT.md` are published to `public/*.html` by `npm run legal`; `TERMS-RATIONALE.md` and `PRIVACY-POLICY-GUIDE.md` are internal reasoning and are never published |
+
+The published pages are generated, so **edit `legal/*.md`, never `public/*.html`** — the next
+`npm run legal` (which `npm run build` runs first) would overwrite the hand edit, and
+`node tests/legal-pages.test.mjs` fails while the two are out of step.
