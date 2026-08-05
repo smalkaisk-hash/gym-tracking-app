@@ -49,8 +49,24 @@ We would rather tell you this than imply a remote wipe we cannot perform.
 
 ## What does not get deleted
 
-- **Backups you exported yourself.** A JSON file you downloaded from Settings → Export lives
-  on your own device and is yours to keep or delete.
+- **Backups you exported yourself.** A JSON file you downloaded from Settings → Data →
+  Export backup lives on your own device and is yours to keep or delete.
+- **Infrastructure logs.** Our providers keep short-lived technical records of requests — the
+  time, the network address a request came from, and what was asked for. They are not your
+  training data, they are deleted automatically on the schedule in our
+  [Privacy Policy](/privacy.html), and we do not consult them about a deleted account.
+- **Email between us — what you have sent, our replies, and any notice we have sent you.** If
+  you have written to us, that thread stays in our mailbox for the period given in our
+  [Privacy Policy](/privacy.html) — it is not deleted by deleting your account. The same is
+  true of a notice we sent you, such as a dormant-account warning or a policy-change notice:
+  it is a message addressed to you and our record that we gave the notice. We use both only
+  to handle your request, to send the notice, and to show that we did. Ask us and we will
+  delete the thread too.
+- **Our authentication provider's security log.** Signing in, signing up and resetting a
+  password are recorded by the provider that performs them, with the time, the network address
+  and the email address used. It is a security record rather than your training data, it is
+  never used to reconstruct a deleted account, and the [Privacy Policy](/privacy.html) gives
+  the period it is kept for.
 - **Records we are legally required to retain.** Where the law requires us to keep something,
   we keep only that, only for as long as required, and we do not use it for anything else.
 

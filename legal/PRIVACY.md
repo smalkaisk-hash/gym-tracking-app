@@ -1,7 +1,7 @@
 <!-- legal:draft -->
 # FitPulse Privacy Policy
 
-**Version 1.0 · Effective 1 August 2026 · Last reviewed 1 August 2026**
+**Version 1.1 · Effective 4 September 2026 · Last reviewed 5 August 2026**
 
 <!-- internal:start -->
 > **DRAFT — read this box before publishing.**
@@ -27,10 +27,13 @@ FitPulse is a personal gym-tracking app. Here is everything that matters, in one
   only process it because you gave us explicit consent when you created your account.
 - **We do not sell it, share it, advertise against it, or analyse it.** There are no ad
   networks, no analytics, no trackers, and no profiling in this app.
-- **Only you can read your rows.** Every database table is locked to your account ID by
-  a database-level rule, not by application code.
+- **Only you can read your rows through the app.** Every database table is locked to your
+  account ID by a database-level rule, not by application code. Two exceptions we would
+  rather name than imply away: the operator can reach the database directly through the
+  provider's administrative console, and our database provider's own staff can access the
+  infrastructure under their contractual controls. §8 says what that means in practice.
 - **You can delete everything, permanently, yourself,** from Settings → Delete account.
-  You can export a full copy from Settings → Export backup.
+  You can export a full copy from Settings → Data → Export backup.
 - **Who else touches it:** the small, named list of infrastructure companies in
   §6. No one else. Ever.
 - **Where you live changes your rights, not our practices.** We do the same thing with
@@ -68,14 +71,18 @@ privacy questions directly.
 The controller is established in Latvia, within the European Union, so no GDPR Art. 27
 representative is required for users in the EEA.
 
+We keep a written record of our processing activities, as GDPR Art. 30 requires of anyone
+who handles health data, and we will produce it to a supervisory authority on request.
+
 <!-- internal:start -->
-> **Open decision — UK users.** Being established in the EU settles Art. 27 for the EEA but
-> **not for the UK**. Under UK GDPR Art. 27 a controller outside the UK that offers services
-> to UK residents must appoint a UK representative, and the "occasional processing"
-> exemption does not apply here because health data is special category data. Three honest
-> options: appoint a UK representative (a paid service, roughly €100–500/year), block UK
-> sign-ups, or accept the exposure knowingly. Decide before launch and write the answer
-> here — do not leave this paragraph vague.
+> **UK Art. 27 — decided 5 August 2026: no UK representative, exposure accepted knowingly.**
+> Being established in the EU settles Art. 27 for the EEA but **not for the UK**, and the
+> Art. 27(2) "occasional processing" exemption is unavailable here because this is special
+> category data. The reasoning, the consequences and the revisit triggers are recorded in
+> `compliance/DECISIONS-AND-ASSESSMENTS.md` § 3 — **do not restate them in this published
+> document.** A policy is not the place to announce a known non-conformity, and § 9 already
+> tells a UK reader they may complain to their own authority (the ICO), which is the part
+> that affects them. Revisit if UK users become a material share of the base.
 <!-- internal:end -->
 
 ## 2. What we collect
@@ -98,9 +105,10 @@ representative is required for users in the EEA.
 | Data | Source | Note |
 | --- | --- | --- |
 | Your account ID (a random UUID) and account creation/sign-in timestamps | Our authentication provider | Needed to keep your rows separate from anyone else's |
+| **Sign-in security log** — each sign-in, sign-up and password reset, with the time, the **IP address** and the email address used | Our authentication provider, which records them itself | A security and abuse-detection record kept by the provider that performs the sign-in. It is held separately from your account, so **deleting your account does not delete it** — see §7 for how long it is kept and §12.7 of the [Terms](/terms.html), which lists it among the things that survive a deletion |
 | Session tokens | Your browser | Keeps you signed in |
 | Server request logs, including **IP address**, timestamp, and the request made | Our hosting and database providers | Standard infrastructure logging — see §7 for how long |
-| Crash and error reports | The app, when something fails | See §2.3 |
+| Crash and error reports | **None — the app sends none.** See §2.3 | Listed here so its absence is explicit, not an omission |
 
 ### 2.3 Error reports
 
@@ -141,6 +149,12 @@ separate, unticked checkbox shown at sign-up. That consent:
 - can be **withdrawn at any time**, by deleting your account, or by deleting all your data
   from Settings if you want to keep the login;
 - when withdrawn, does not make the processing before withdrawal unlawful.
+
+**We keep a record of that consent** — the date, and which version of this policy and of
+the Terms you agreed to. We have to: the law puts the burden of showing that you consented
+on us, not on you. The record holds no health data, you can see it in Settings and in your
+export, it is stored in a table you cannot alter or delete from — so it cannot be
+rewritten after the fact — and it is deleted with your account.
 
 **Being straight about what withdrawal means here.** This data is not a side-effect of the
 app; it *is* the app. There is no version of FitPulse that keeps showing you your training
@@ -194,29 +208,46 @@ optional; if you don't provide it, the related feature simply shows nothing.
 ## 5. Storage on your own device
 
 FitPulse keeps a copy of your data in your browser's `localStorage` so the app works
-offline and opens instantly. The keys are:
+offline and opens instantly. That is the whole of it — we use no other browser storage:
+no IndexedDB, no Cache API, no service worker, and one short-lived `sessionStorage`
+entry noted at the end of the table. The keys are:
 
-| Key | Contents |
-| --- | --- |
-| `gym-workouts` | Your workout history |
-| `gym-bw-log` | Your body-weight log |
-| `gym-weekly-goal` | Your weekly goal |
-| `gym-prefs` | Your preferences, name and gender |
-| `gym-active-session` | Any in-progress workout, so a refresh can't lose it |
-| `gym-cache-owner` | Which account the cached rows belong to |
-| `gym-theme`, `gym-theme-vars` | Your theme choice and its colours |
-| `sb-…-auth-token` | Your sign-in session, set by our authentication provider so you stay signed in |
+| Key | Where | Contents |
+| --- | --- | --- |
+| `gym-workouts` | `localStorage` | Your workout history |
+| `gym-bw-log` | `localStorage` | Your body-weight log |
+| `gym-weekly-goal` | `localStorage` | Your weekly goal |
+| `gym-prefs` | `localStorage` | Your preferences, name and gender |
+| `gym-active-session` | `localStorage` | Any in-progress workout, so a refresh can't lose it |
+| `gym-cache-owner` | `localStorage` | Which account the cached rows belong to |
+| `gym-theme`, `gym-theme-vars` | `localStorage` | Your theme choice and its colours |
+| `sb-…-auth-token` | `localStorage` | Your sign-in session, set by our authentication provider so you stay signed in |
+| `gym-recovery` | `sessionStorage` | A flag set only while you are following a password-reset link, so a page refresh can't drop you past the reset screen. It holds no personal data and your browser discards it when you close the tab |
 
-**This is not tracking, and there are no cookies used for tracking.** This storage exists
-solely to deliver the offline-capable service you asked for, which is the "strictly
-necessary" exemption under the ePrivacy Directive — so we do not show a consent banner
-for it. We would need your consent (and would ask) before storing anything on your device
-for analytics or advertising, and we have no plans to do either.
+**This is not tracking, and there are no cookies used for tracking.** None of it is read by
+anyone but the app on your own device, and none of it goes to a third party.
 
-**To remove the device copy and nothing else, sign out.** Signing out clears every key in
-the table above from that browser and leaves your account and its data on the server
-untouched, so it is the right control on a shared or borrowed computer. Your browser's own
-"clear site data" control does the same thing.
+Most of the table is "strictly necessary" in the sense the ePrivacy Directive uses — without
+your workout cache, your sign-in session, the in-progress workout and the record of which
+account the cache belongs to, the offline-capable service you asked for does not work at all.
+We would rather be exact than sweeping about the last two rows: your **theme choice and its
+colours** are a convenience rather than something the app cannot run without, so calling them
+strictly necessary would be stretching the word. We treat them as covered because they store
+nothing about you beyond a display preference you set yourself, they are never read by anyone
+else, and they are cleared when you sign out — but if you would rather not have them, clearing
+your site data removes them and the app works exactly as before, in your system's theme.
+
+We show no consent banner for any of this. We would need your consent, and would ask, before
+storing anything on your device for analytics or advertising, and we have no plans to do
+either.
+
+**To remove the device copy and nothing else, sign out.** Signing out clears every
+`localStorage` key in the table above from that browser — including your theme choice and
+its colours, which are resolved from your preferences — and your sign-in session is
+removed with them. It leaves your account and its data on the server untouched, so it is
+the right control on a shared or borrowed computer. The `sessionStorage` entry is gone as
+soon as you close the tab. Your browser's own "clear site data" control does the same
+thing.
 
 Settings → **Delete all my data** is a different and much larger action: it erases your
 workouts, weigh-ins and settings **on the server as well**, for every device, and it cannot
@@ -236,6 +267,7 @@ contractually barred from using it for anything else.
 | **Supabase, Inc.** | Database, authentication, API hosting | All account and app data | **Ireland** (region `eu-west-1`) |
 | **{{FILL: static host — not yet chosen; the app is not deployed}}** | Serves the app files | Request logs including IP addresses. Not your app data | {{FILL: static host country}} |
 | **Supabase, Inc.** (built-in email service) | Sends password-reset and confirmation email | Your email address and the message | Not published by the provider for this service. Supabase, Inc. is incorporated in the **United States**; see §10 |
+| **Google LLC** (Gmail) | Hosts the mailbox behind our contact address | Only what you choose to put in an email to us. Nothing is sent there by the app, and it holds no copy of your workouts, weigh-ins or account | **United States**; see §10 |
 
 We will also disclose data if we are legally compelled to — a valid court order, warrant,
 or equivalent legal process. **We will notify you before complying, unless we are legally
@@ -261,11 +293,16 @@ we honour such signals regardless.
 
 | Data | Retention |
 | --- | --- |
-| Account, workouts, weigh-ins, preferences | Until **you** delete them. Deleting your account removes all of it immediately and permanently |
+| Account, workouts, weigh-ins, preferences | Until **you** delete them — or until the dormancy rule below removes an abandoned account for you. Deleting your account removes all of it immediately and permanently |
+| **Dormant accounts** | **Deleted after 36 months of inactivity**, with a warning email at 24 months telling you the date and that signing in once resets the clock. "Inactivity" means no sign-in, no logged workout, no weigh-in and no settings change in that whole period — using the app in any of those ways keeps the account. We would rather delete data we are no longer being asked to hold than keep your training history forever by default. **The warning is a condition of the deletion:** if it was not actually sent to you, the account is not deleted — the 12-month clock starts when you are told, not when the account went quiet |
 | Account deletion | Deleting your account cascades to every workout, weigh-in and settings row at the database level. It is immediate and cannot be undone |
+| Consent and Terms-acceptance record (dates and version numbers; no health data) | For as long as we process your data on the basis of that consent, and afterwards only for as long as we might need to show that it was given. Deleting your account deletes it too |
 | Device cache (`localStorage`) | Until you sign out, delete all your data, or clear your browser storage. It stays on that device only, and only that device — we cannot erase it remotely |
 | Database and API request logs (incl. IP) | **1 day.** Our database provider retains request logs for 24 hours on our plan, after which they are deleted automatically. If we move to a paid plan this becomes longer and we will update this row |
 | Static-host request logs (incl. IP) | {{FILL: the host's published log retention — fill when the host is chosen}} |
+| Email you send to our contact address, and our replies | **24 months** from the last message in the thread, then deleted from the mailbox and its trash. We keep it only to handle your request and to show we handled it. **Deleting your account does not delete this** — ask us and we will delete the thread as well |
+| **Sign-in security log** (incl. IP and the email address used) | **90 days.** Our authentication provider keeps this separately from your account and does not expire it on its own, so **we purge it ourselves** on that schedule. It is the one record that **survives deleting your account**: we do not consult it about a deleted account and never use it to reconstruct one. Legal basis: Art. 6(1)(f), our legitimate interest in detecting credential-stuffing and abuse of the sign-in endpoint |
+| Session tokens | Until they expire or you sign out, whichever is first. Signing out revokes the token and removes it from your device; a token left idle expires on our authentication provider's own schedule and cannot be used afterwards |
 | Error reports | **Not applicable.** Error reporting is disabled, so no error reports are created or stored |
 | Automated platform backups | **None.** Our database plan includes no automated backups, so no backup copy of the database exists |
 | **Manual JSON backups** | **None.** The project ships a backup script, but we do not run it against the live database. No copy of your data exists outside it |
@@ -275,7 +312,7 @@ copy of your data in our systems for a deleted account to survive in, and no res
 that could bring it back. That cuts both ways, and we would rather say so than let you find
 out later: if you delete something by mistake, or if our database provider loses data, we
 cannot recover it for you. This is why the app gives you an export you can keep yourself
-(Settings → Export backup), and why the [Terms §11](/terms.html) put the responsibility for
+(Settings → Data → Export backup), and why the [Terms §11](/terms.html) put the responsibility for
 keeping your own copy with you. The same statement is in the
 [account deletion page](/delete-account.html) and in
 [Consumer Health Data Privacy §7](/consumer-health-data-privacy.html) — one practice
@@ -293,10 +330,17 @@ Concrete measures, not adjectives:
 - Passwords are stored only as **salted hashes** by our authentication provider. We
   cannot see your password.
 - **Changing your password requires your current password.**
+- New passwords must be **at least 10 characters**. We ask for length rather than a mix of
+  symbols and digits, because length is what actually resists guessing and composition
+  rules mostly produce predictable passwords.
 - Data is **encrypted at rest** by our database provider.
 - Access to production data is restricted to **one person — the sole operator of the
-  service** — through the database provider's administrative console. No employees,
-  contractors or other persons have access, because there are none.
+  service** — through the database provider's administrative console. We have no
+  employees or contractors, so no one else on our side has access. Our database provider's
+  own personnel can technically access the infrastructure your data sits on; that access is
+  governed by their security programme and by the data processing agreement in §6, which
+  bars them from using your data for their own purposes. We state this because no hosted
+  service can honestly claim otherwise, and a policy that implied it would be false.
 - **The app itself holds no credential that could reach anyone else's rows.** The key
   shipped in the browser is the provider's public key, and every read and write made with
   it is constrained by the row-level security above. The one key that can bypass those
@@ -337,9 +381,9 @@ can.
 
 | Right | How to use it |
 | --- | --- |
-| **Access** a copy of your data | Settings → **Export backup** gives you a JSON file, immediately. It contains your workouts, your body-weight log, your weekly goal, your preferences (name and gender included), and your account details — the email address, the account creation date, and your consent and Terms-acceptance record. That is everything we hold about you. Or email us |
+| **Access** a copy of your data | Settings → Data → **Export backup** gives you a JSON file, immediately. It contains your workouts, your body-weight log, your weekly goal, your preferences (name and gender included), and your account details — the email address, the account creation date, and your consent and Terms-acceptance record. That is everything the app stores about you. It does not include the infrastructure logs in §2.2 — the request logs and IP addresses our providers keep for the short periods in §7, and the sign-in timestamps our authentication provider records — which are technical records held by our providers rather than app data. Email us and we will get you what those contain |
 | **Portability** — get it in a machine-readable format | The same export. It is plain JSON today, and [Terms § 11.2](/terms.html) commits us to keeping it documented, machine-readable, non-proprietary and readable without FitPulse if the format ever changes |
-| **Correct** anything wrong | Edit it in the app — history entries, weigh-ins, name, preferences are all editable |
+| **Correct** anything wrong | Edit it in the app — history entries, weigh-ins, name, preferences are all editable. To change the email address your account uses, Settings → **Change email**; we send a confirmation link to both the old and the new address, so a mistyped address cannot lock you out |
 | **Delete** everything, including the account | Settings → **Delete account**. Immediate, irreversible, and cascades to every row |
 | **Delete** your data but keep the account | Settings → **Delete all my data**. Erases workouts, weigh-ins and settings on the server and on this device; the login survives |
 | **Delete the device copy only** | **Sign out**, or use your browser's "clear site data" control. Your account is untouched |
@@ -416,9 +460,17 @@ Two narrower points, stated rather than glossed over:
 > § 6 states that every processor operates under a written Art. 28 agreement. Neither claim
 > is safe until you hold the document.
 <!-- internal:end -->
-- **Static hosting** {{FILL: name the host, its country, and — if outside the EEA — the
-  transfer mechanism. The app is not yet deployed, so this is unresolved}}. The host serves
-  the app's files and sees request logs including IP addresses; it never holds your rows.
+- **Email you send us.** Our contact address is a Gmail mailbox, so Google LLC — a United
+  States company — processes any message you send us, including anything you choose to put
+  in it. Transfers are covered by the EU–US Data Privacy Framework and by the Standard
+  Contractual Clauses in Google's terms. Nothing is sent there by the app: this concerns
+  only correspondence you start. If you would rather not route a privacy request through
+  Google, say so in a first message with no details in it and we will arrange another way.
+- **Static hosting.** The host is
+  **{{FILL: static host — not yet chosen; the app is not deployed}}**, in
+  {{FILL: static host country}}, and where that is outside the EEA the transfer relies on
+  {{FILL: static host transfer mechanism}}. The host serves the app's files and sees
+  request logs including IP addresses; it never holds your rows.
 
 **For UK users**, the same storage applies. Transfers from the UK to Ireland are covered by
 the UK's adequacy regulations for the EEA, so no additional safeguard is required.
@@ -437,10 +489,21 @@ transmitted anywhere even in that case.
 We keep a version number and effective date at the top, and every previous version is kept
 in the project's Git history. Email us and we will send you any earlier version.
 
+**The version number moves whenever the text does.** This sounds obvious and is easy to get
+wrong: version 1.0 was edited after publication to add a new recipient — Google, for the
+mailbox behind our contact address — while the header still said 1.0. Nobody was affected,
+because the app had no users yet, but a version number that stays still while the text
+changes cannot tell you what you agreed to, which is the only thing it is for. So the rule
+is now explicit: the version, the effective date, and the copy of the version number the app
+records against your account all change in the same edit as the words.
+
 - **Minor corrections** (typos, clearer wording, a new address) take effect on posting.
 - **Material changes** — a new purpose, a new recipient, a new data type, a longer
-  retention period — will be announced **in advance** by in-app notice and by email to
-  your registered address, with a plain summary of what changed, before they take effect.
+  retention period — will be announced **in advance**, with a plain summary of what changed,
+  before they take effect. The announcement appears **in the app**, which is the route we can
+  always perform, **and by email** to your registered address where we are able to send one.
+  Where the change needs your consent, we ask for it in the app, so a message that never
+  reached you cannot cost you the chance to consider it.
 - Where a change affects your **health data** — a new category, a new purpose, or a new
   recipient — we will obtain your **affirmative consent first**, as the My Health My Data
   Act requires. We will not apply a change to health data collected under an earlier
@@ -449,6 +512,11 @@ in the project's Git history. Email us and we will send you any earlier version.
   and update the "last reviewed" date above.
 
 We will never make a material change quietly and rely on your continued use as consent.
+This is enforced by the app, not only promised here: every version of this policy and of
+the Terms carries a number, your acceptance is recorded against the numbers you actually
+agreed to, and when a newer version comes into force the app stops at a screen asking you
+to read it and confirm — with the health-data consent as its own separate tick, exactly as
+at sign-up — before you go any further.
 
 ## 13. Contact
 
@@ -459,3 +527,7 @@ We will never make a material change quietly and rely on your continued use as c
 
 We aim to answer every message within **10 working days**, and in every case within the
 statutory deadlines set out in §9.
+
+---
+
+*End of Privacy Policy, version 1.1.*

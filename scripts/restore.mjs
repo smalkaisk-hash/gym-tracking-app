@@ -49,8 +49,10 @@ if (sameAsSource && !forceProd) {
   process.exit(1);
 }
 
-// workouts first (body_weight_log.workout_id FKs into it); settings last.
-const ORDER = ['workouts', 'body_weight_log', 'settings'];
+// workouts first (body_weight_log.workout_id FKs into it). Must stay in step with
+// TABLES in backup.mjs — a table backed up but never restored is worse than one that was
+// never backed up, because the file says it is there.
+const ORDER = ['workouts', 'body_weight_log', 'settings', 'consents', 'dormancy_notices'];
 
 const db = createClient(targetUrl, KEY, { auth: { persistSession: false } });
 
@@ -59,8 +61,11 @@ const run = async () => {
   for (const table of ORDER) {
     const rows = backup.tables[table] ?? [];
     if (!rows.length) { console.log(`  ${table}: 0 rows, skipped`); continue; }
-    // Upsert on the primary key so a re-run is idempotent (workouts/body_weight_log
-    // key on id; settings on user_id).
+    // Upsert on the primary key so a re-run is idempotent (settings keys on user_id;
+    // every other table has an `id`). Note `consents` is append-only from a session but
+    // this runs with the service_role key, which bypasses RLS — and migration 0007's
+    // trigger re-stamps recorded_at, which is the right answer for a restore: the row is
+    // being written now, whatever it once said.
     const onConflict = table === 'settings' ? 'user_id' : 'id';
     const { error } = await db.from(table).upsert(rows, { onConflict });
     if (error) throw new Error(`Restoring ${table}: ${error.message}`);

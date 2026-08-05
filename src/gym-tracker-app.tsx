@@ -18,8 +18,13 @@ import customImg from '../Assets/pexels-koolshooters-8544616.jpg';
 //   • Exercise catalogue ........ CORE, CARDIO, EXERCISES, ALL_GROUPS
 //   • Exercise identity ......... slug, idForName, exerciseIdOf, EXERCISE_ID_OVERRIDES
 //   • Muscle grouping ........... groupForExercise, GROUP_TO_MUSCLE, MUSCLE_BY_ID
-//   • Storage keys .............. STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, THEME_KEY
+//   • Storage keys .............. STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY,
+//                                 CACHE_OWNER_KEY, THEME_KEY, THEME_VARS_KEY
+//                                 (the full set is published in PRIVACY.md § 5 and a fuzz
+//                                  guard fails if the two lists diverge — keep this in step)
 //   • Prefs schema .............. DEFAULT_PREFS, Prefs
+//   • Consent & versions ........ POLICY_VERSION, TERMS_VERSION, POLICIES_EFFECTIVE_FROM,
+//                                 consentRowsFor, needsReconsentFor, reconsentDue, MIN_AGE
 //   • Design tokens ............. card, input, btnPrimary/Secondary/Danger, label, readout
 //   • Type & theme config ....... SPLITS, TYPE_CONFIG, CHART, ACCENTS, BASES, SEMANTICS
 //   • Units ..................... LB_PER_KG, KG_PER_LB
@@ -522,13 +527,18 @@ const clampGoal = (g: number) => {
   return Math.min(GOAL_MAX, Math.max(GOAL_MIN, g));
 };
 const THEME_KEY   = 'gym-theme';
+// Resolved palette for both themes, stamped by index.html before first paint.
+// Named here rather than written as a literal at each use because PRIVACY.md § 5
+// publishes this list and `tests/qa/fuzz.test.mjs` checks the two agree — a key
+// that exists only as an inline string can drift out of the policy unnoticed.
+const THEME_VARS_KEY = 'gym-theme-vars';
 
 // User-chosen view settings, all set from the Settings screen. Persisted as one
 // JSON blob and merged over DEFAULT_PREFS on load, so adding a field later never
 // breaks data saved by an older build.
 type Units = 'kg' | 'lb';
 type Gender = 'male' | 'female' | 'other' | '';   // '' = not set / left blank
-// How the home "This week" tile draws goal progress. All four ship; the user picks
+// How the home "This week" tile draws goal progress. All seven ship; the user picks
 // one in Settings (see WeekGoalTile). New value is safe on old caches — prefs merges
 // over DEFAULT_PREFS, so a missing field falls back to 'liquid'.
 type GoalCardStyle = 'liquid' | 'bubbles' | 'mosaic' | 'glow' | 'ring' | 'plates' | 'liquidNumber';
@@ -1156,20 +1166,110 @@ const TERMS_URL       = '/terms.html';
 // page a user can reach without reinstalling — and that URL goes in the Data safety
 // form. The in-app "Delete account" button satisfies Apple 5.1.1(v) but not this.
 const DELETE_REQUEST_URL = '/delete-account.html';
+// The one address every privacy route terminates at. legal/PRIVACY.md § 13 and the
+// two other published policies name it; keep them in step. It goes into the export
+// so a file that outlives this app still tells its holder where to send a request.
+const PRIVACY_CONTACT = 'smalkaisk@gmail.com';
 // Stamped into the consent/acceptance records at signup so a later revision is
 // distinguishable from the version the user actually agreed to. Bump POLICY_VERSION
 // whenever a change would require re-consent (a new health-data category, purpose or
 // recipient); bump TERMS_VERSION when the Terms change under legal/TERMS.md § 16.
-const POLICY_VERSION  = '1.0';
+// 1.1 (2026-08-05): legal/PRIVACY.md v1.1 discloses two things v1.0 did not — the
+// authentication provider's sign-in security log (IP + email), which is the one record
+// that SURVIVES account deletion, and a 90-day retention for it; plus Google as the
+// recipient behind the contact address. A new recipient is a material change under
+// § 12, so this bumps. It also fixes the failure that made the bump necessary: v1.0 was
+// edited after publication while the header still read 1.0, so the stamp named a
+// document whose text had moved. Version, effective date and this constant now change
+// together — see § 12.
+const POLICY_VERSION  = '1.1';
 // 1.1 (2026-08-02): legal/TERMS.md v1.1 answers an external review — it defines the terms
 // v1.0 left vague and states practices the app already has (device-clock dating, offline
 // reconciliation, what survives deletion). §§ 8, 9, 12, 13 and 14 changed, which § 16.3
 // makes material, so the acceptance record has to name the version the user actually read.
-const TERMS_VERSION   = '1.1';
+// 1.2 (2026-08-05): legal/TERMS.md v1.2 answers the v4 liability audit — § 2.2 defers to
+// § 8.5 on data protection, § 12.7 grows from three survivors of a deletion to five (its
+// old list closed "and nothing else", which support email and the sign-in log both made
+// false), § 12.9 now describes the dormancy rule instead of denying one exists, § 13.1(a)
+// drops the non-existent store listing, § 17.3/17.4 stop putting exclusive Latvian
+// jurisdiction on consumers outside the EEA/UK, and § 19.8 lets the clauses that decide a
+// post-deletion dispute survive. §§ 12, 13 and 17 changed, which § 16.3 makes material.
+const TERMS_VERSION   = '1.2';
+// The date the versions above take effect. A version bump alone must NOT lock anyone
+// out: legal/TERMS.md § 16.2 promises at least 30 days' email notice before a change
+// takes effect and § 16.3 promises the user may keep using the current version, and
+// export their data, until that date. So the re-consent gate is scheduled, not
+// immediate — it compares against this constant, and before it passes the app only
+// shows a banner. **When you bump POLICY_VERSION or TERMS_VERSION, set this to at
+// least 30 days ahead and send the § 16.2 notice.** Leaving it in the past turns the
+// bump into an instant lockout, which is the thing this exists to prevent.
+const POLICIES_EFFECTIVE_FROM = '2026-09-04';
 // Minimum age. legal/TERMS.md § 4.1 sets this at 18 and § 4.3 commits to closing any
 // account found to belong to someone younger — so 18 is the number the whole app must
 // use. Do not lower it here without changing the Terms: they are the binding document.
 const MIN_AGE = 18;
+
+// ── Consent evidence (GDPR Art. 7(1)) ─────────────────────────────────────────
+// Art. 7(1) puts the burden of DEMONSTRATING consent on the controller, and EDPB
+// Guidelines 05/2020 ¶ 105-108 want the workflow and the text shown, not just a
+// boolean. The signup call writes the record into auth user metadata because that
+// exists before any settings row does and survives an abandoned onboarding — but
+// metadata is writable by the user it belongs to, so it is a record, not evidence.
+// `public.consents` (migration 0004) is the evidence half: append-only by
+// construction (INSERT + SELECT policies, deliberately no UPDATE and no DELETE).
+//
+// These two helpers are module-scope and pure so the QA harness can exercise them.
+
+// The rows the evidence table should hold for an account, derived from the metadata
+// written at signup. A timestamp that isn't there yields no row — an account created
+// before the metadata existed records nothing rather than inventing a date.
+//
+// The timestamp must also PARSE, and what gets stored is the normalised ISO form. Both
+// halves of that matter, and neither is defensive tidiness: this metadata is writable by
+// the user it describes (that is the whole reason the evidence table exists), the three
+// rows go in as ONE insert, and Postgres rejects the whole statement if any value is not
+// a timestamp. So `age_confirmed_at: 'lol'` used to stop the health-data and terms rows
+// being filed too — letting a user unilaterally suppress the controller's Art. 7(1)
+// evidence, which is precisely backwards. Normalising as well as validating keeps the
+// insert to values Postgres is guaranteed to accept, rather than the wider set
+// Date.parse happens to tolerate.
+const consentRowsFor = (userId: string, meta: any): any[] => {
+  const m = meta && typeof meta === 'object' ? meta : {};
+  const rows: any[] = [];
+  const add = (kind: string, at: any, version: any, document: string) => {
+    if (typeof at !== 'string' || at.trim() === '') return;
+    const t = Date.parse(at);
+    if (!Number.isFinite(t)) return;
+    rows.push({ user_id: userId, kind, version: typeof version === 'string' ? version : '', granted_at: new Date(t).toISOString(), document });
+  };
+  add('health_data', m.health_data_consent_at, m.health_data_consent_version, PRIVACY_URL);
+  add('terms',       m.terms_accepted_at,      m.terms_version,               TERMS_URL);
+  add('age',         m.age_confirmed_at,       '',                            TERMS_URL);
+  return rows;
+};
+
+// Has the user agreed to the versions currently in force? legal/PRIVACY.md § 12 and
+// legal/TERMS.md § 16.3 both promise affirmative acceptance BEFORE a material change
+// takes effect, and EDPB ¶ 110 says consent does not survive a considerable change to
+// the processing. Bumping POLICY_VERSION/TERMS_VERSION used to change nothing for an
+// existing user — the stamp was written and never read. Now it raises the re-consent
+// gate. An account with no record at all (missing metadata) also lands here, which is
+// the right answer: no evidence of consent means ask again.
+const needsReconsentFor = (meta: any): boolean => {
+  const m = meta && typeof meta === 'object' ? meta : {};
+  return m.health_data_consent_version !== POLICY_VERSION || m.terms_version !== TERMS_VERSION;
+};
+
+// …and is it due yet? Splitting "out of date" from "must act now" is what keeps the
+// gate compatible with TERMS.md § 16.3's grace window: between a bump and its
+// effective date the user is asked, not blocked. An unparseable or missing date is
+// treated as NOT due — a typo in the constant must not lock the whole user base out,
+// and the failure mode of asking late is smaller than the failure mode of asking at
+// the wrong moment.
+const reconsentDue = (now: number = Date.now(), from: string = POLICIES_EFFECTIVE_FROM): boolean => {
+  const t = Date.parse(from);
+  return Number.isFinite(t) && now >= t;
+};
 
 const sanitizePrefs = (raw: any): Prefs => {
   const p = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -1225,7 +1325,14 @@ const resolveChart = (prefs: { accent: string; base: string } | undefined, theme
 // Falls back to the default blue rather than throwing on a malformed value: the hex
 // it reads comes from the accent table, which is keyed by a stored pref — so a bad
 // id used to reach here as undefined and take the whole dashboard down with it.
-const FALLBACK_HEX = '#2E7BD6';
+//
+// DERIVED from the accent table, never written out. A hand-copied '#2E7BD6' here is a
+// THIRD mirror of one colour (ACCENTS already carries it twice per tone — rgb triple
+// for the CSS token, hex for the chart layer), and it is the one nothing would catch:
+// retune blue's dark hex and the donut quietly keeps fanning its slices around the old
+// one, only for users whose accent failed to resolve. `blue` is DEFAULT_PREFS.accent
+// and sanitizePrefs' fallback, so this stays the colour an unresolved pref lands on.
+const FALLBACK_HEX = ACCENTS.blue.dark.hex;
 const hexToHsl = (hex: string): { h: number; s: number; l: number } => {
   const src = typeof hex === 'string' && /^#?[0-9a-fA-F]{6}$/.test(hex.trim()) ? hex.trim() : FALLBACK_HEX;
   const m = src.replace('#', '');
@@ -3183,13 +3290,14 @@ const Segmented = ({ value, onChange, options }: any) => (
   </div>
 );
 
-const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'dark', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, onDeleteAccount, userEmail, consentAt, consentVersion, termsAt, termsVersion, onDone }: any) => {
+const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = 'dark', setThemeMode, onExport, onImport, onClearData, onSignOut, onChangePassword, onChangeEmail, onDeleteAccount, userEmail, consentAt, consentVersion, termsAt, termsVersion, onDone }: any) => {
   const dashKeys = ['dash.stats', 'dash.muscle', 'dash.bodyweight', 'dash.log'];
   const progKeys = ['prog.muscle', 'prog.bodyweight', 'prog.exercise'];
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearBusy, setClearBusy]             = useState(false);
   const [clearMsg, setClearMsg]               = useState<string | null>(null);
   const [importMsg, setImportMsg]             = useState<string | null>(null);
+  const [exportMsg, setExportMsg]             = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Change-password, inline in the Account card (the same inline-confirm pattern the
@@ -3216,6 +3324,37 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
     setCurrentPw(''); setNewPw(''); setConfirmPw(''); setShowPw(false);
     setPwMsg({ ok: true, text: 'Password updated.' });
     setPwOpen(false);
+  };
+
+  // Change email. GDPR Art. 16 is the right to have inaccurate personal data
+  // rectified, and the email address is personal data the user could not correct —
+  // `updateUser` was wired for passwords only. It is also the identifier every notice
+  // is sent to: TERMS.md § 5.1 obliges the user to keep it current and § 19.5 deems a
+  // notice received 24 hours after it is sent, so an address they cannot change is a
+  // duty they cannot discharge. The provider sends a confirmation link to BOTH the old
+  // and the new address, so the change only lands once the new mailbox is proven —
+  // which is why the success copy says "check your inbox", not "done".
+  const [emailOpen, setEmailOpen]   = useState(false);
+  const [newEmail, setNewEmail]     = useState('');
+  const [emailPw, setEmailPw]       = useState('');
+  const [showEmailPw, setShowEmailPw] = useState(false);
+  const [emailBusy, setEmailBusy]   = useState(false);
+  const [emailMsg, setEmailMsg]     = useState<{ ok: boolean; text: string } | null>(null);
+
+  const closeEmail = () => { setEmailOpen(false); setNewEmail(''); setEmailPw(''); setShowEmailPw(false); setEmailMsg(null); };
+
+  const saveEmail = async () => {
+    if (emailBusy) return;
+    const addr = newEmail.trim();
+    if (!addr)                 { setEmailMsg({ ok: false, text: 'Enter your new email address.' }); return; }
+    if (addr === userEmail)    { setEmailMsg({ ok: false, text: 'That is already your email address.' }); return; }
+    if (!emailPw)              { setEmailMsg({ ok: false, text: 'Enter your current password to confirm.' }); return; }
+    setEmailBusy(true); setEmailMsg(null);
+    const err = await onChangeEmail(emailPw, addr);
+    setEmailBusy(false);
+    if (err) { setEmailMsg({ ok: false, text: err }); return; }
+    setNewEmail(''); setEmailPw(''); setShowEmailPw(false);
+    setEmailMsg({ ok: true, text: 'Check both inboxes — we sent a confirmation link to your old and new address. The change takes effect once you confirm.' });
   };
 
   // Delete account — a two-step confirm because it's irreversible (wipes the
@@ -3460,8 +3599,11 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             <p className="text-sm text-ink truncate">{userEmail ?? 'Signed in'}</p>
             <p className="text-xs text-faint mt-0.5">Your workouts sync to this account.</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => (pwOpen ? closePw() : setPwOpen(true))} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => (emailOpen ? closeEmail() : (closePw(), setEmailOpen(true)))} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+              <Mail size={14} /> Change email
+            </button>
+            <button onClick={() => (pwOpen ? closePw() : (closeEmail(), setPwOpen(true)))} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
               <KeyRound size={14} /> Change password
             </button>
             <button onClick={() => onSignOut && onSignOut()} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
@@ -3469,6 +3611,44 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
             </button>
           </div>
         </div>
+
+        {emailOpen && (
+          <form className="mt-4 pt-4 border-t border-line flex flex-col gap-3" onSubmit={e => { e.preventDefault(); saveEmail(); }}>
+            <div>
+              <label htmlFor="settings-new-email" className={`${label} block mb-1.5`}>New email address</label>
+              <input
+                id="settings-new-email"
+                type="email"
+                autoComplete="email"
+                autoFocus
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                className={`${input} w-full`}
+                placeholder="you@example.com"
+              />
+            </div>
+            <PasswordField
+              id="settings-email-current-password"
+              label="Current password"
+              value={emailPw}
+              onChange={setEmailPw}
+              autoComplete="current-password"
+              show={showEmailPw}
+              onToggleShow={() => setShowEmailPw(s => !s)}
+            />
+            {emailMsg && <p className={`text-xs ${emailMsg.ok ? 'text-good' : 'text-crit'}`}>{emailMsg.text}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={emailBusy || !newEmail || !emailPw} className={`${btnPrimary} px-3 py-2 text-sm disabled:opacity-50`}>
+                {emailBusy ? 'Sending…' : 'Send confirmation'}
+              </button>
+              <button type="button" onClick={closeEmail} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
+            </div>
+            <p className="text-xs text-faint">
+              We confirm your current password first, then email a link to both your current and your new address.
+              Your login only changes once you follow it, so you cannot lose access by mistyping.
+            </p>
+          </form>
+        )}
 
         {pwOpen && (
           <form className="mt-4 pt-4 border-t border-line flex flex-col gap-3" onSubmit={e => { e.preventDefault(); savePassword(); }}>
@@ -3570,7 +3750,11 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
       <div className={`${card} p-4`}>
         <h3 className={`${label} mb-3`}>Data</h3>
         <div className="flex flex-wrap gap-2">
-          <button onClick={onExport} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
+          {/* Export reports failure like every other data action. It used to swallow
+              its own error, and this is the button the privacy policy names as the
+              access and portability route — silently doing nothing is the one outcome
+              a rights mechanism may not have. */}
+          <button onClick={() => setExportMsg(onExport?.() ?? null)} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
             <Download size={14} /> Export backup
           </button>
           <button onClick={() => fileRef.current?.click()} className={`${btnSecondary} flex items-center gap-2 px-3 py-2 text-sm`}>
@@ -3578,8 +3762,13 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
           </button>
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={handleImportFile} className="hidden" />
         </div>
+        {exportMsg && <p className="text-xs text-crit mt-2">{exportMsg}</p>}
         {importMsg && <p className="text-xs text-muted mt-2">{importMsg}</p>}
-        <p className="text-xs text-faint mt-2">Your data syncs to your Supabase account, with a local cache for offline reads. Export gives you a portable backup.</p>
+        <p className="text-xs text-faint mt-2">
+          Your data syncs to your Supabase account, with a local cache for offline reads. Export gives you a
+          portable backup — it is your full copy under GDPR Art. 15 and Art. 20, and it is unencrypted, so keep
+          the file somewhere you would keep anything else about your health.
+        </p>
 
         <div className="h-px bg-line my-4" />
         {/* Named "Delete all my data", never "Clear all data". This wipes the SERVER
@@ -3728,7 +3917,18 @@ const authErrorText = (error: any): string => {
   return 'Something went wrong. Please try again.';
 };
 
-const MIN_PASSWORD = 6;   // Supabase's default minimum; the server is the real gate
+// Above Supabase's default of 6, deliberately. GDPR Art. 32 asks for security
+// "appropriate to the risk", and the risk here is special-category health data — a
+// six-character floor is not proportionate to that, and legal/PRIVACY.md § 8 offers
+// "concrete measures" for exactly this data. NIST SP 800-63B puts the floor for
+// user-chosen secrets at 8 and favours length over composition rules, so this asks
+// for length only: no character-class requirement, nothing that pushes users toward
+// `Passw0rd!`. The server is still the real gate — raise the project's own minimum
+// to match in the dashboard (see SUPABASE-SETUP.md), and turn on leaked-password
+// protection there, which is the higher-value control of the two and costs nothing.
+// Sign-in is deliberately NOT length-checked: an existing shorter password must keep
+// working, or raising this would lock people out of their own accounts.
+const MIN_PASSWORD = 10;
 
 // A password input with a show/hide toggle. `id` keeps the label association and
 // lets password managers tell fields apart; `autoComplete` must be
@@ -4191,6 +4391,190 @@ const OnboardingScreen = ({ initialPrefs, onDone }: any) => {
   );
 };
 
+// ─── ReconsentScreen ───────────────────────────────────────────────────────────
+// Raised when the versions a user actually agreed to are behind the ones now in
+// force (see needsReconsentFor). legal/PRIVACY.md § 12 promises we will never make a
+// material change quietly and rely on continued use as consent, legal/TERMS.md § 16.3
+// promises affirmative acceptance before a material revision takes effect, and EDPB
+// Guidelines 05/2020 ¶ 110 says consent does not survive a considerable change to the
+// processing. Before this gate existed, bumping POLICY_VERSION changed nothing for an
+// existing user: the stamp was written at signup and never read again.
+//
+// The two boxes stay separate here for the same reason they are separate at signup —
+// merging Art. 9 consent into a general acceptance would void the health-data half —
+// and neither is pre-ticked. Sign out is offered because the only honest alternative
+// to accepting is to leave, and a gate with no exit is a dark pattern.
+//
+// **Export is on this screen deliberately.** A first version of this gate had only
+// Accept and Sign out, which put Settings — and therefore the export — behind the
+// consent. That made data access conditional on agreeing to new terms: Art. 15 and
+// Art. 20 cannot be conditioned that way, and attaching a detriment to refusing
+// consent is exactly the Art. 7(4) weakness the rest of this design is careful to
+// avoid. TERMS.md § 16.3 promises the same thing in contract terms ("you may export
+// Your Data at any time before and during that period"). A user who does not want to
+// agree must still be able to leave with their data.
+//
+// **Deletion is on this screen for the same class of reason, and it was missed the
+// first time.** The health-data tick-box tells the user they can withdraw consent from
+// Settings — and Settings is behind this gate, so while the gate is up that sentence is
+// false and the only exit is Sign out, which leaves every row on the server. GDPR
+// Art. 7(3) requires withdrawal to be as easy as giving consent; a gate whose refusal
+// path cannot reach the withdrawal it advertises fails that, and it is the same
+// "published text describes behaviour the code does not have" failure the rest of this
+// change exists to clear out. So the full two-step, password-confirmed deletion lives
+// here too, alongside the out-of-app route for anyone who cannot complete it.
+const ReconsentScreen = ({ onAccept, onSignOut, onExport, onDeleteAccount }: any) => {
+  const [accepted, setAccepted] = useState(false);
+  const [consent, setConsent]   = useState(false);
+  const [busy, setBusy]         = useState(false);
+  const [err, setErr]           = useState('');
+  const [exportErr, setExportErr] = useState<string | null>(null);
+  // Same shape as SettingsScreen's: two steps, and the current password, because the
+  // action is identical and irreversible. A weaker confirmation here would make the
+  // re-consent gate the easiest place in the app to destroy an account from.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletePw, setDeletePw]                 = useState('');
+  const [deleteBusy, setDeleteBusy]             = useState(false);
+  const [deleteMsg, setDeleteMsg]               = useState<string | null>(null);
+
+  const submit = async () => {
+    if (busy || !accepted || !consent) return;
+    setBusy(true); setErr('');
+    const msg = await onAccept();
+    setBusy(false);
+    if (msg) setErr(msg);
+  };
+
+  const remove = async () => {
+    if (deleteBusy || !deletePw || !onDeleteAccount) return;
+    setDeleteBusy(true); setDeleteMsg(null);
+    const msg = await onDeleteAccount(deletePw);
+    // On success the account is gone and the app signs out, so this screen unmounts —
+    // we only ever get back here on failure.
+    if (msg) { setDeleteBusy(false); setDeleteMsg(msg); setDeletePw(''); }
+  };
+
+  return (
+    <AuthShell>
+      <AuthHeader />
+      <form className={`${card} p-6`} onSubmit={e => { e.preventDefault(); submit(); }}>
+        <p className="text-sm text-ink font-medium text-center mb-1">We've updated our policies</p>
+        <p className="text-xs text-muted text-center mb-5">
+          Please read the current versions and confirm. Your data is untouched in the meantime, and nothing
+          new happens with it until you agree.
+        </p>
+
+        <label htmlFor="reconsent-terms" className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            id="reconsent-terms"
+            type="checkbox"
+            checked={accepted}
+            onChange={e => setAccepted(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-accent cursor-pointer"
+          />
+          <span className="text-xs text-muted leading-relaxed">
+            I accept the current{' '}
+            <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:brightness-110">Terms of Service</a>
+            {' '}and{' '}
+            <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:brightness-110">Privacy Policy</a>.
+          </span>
+        </label>
+
+        <label htmlFor="reconsent-consent" className="flex items-start gap-2.5 mt-3 cursor-pointer">
+          <input
+            id="reconsent-consent"
+            type="checkbox"
+            checked={consent}
+            onChange={e => setConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-accent cursor-pointer"
+          />
+          <span className="text-xs text-muted leading-relaxed">
+            I explicitly consent to FitPulse continuing to store the health data I log — my body weight,
+            my training history, and my gender if I gave it — for the sole purpose of showing me my own
+            history. I can withdraw consent at any time from Settings, or by deleting my account below.
+          </span>
+        </label>
+
+        {err && <p className="text-xs text-crit mt-3">{err}</p>}
+
+        <button
+          type="submit"
+          disabled={busy || !accepted || !consent}
+          className={`${btnPrimary} w-full p-3 mt-5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+        >
+          {busy ? <Loader2 size={16} className="animate-spin" /> : null}
+          {busy ? 'Saving…' : 'Agree and continue'}
+        </button>
+
+        <div className="mt-4 pt-4 border-t border-line">
+          <p className="text-xs text-muted leading-relaxed">
+            You don't have to agree. If you would rather not, take your data with you — this is the same
+            full copy you can always get from Settings, and it works whether or not you accept.
+          </p>
+          <button
+            type="button"
+            onClick={() => setExportErr(onExport?.() ?? null)}
+            className={`${btnSecondary} w-full p-2.5 mt-3 flex items-center justify-center gap-2 text-sm`}
+          >
+            <Download size={14} /> Export my data
+          </button>
+          {exportErr && <p className="text-xs text-crit mt-2">{exportErr}</p>}
+
+          {/* Withdrawing consent. Signing out leaves every row on the server, so it is
+              not a withdrawal — this is. Art. 7(3): as easy to withdraw as to give. */}
+          {!confirmingDelete ? (
+            <>
+              <button
+                type="button"
+                onClick={() => { setConfirmingDelete(true); setDeleteMsg(null); }}
+                className="w-full text-xs text-muted hover:text-crit mt-3"
+              >
+                Or delete my account and all its data
+              </button>
+              <p className="text-xs text-faint mt-2 text-center">
+                Can't complete it here?{' '}
+                <a href={DELETE_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:brightness-110">
+                  Request deletion another way
+                </a>.
+              </p>
+            </>
+          ) : (
+            <div className="flex flex-col gap-2 mt-3">
+              <p className="text-xs text-ink">Permanently delete your account and all its data? This can't be undone — export first if you want a copy.</p>
+              <label htmlFor="reconsent-delete-pw" className="text-xs text-muted">Enter your password to confirm.</label>
+              <input
+                id="reconsent-delete-pw"
+                type="password"
+                autoComplete="current-password"
+                value={deletePw}
+                onChange={e => setDeletePw(e.target.value)}
+                className={`${input} w-full py-2 text-sm`}
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={remove}
+                  disabled={deleteBusy || !deletePw}
+                  className={`${btnDanger} flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50`}
+                >
+                  {deleteBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  {deleteBusy ? 'Deleting…' : 'Delete permanently'}
+                </button>
+                <button type="button" onClick={() => { setConfirmingDelete(false); setDeletePw(''); }} disabled={deleteBusy} className={`${btnSecondary} px-3 py-2 text-sm`}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {deleteMsg && <p className="text-xs text-crit mt-2">{deleteMsg}</p>}
+        </div>
+
+        <button type="button" onClick={() => onSignOut && onSignOut()} className="w-full text-xs text-muted hover:text-ink mt-3">
+          Sign out instead
+        </button>
+      </form>
+    </AuthShell>
+  );
+};
+
 // ─── GymTrackerApp ─────────────────────────────────────────────────────────────
 const GymTrackerApp = () => {
   const [currentScreen, setCurrentScreen]             = useState('home');
@@ -4222,6 +4606,9 @@ const GymTrackerApp = () => {
   const [authReady, setAuthReady] = useState(false);
   const [hydrated, setHydrated]   = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);  // first login on a brand-new account
+  // The policies moved on since this user last agreed — see needsReconsentFor. Read
+  // straight off the session's metadata, so it resolves without waiting for hydrate.
+  const [needsReconsent, setNeedsReconsent]   = useState(false);
   // True once a localStorage write has thrown (quota full, or Safari private mode,
   // where setItem always throws). The offline banner promises unsynced rows are
   // "saved on this device" — if the cache write failed that promise is false and the
@@ -4255,9 +4642,17 @@ const GymTrackerApp = () => {
   // session loss, which would take unsynced rows with it. The keys are per-origin, so
   // a stale cache is also a cross-user leak; `CACHE_OWNER_KEY` is what makes that
   // safe without deleting anything (see the hydrate effect).
+  //
+  // This list must stay equal to the one PRIVACY.md § 5 publishes, because § 5 offers
+  // sign-out as THE control for a shared or borrowed computer and states that it clears
+  // every key in that table. It used to leave `gym-theme` and `gym-theme-vars` behind —
+  // the second of which is the palette RESOLVED FROM the signed-in user's prefs, so a
+  // borrowed machine kept a trace of them. The ErrorBoundary's recovery path always
+  // cleared both; the two now agree. `tests/qa/fuzz.test.mjs` guards the pair.
   const clearLocalCache = () => {
     try {
-      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, CACHE_OWNER_KEY].forEach(k => localStorage.removeItem(k));
+      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, CACHE_OWNER_KEY, THEME_KEY, THEME_VARS_KEY]
+        .forEach(k => localStorage.removeItem(k));
     } catch { /* ignore */ }
   };
   // ── Offline sync safety (roadmap Phase 0) ────────────────────────────────────
@@ -4329,14 +4724,23 @@ const GymTrackerApp = () => {
 
   // Persist the resolved vars for BOTH themes so index.html can stamp them before
   // first paint (no flash of the default palette on reload).
+  //
+  // Gated on a session like every other write-back, and for the same reason spelled
+  // out at `deleteAccount`: sign-out calls `resetLocalState()`, which sets `prefs`
+  // back to DEFAULT_PREFS — an ungated effect saw that as a change and re-created
+  // this key microseconds after `clearLocalCache` removed it, so the wipe never
+  // stuck. `!!session` rather than the `signedIn` binding because that one is
+  // declared further down the component and this dependency array is evaluated
+  // during render.
   useEffect(() => {
+    if (!session) return;
     try {
-      localStorage.setItem('gym-theme-vars', JSON.stringify({
+      localStorage.setItem(THEME_VARS_KEY, JSON.stringify({
         light: resolveThemeVars(prefs.accent, prefs.base, prefs.semantics, 'light'),
         dark:  resolveThemeVars(prefs.accent, prefs.base, prefs.semantics, 'dark'),
       }));
     } catch { /* ignore */ }
-  }, [prefs.accent, prefs.base, prefs.semantics]);
+  }, [prefs.accent, prefs.base, prefs.semantics, !!session]);
 
   // Load from localStorage. Reads synchronously before the write-back effects
   // below fire on mount — don't reorder or early-return past this.
@@ -4670,6 +5074,89 @@ const GymTrackerApp = () => {
     // while the same user stays signed in.
     // `hydrateNonce` is the manual/automatic retry hook — see reHydrate.
   }, [session?.user?.id, hydrateNonce]);
+
+  // ── Consent: the gate flag, and the append-only evidence rows ────────────────
+  // Two jobs, one pass over the same metadata:
+  //
+  //  1. Decide whether the versions this user agreed to are still current. This is
+  //     what makes POLICY_VERSION/TERMS_VERSION mean something — until now they were
+  //     written at signup and never read, so bumping one changed nothing for anybody.
+  //
+  //  2. Mirror the metadata record into `public.consents` (migration 0004), which is
+  //     append-only, so the CONTROLLER can demonstrate consent under Art. 7(1). The
+  //     metadata copy is writable by the user it describes, which makes it a record
+  //     rather than evidence; it stays as the capture path because it exists before
+  //     any other row does and survives an abandoned onboarding.
+  //
+  // Feature-detected like the workout_id column: while migration 0004 is unapplied
+  // the select errors, and the app carries on with the metadata record alone rather
+  // than failing. Backfills on the first hydrate after the table appears, so accounts
+  // created before it are not left without evidence.
+  //
+  // Keyed on the user id AND the two version strings, never on the session object —
+  // supabase-js hands us a new session on every tab focus and token refresh, and the
+  // version strings are stable, so this does not re-run when the app comes forward.
+  const healthConsentVersion = session?.user?.user_metadata?.health_data_consent_version;
+  const acceptedTermsVersion = session?.user?.user_metadata?.terms_version;
+  useEffect(() => {
+    if (!session) { setNeedsReconsent(false); return; }
+    const meta = session.user.user_metadata ?? {};
+    setNeedsReconsent(needsReconsentFor(meta));
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.from('consents').select('kind, granted_at');
+        if (cancelled) return;
+        if (error) {
+          // Two very different situations, and they stopped being equally harmless the
+          // day 0004 went live. "Table absent" is the feature-detect case and is
+          // expected while the migration is unapplied; anything else now means RLS is
+          // misconfigured, the grant was revoked, or the network is persistently down —
+          // in which case the Art. 7(1) evidence quietly stops being written, and this
+          // is the only place that could ever say so. It used to `return` on both, with
+          // a comment claiming it logged. It didn't.
+          const missingTable = /relation .*consents.* does not exist|schema cache|PGRST205|42P01/i
+            .test(`${(error as any).code ?? ''} ${error.message ?? ''}`);
+          if (!missingTable) {
+            console.error('Consent evidence read failed', error);
+            reportError(error, { at: 'consentEvidence.read' });
+          }
+          return;
+        }
+        // Newest recorded grant per kind. Keying the comparison on the INSTANT rather
+        // than on kind:version means a genuine second consent event files a second row
+        // (the table is an audit trail, so the sequence is the point) while an
+        // unchanged one files nothing — and `>` rather than `!==` is what keeps that
+        // idempotent: if a timestamp ever round-tripped through Postgres in a form that
+        // didn't compare equal, an inequality test would append a duplicate row on
+        // every single mount, for ever, to a table with no DELETE policy.
+        const newestByKind = new Map<string, number>();
+        for (const r of (data ?? []) as any[]) {
+          const t = Date.parse(r.granted_at ?? '');
+          if (Number.isFinite(t) && t > (newestByKind.get(r.kind) ?? -Infinity)) newestByKind.set(r.kind, t);
+        }
+        const missing = consentRowsFor(session.user.id, meta)
+          .filter(r => Date.parse(r.granted_at) > (newestByKind.get(r.kind) ?? -Infinity));
+        if (!missing.length || cancelled) return;
+        const { error: insertError } = await supabase.from('consents').insert(missing);
+        if (insertError) {
+          console.error('Consent evidence write failed', insertError);
+          reportError(insertError, { at: 'consentEvidence' });
+        }
+      } catch (e) {
+        console.error('Consent evidence check failed', e);
+        reportError(e, { at: 'consentEvidence' });
+      }
+    })();
+    return () => { cancelled = true; };
+    // `hydrateNonce` for the same reason the hydrate effect takes it: keying on the user
+    // id removed the accidental retry that tab-focus re-runs used to provide, and this
+    // is the effect carrying the Art. 7(1) burden. Without it, a user whose first load
+    // of a session happens offline (or meets one transient 5xx) never files their
+    // evidence rows for the whole life of that tab. It costs one identifier and reuses
+    // the `online` listener and the banner's Retry that already exist.
+  }, [session?.user?.id, healthConsentVersion, acceptedTermsVersion, hydrateNonce]);
 
   // Persist the active session on every change so it survives a reload. Skips the
   // first run (mount) so the empty initial state can't clear a just-loaded session
@@ -5088,18 +5575,49 @@ const GymTrackerApp = () => {
   // that TERMS.md § 3.2 separately promises on request. It is a sibling key rather than
   // a change to the existing four, so `importData` — which reads only the keys it knows
   // and ignores the rest — still accepts a file written by this version.
-  const exportData = () => {
+  //
+  // It returns `string | null` like the destructive handlers, and for the same reason:
+  // this used to be `catch { /* ignore */ }`, so a failure (quota, a blocked download,
+  // a revoked object URL) produced no file, no error and no report — the user pressed
+  // the button that the privacy policy names as their access AND portability route and
+  // nothing at all happened. A rights mechanism that can fail silently is worse than
+  // one that is absent, because the absence is at least visible.
+  const exportData = (): string | null => {
     try {
+      // Refuse rather than hand over a copy that silently isn't one. If the server fetch
+      // failed, state holds whatever the local cache had — possibly nothing — and this
+      // file is what a user gets when they exercise Art. 15/20. In Settings an empty
+      // dashboard is at least a visible cue; on the re-consent gate, where Export is the
+      // ONLY affordance a refusing user has, there is no cue at all, and the JSON would
+      // announce itself as the full copy. An access response that is quietly partial is
+      // worse than a failed one, because nobody knows to ask again.
+      if (hydrateFailed) {
+        return "We couldn't reach the server, so this copy could be incomplete. Check your connection and try again rather than keeping a partial file.";
+      }
       const meta = session?.user?.user_metadata ?? {};
       const payload = {
         app: 'FitPulse', version: 1, exportedAt: new Date().toISOString(),
+        // What this file is, in the file itself — so a copy that outlives this
+        // conversation still tells its holder what it does and does not contain.
+        // Art. 15(1) wants the supplementary information (purposes, recipients,
+        // retention, rights, complaint route) alongside the copy of the data; that
+        // lives in the policy, and this points at it rather than duplicating a second
+        // version of it that could drift.
+        about: {
+          note: 'Your FitPulse data, exported for GDPR Art. 15 (access) and Art. 20 (portability).',
+          notIncluded: 'Infrastructure request logs (including IP addresses) are held by our providers, not by the app, and are not part of this file. Ask us and we will request them.',
+          privacyPolicy: PRIVACY_URL,
+          contact: PRIVACY_CONTACT,
+        },
         account: {
           email: session?.user?.email ?? null,
           createdAt: session?.user?.created_at ?? null,
+          lastSignInAt: session?.user?.last_sign_in_at ?? null,
           healthDataConsentAt: meta.health_data_consent_at ?? null,
           healthDataConsentVersion: meta.health_data_consent_version ?? null,
           termsAcceptedAt: meta.terms_accepted_at ?? null,
           termsVersion: meta.terms_version ?? null,
+          ageConfirmedAt: meta.age_confirmed_at ?? null,
         },
         workouts, bodyWeightLog, weeklyGoal, prefs,
       };
@@ -5112,7 +5630,12 @@ const GymTrackerApp = () => {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch { /* ignore */ }
+      return null;
+    } catch (e) {
+      console.error('Export failed', e);
+      reportError(e, { at: 'exportData' });
+      return 'Export failed. If your browser blocked the download, allow it for this site and try again.';
+    }
   };
 
   // Returns a promise so Settings can report success/failure to the user.
@@ -5333,6 +5856,54 @@ const GymTrackerApp = () => {
     return error ? authErrorText(error) : null;
   };
 
+  // Change the account's email address (GDPR Art. 16 — rectification). The provider
+  // sends a confirmation link to the old address AND the new one, and the change only
+  // commits when both are followed, so a typo cannot orphan the account. `onAuthStateChange`
+  // delivers the updated session when the confirmation lands.
+  //
+  // Re-authenticate first, exactly as deleteAccount does, and for the same reason: an
+  // email change is an account-takeover pivot. A session token alone lives in
+  // localStorage, so a borrowed unlocked device has it — and if the provider's "Secure
+  // email change" (confirm from BOTH addresses) is ever off, a single click moves the
+  // login to an attacker's inbox and a password reset completes the takeover. Proving
+  // knowledge of the current password closes that at the app layer even when the
+  // dashboard setting lags. signInWithPassword refreshes THIS session rather than opening
+  // a second one, so the updateUser below still runs as this user.
+  const changeEmail = async (currentPassword: string, email: string): Promise<string | null> => {
+    const addr = session?.user?.email;
+    if (!addr) return 'You need to be signed in to change your email.';
+    const { error: authErr } = await supabase.auth.signInWithPassword({ email: addr, password: currentPassword });
+    if (authErr) return authErrorText(authErr);
+
+    const { error } = await supabase.auth.updateUser({ email });
+    return error ? authErrorText(error) : null;
+  };
+
+  // Record acceptance of the versions currently in force, after a re-consent gate.
+  // Writes the same metadata keys signUp does, so one shape of record covers both the
+  // first acceptance and every later one; the consent-evidence effect then files the
+  // matching append-only rows. `age_confirmed_at` is deliberately NOT re-stamped —
+  // the user's age was confirmed once and does not change, and re-dating it would
+  // destroy the original confirmation this record exists to preserve.
+  const acceptCurrentPolicies = async (): Promise<string | null> => {
+    const now = new Date().toISOString();
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        health_data_consent_at: now,
+        health_data_consent_version: POLICY_VERSION,
+        terms_accepted_at: now,
+        terms_version: TERMS_VERSION,
+      },
+    });
+    if (error) {
+      console.error('Re-consent failed', error);
+      reportError(error, { at: 'acceptCurrentPolicies' });
+      return authErrorText(error);
+    }
+    setNeedsReconsent(false);
+    return null;
+  };
+
   // Permanently delete the signed-in user's account. The server-side
   // delete_account() RPC (see schema.sql) removes their auth.users row; the
   // cascade FKs wipe every workout/weigh-in/setting. Returns null on success or
@@ -5534,6 +6105,28 @@ const GymTrackerApp = () => {
   // the hydrate effect, so prefs are already loaded (units prefill). updatePrefs
   // persists via the existing localStorage + debounced Supabase write-backs.
   if (needsOnboarding)  return <OnboardingScreen initialPrefs={prefs} onDone={(patch: any) => { updatePrefs(patch); setNeedsOnboarding(false); }} />;
+  // The policies have moved on since this user agreed. Placed AFTER onboarding: a
+  // brand-new account was stamped with the current versions seconds ago, so it never
+  // reaches this gate, and a returning user meets one gate rather than two. It sits
+  // before the app because §12 promises acceptance *before* a material change takes
+  // effect — showing the dashboard first and asking afterwards would be exactly the
+  // "rely on continued use as consent" that the same sentence rules out.
+  // Only once the new versions are actually IN FORCE. Between a bump and its effective
+  // date the user keeps full access and sees the banner below instead — TERMS.md § 16.2
+  // promises 30 days' notice and § 16.3 promises the current version stays usable until
+  // then, and a gate that raised on deploy would break both.
+  if (needsReconsent && reconsentDue()) {
+    return (
+      <ReconsentScreen
+        onAccept={acceptCurrentPolicies}
+        onSignOut={signOut}
+        onExport={exportData}
+        // Withdrawing consent has to be reachable from the screen that asks for it —
+        // Settings is behind this gate, and signing out deletes nothing (Art. 7(3)).
+        onDeleteAccount={deleteAccount}
+      />
+    );
+  }
 
   // Any row saved on this device but not confirmed by the server (a failed write).
   // Drives the persistent banner below — it clears itself when a retry succeeds.
@@ -5579,6 +6172,25 @@ const GymTrackerApp = () => {
         {/* Knurling — the grip band on a bar. */}
         <div className="knurl h-[3px] opacity-70" aria-hidden="true" />
       </header>
+
+      {/* Policy change announced but not yet in force. This is the § 16.2 notice
+          surface in the app: the user keeps full access until POLICIES_EFFECTIVE_FROM,
+          and is told before then rather than meeting a gate with no warning. Once the
+          date passes, the ReconsentScreen gate replaces this. */}
+      {needsReconsent && !reconsentDue() && (
+        <div role="status" className="bg-accent/10 border-b border-accent/30">
+          <div className="max-w-3xl mx-auto px-4 py-2 flex items-center gap-2 text-accent">
+            <FileText size={15} className="flex-shrink-0" />
+            <span className="text-xs font-medium">
+              We've updated our{' '}
+              <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="underline">Terms</a>
+              {' '}and{' '}
+              <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="underline">Privacy Policy</a>.
+              They take effect on {new Date(POLICIES_EFFECTIVE_FROM).toLocaleDateString()} — nothing changes for you until then.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Persistent sync warning — shown whenever a write is saved on this device
           but hasn't reached the server. Clears itself once a retry succeeds. */}
@@ -5951,7 +6563,7 @@ const GymTrackerApp = () => {
           prefs={prefs} updatePrefs={updatePrefs} toggleHidden={toggleHidden}
           theme={theme} themeMode={mode} setThemeMode={setMode}
           onExport={exportData} onImport={importData} onClearData={clearAllData}
-          onSignOut={signOut} onChangePassword={changePassword} onDeleteAccount={deleteAccount} userEmail={session?.user?.email}
+          onSignOut={signOut} onChangePassword={changePassword} onChangeEmail={changeEmail} onDeleteAccount={deleteAccount} userEmail={session?.user?.email}
           consentAt={session?.user?.user_metadata?.health_data_consent_at}
           consentVersion={session?.user?.user_metadata?.health_data_consent_version}
           termsAt={session?.user?.user_metadata?.terms_accepted_at}
@@ -6023,7 +6635,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
 
   private recover = () => {
     try {
-      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, THEME_KEY, 'gym-theme-vars']
+      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, THEME_KEY, THEME_VARS_KEY]
         .forEach(k => localStorage.removeItem(k));
     } catch { /* ignore */ }
     window.location.reload();

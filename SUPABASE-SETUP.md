@@ -1,7 +1,9 @@
 # Supabase setup for password auth
 
 One-time dashboard setup so the login, signup, password-reset, and change-password
-flows work. Only **Step 1** is strictly required; Steps 2–3 are choices/polish.
+flows work. **Step 1** is required to make the email links work and **Step 4** is required
+before launch — the published privacy policy describes those settings as facts. Steps 2–3
+are choices/polish.
 
 Your project: **`dhxsamkaqszffajcwuzn`**
 Dashboard home: https://supabase.com/dashboard/project/dhxsamkaqszffajcwuzn
@@ -101,9 +103,43 @@ don't match.
 
 ---
 
-## Optional, not enabled
+## Step 4 — Password and email-change settings (REQUIRED before launch)
 
-Supabase's **leaked-password protection** (checks new passwords against known breaches) is
-currently **off** by your choice. If you ever want it: **Authentication → Sign In / Providers
-→ Passwords** and enable "leaked password protection". It's the only item Supabase's
-security advisor currently flags, and it's purely optional.
+**Why it is no longer optional:** `legal/PRIVACY.md` § 8 now tells users, in the published
+policy, that new passwords must be at least 10 characters and are checked against known
+breached-password lists, and § 9 tells them an email change is confirmed from both the old
+and the new address. Those are statements of fact about the running service. **Until these
+three settings are set, the published policy is inaccurate** — and under FTC Act § 5 and
+the equivalent EU rules an inaccurate privacy statement is itself the violation, in the one
+section a regulator reads first.
+
+The app enforces the length client-side (`MIN_PASSWORD = 10`), but the client is not the
+gate — a request straight to the API is. The server has to agree.
+
+### Where
+Dashboard → **Authentication** → **Sign In / Providers** → **Passwords**
+Direct link: https://supabase.com/dashboard/project/dhxsamkaqszffajcwuzn/auth/providers
+
+### What to do
+
+1. **Leaked password protection** — turn it **on**. It checks new passwords against
+   HaveIBeenPwned. Free, and the highest-value control available on this plan: multi-factor
+   authentication is a paid feature and is deliberately **not** claimed anywhere in the
+   published documents, so this is the control that carries § 8.
+2. **Minimum password length** — set to **10**, matching `MIN_PASSWORD` in
+   [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx). If you change one, change both.
+3. **Secure email change** — confirm it is **on** (Authentication → **Emails**). With it on,
+   an email change sends a confirmation link to the old **and** the new address and only
+   commits when both are followed. With it off, a single confirmation on the new address is
+   enough, which would make § 9's promise false and would let anyone with a borrowed
+   unlocked device move the account to their own inbox.
+
+Existing accounts with shorter passwords keep working — sign-in is deliberately not
+length-checked, so raising the minimum cannot lock anyone out of their own account. The new
+floor applies to sign-ups, password changes and resets.
+
+### Verify
+
+Re-run the security advisor after saving; `auth_leaked_password_protection` should no
+longer appear. Then record the date in `compliance/DECISIONS-AND-ASSESSMENTS.md` § 5, which
+tracks the other pre-launch facts that the published documents depend on.

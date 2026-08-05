@@ -1,0 +1,89 @@
+{
+  "_readme": [
+    "Open questions that must have an ANSWER before launch, but whose answer is not a",
+    "fact about this repository and cannot be checked by reading it. They are not",
+    "published claims — compliance/verified.json holds those — they are decisions the",
+    "controller has to take, where every available option is legitimate and only",
+    "*leaving it undecided* is not.",
+    "",
+    "`npm run check:decisions` fails while any entry is still `open`. Resolve one by",
+    "setting `decided` to the ISO date, `outcome` to what was actually chosen, and",
+    "`evidence` to where the reasoning is written down — normally a section of",
+    "DECISIONS-AND-ASSESSMENTS.md.",
+    "",
+    "An entry may legitimately be resolved as 'accept the risk'. That is a decision and",
+    "it closes the gate. What this file exists to prevent is launching having never",
+    "asked the question."
+  ],
+  "decisions": {
+    "trademark_clearance": {
+      "decided": null,
+      "outcome": null,
+      "evidence": null,
+      "question": "Is the name FitPulse available to use, and are we prepared to defend it?",
+      "why": [
+        "The name is already in live use by several fitness apps in the identical trademark",
+        "class — an App Store 'FitPulse Smart Workout Planner', a Google Play 'FitPulse: Gym",
+        "Fitness Planner', fitpulse.ai, and others. Prior use in the same field supports a",
+        "passing-off claim in the UK/EU and a Lanham Act s.43(a) claim in the US without",
+        "anyone holding a registration; a registration makes it straightforward.",
+        "The realistic loss is not damages — it is the store listing or the domain, removed",
+        "on a complaint at whatever moment the app finally has users. Renaming before launch",
+        "costs a day. Renaming after costs the brand, the domain and every link to it."
+      ],
+      "howToResolve": [
+        "Search EUIPO (euipo.europa.eu), UKIPO and USPTO TESS for 'FitPulse' and near marks",
+        "in Nice classes 9, 41 and 42. Then choose: proceed, rename, or proceed knowingly.",
+        "If the answer is 'proceed', re-read TERMS.md s.6.2 — it must not claim ownership of",
+        "branding we do not own."
+      ]
+    },
+    "uk_gdpr_representative": {
+      "decided": null,
+      "outcome": null,
+      "evidence": "compliance/DECISIONS-AND-ASSESSMENTS.md section 3 records the current position",
+      "question": "Do we appoint a UK GDPR Art. 27 representative, or stop serving UK users?",
+      "why": [
+        "Establishment in Latvia settles Art. 27 for the EEA and does nothing for the UK.",
+        "The Art. 27(2) occasional-processing exemption is unavailable because this is health",
+        "data. So serving UK users without a representative is a UK GDPR infringement in its",
+        "own right, enforceable by the ICO.",
+        "What makes it sharper than incidental reach: TERMS.md Schedule B.2 actively holds the",
+        "service out to UK consumers, with a Consumer Rights Act section, UK courts and a UK",
+        "complaints route. We are not accidentally reachable from the UK; the documents target",
+        "it.",
+        "DECISIONS-AND-ASSESSMENTS.md section 3 already records a decision to accept this. That",
+        "entry is a good record and it does not close this gate on its own, because it was",
+        "taken before Schedule B.2 was weighed and because Art. 83(2)(b) treats an intentional",
+        "infringement as an aggravating factor — the record proves the breach was knowing."
+      ],
+      "howToResolve": [
+        "Either appoint a UK representative (roughly EUR 100-500/yr) and name them in",
+        "PRIVACY.md s.1 alongside the controller, or geo-block UK signup AND delete Schedule",
+        "B.2 from TERMS.md. Holding the service out to a market you have decided not to serve",
+        "lawfully is the worst of the three options."
+      ]
+    },
+    "image_rights": {
+      "decided": null,
+      "outcome": null,
+      "evidence": "Assets/CREDITS.md",
+      "question": "Do we keep stock photographs of identifiable people in a health product?",
+      "why": [
+        "The four day-tile images are Pexels photographs of identifiable people, used to",
+        "illustrate a health and fitness product. Pexels does not obtain or supply model",
+        "releases, and health/fitness use is the standard carve-out in stock licences because",
+        "it implies endorsement. That engages personality rights in the EU and right of",
+        "publicity / false endorsement in the US.",
+        "Assets/CREDITS.md records what is used and the checklist to work through. The photo",
+        "IDs there are reconstructed from filenames and have not been re-opened and confirmed."
+      ],
+      "howToResolve": [
+        "Verify each photo ID still resolves under the Pexels licence and fill in the",
+        "'checked' column in Assets/CREDITS.md. Then decide deliberately whether to keep",
+        "identifiable faces or swap to images where no one is recognisable — for tiles showing",
+        "equipment and movement that costs nothing visually and removes the category."
+      ]
+    }
+  }
+}

@@ -3,7 +3,7 @@
 
 **For residents of Washington State (and, where noted, Nevada)**
 
-**Version 1.0 · Effective 1 August 2026 · Last reviewed 1 August 2026**
+**Version 1.1 · Effective 1 August 2026 · Last reviewed 5 August 2026**
 
 <!-- internal:start -->
 > **DRAFT — publishing requirements you cannot satisfy by pasting this file alone:**
@@ -74,6 +74,14 @@ using it for their own purposes, and may not further disclose it:
 | **Supabase, Inc.** | Database, authentication and API hosting | All of it, as the storage layer. Region: **Ireland** (`eu-west-1`) |
 | **{{FILL: static host — not yet chosen; the app is not deployed}}** | Serves the app's files | None. It sees request logs and IP addresses, not your rows |
 | **Supabase, Inc.** (built-in email service) | Password-reset and confirmation email | None |
+| **Google LLC** (Gmail) | Hosts the mailbox behind our contact address | None from the app. Only what you choose to write to us — which, if you exercise a right under §7 by email, may include consumer health data you put in the message |
+
+The email row deserves a plain word rather than a footnote. The app never sends consumer
+health data to our mailbox — but every route in §7 for exercising a right by email ends at
+a Gmail address, so a message you write us can carry health data through Google. That is
+why Google is named here rather than treated as a detail about correspondence. If you
+would rather not route a request through Google, send a first message with no details in
+it and we will arrange another way.
 
 **Specific affiliates with whom we share consumer health data:** none. We have no
 affiliates.
@@ -159,7 +167,7 @@ Under RCW 19.373.040 you have the right to:
 
    The honest corollary, stated here rather than buried in the Terms: because no backup
    exists, a deletion cannot be reversed by us, and data lost through a provider failure
-   cannot be recovered either. Settings → **Export backup** exists so that the copy you
+   cannot be recovered either. Settings → Data → **Export backup** exists so that the copy you
    control is the one that survives.
 
 **How to exercise them:**
@@ -188,9 +196,14 @@ General** at https://www.atg.wa.gov/file-complaint.
 - All transmission is over **HTTPS/TLS**; data is **encrypted at rest** by our database
   provider.
 - Access to production data is restricted to **one person — the sole operator of the
-  service** — through the database provider's administrative console. No employees,
-  contractors or other persons have access, because there are none. One person is the
-  minimum necessary to operate the service, which is the standard RCW 19.373.060 sets.
+  service** — through the database provider's administrative console. We have no
+  employees or contractors, so no one else on our side has access. Our database
+  provider's own personnel can technically access the infrastructure your data sits on;
+  that access is governed by their security programme and by the data processing
+  agreement described in section 3, which bars them from using your data for their own
+  purposes. We say so because no hosted service can honestly claim otherwise, and a
+  policy that implied it would be false. One person is the minimum necessary to operate
+  the service, which is the standard RCW 19.373.060 sets.
 - **The app itself holds no credential that could reach anyone else's rows.** The key
   shipped in the browser is the provider's public key, and every read and write made with
   it is constrained by the row-level security above. The one key that can bypass those
@@ -202,9 +215,10 @@ General** at https://www.atg.wa.gov/file-complaint.
 
 ## 9. Changes to this policy
 
-Material changes are announced in advance by in-app notice and by email, and any change
-that adds a category of consumer health data, a new purpose, or a new recipient requires
-your affirmative consent before it takes effect. Every previous version of this notice is
+Material changes are announced in advance — in the app, which is the route we can always
+perform, and by email where we are able to send one — and any change that adds a category of
+consumer health data, a new purpose, or a new recipient requires your affirmative consent
+before it takes effect, which we ask for in the app. Every previous version of this notice is
 kept in the project's Git history; email us and we will send you any earlier version.
 
 ## 10. Contact

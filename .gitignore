@@ -10,3 +10,9 @@ dist/
 backups/
 test-results/
 playwright-report/
+
+# Generated notices — dormancy warnings and the § 16.2 policy-change mail. Each one
+# contains real user email addresses (the policy-change file is a BCC list of every
+# account that hasn't re-accepted). Committing one would publish personal data to the
+# repository, which is a breach in its own right, not just untidy.
+notices/

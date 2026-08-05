@@ -27,6 +27,9 @@ const {
   pick, bareMap,
   LB_PER_KG, KG_PER_LB, MAX_WEIGHT_KG, MAX_REPS,
   GOAL_MIN, GOAL_MAX, GOAL_DEFAULT,
+  ACCENTS, FALLBACK_HEX,
+  consentRowsFor, needsReconsentFor, reconsentDue,
+  POLICY_VERSION, TERMS_VERSION, POLICIES_EFFECTIVE_FROM, PRIVACY_URL, TERMS_URL,
 } = A;
 
 let pass = 0, fail = 0;
@@ -167,6 +170,110 @@ eq('pick refuses toString', pick({ push: 1 }, 'toString'), undefined);
   m['__proto__'] = 'v';                     // on a null-proto map this is a plain own key
   eq('bareMap has no prototype', Object.getPrototypeOf(m), null);
   eq('bareMap stores a __proto__ key as data', m['__proto__'], 'v');
+}
+
+// ── The palette's hand-kept mirrors ───────────────────────────────────────────
+// Each ACCENTS tone writes one colour TWICE per theme: an `accent` rgb triple that
+// becomes the CSS token, and a `hex` of the same colour for the chart layer, which
+// takes colour strings and not classes. Nothing in the type system or the bundler
+// compares the two — they agree only because whoever added the tone typed it right
+// both times, and a drift shows up as charts that are subtly the wrong colour while
+// the UI is correct. That is the failure this block exists to catch.
+{
+  const rgbToHex = (triple) => {
+    const parts = String(triple).trim().split(/\s+/).map(Number);
+    if (parts.length !== 3 || parts.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    return '#' + parts.map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+  };
+  for (const [id, tone] of Object.entries(ACCENTS)) {
+    for (const theme of ['light', 'dark']) {
+      const t = tone[theme];
+      eq(`ACCENTS.${id}.${theme}: hex mirrors the rgb triple`,
+        String(t.hex).toUpperCase(), rgbToHex(t.accent));
+    }
+  }
+  // FALLBACK_HEX is DERIVED, not typed out — this asserts the derivation still points
+  // at the colour an unresolved accent pref is supposed to land on. Written as a
+  // literal it was a third copy of blue's dark hex, invisible to every other check.
+  eq('FALLBACK_HEX is blue-dark, derived from the table', FALLBACK_HEX, ACCENTS.blue.dark.hex);
+}
+
+// ── consent: what the record contains, and when we ask again ─────────────────
+// These three decide whether a user is asked to re-consent and what evidence the
+// controller can produce under GDPR Art. 7(1). Both failure directions are real: too
+// eager and every user meets a gate they shouldn't; too lax and a material change
+// takes effect without the affirmative acceptance PRIVACY.md § 12 promises.
+{
+  const full = {
+    health_data_consent_at: '2026-08-01T10:00:00.000Z',
+    health_data_consent_version: POLICY_VERSION,
+    terms_accepted_at: '2026-08-01T10:00:00.000Z',
+    terms_version: TERMS_VERSION,
+    age_confirmed_at: '2026-08-01T10:00:00.000Z',
+  };
+
+  eq('consentRowsFor: a complete record yields one row per kind', consentRowsFor('u1', full).length, 3);
+  eq('consentRowsFor: kinds are the three the CHECK constraint allows',
+    consentRowsFor('u1', full).map(r => r.kind).sort().join(','), 'age,health_data,terms');
+  eq('consentRowsFor: the health-data row points at the policy actually shown',
+    consentRowsFor('u1', full).find(r => r.kind === 'health_data').document, PRIVACY_URL);
+  eq('consentRowsFor: the terms row points at the Terms',
+    consentRowsFor('u1', full).find(r => r.kind === 'terms').document, TERMS_URL);
+  eq('consentRowsFor: the row is filed against the calling user',
+    consentRowsFor('u1', full)[0].user_id, 'u1');
+  // A missing timestamp must yield NO row rather than a row with an invented date —
+  // evidence of consent that nobody gave is worse than no evidence.
+  eq('consentRowsFor: a missing timestamp records nothing',
+    consentRowsFor('u1', { ...full, age_confirmed_at: undefined }).length, 2);
+  eq('consentRowsFor: a blank timestamp records nothing',
+    consentRowsFor('u1', { ...full, terms_accepted_at: '   ' }).length, 2);
+  eq('consentRowsFor: garbage metadata yields no rows, not a throw', consentRowsFor('u1', null).length, 0);
+  eq('consentRowsFor: a non-string version degrades to empty, not to "undefined"',
+    consentRowsFor('u1', { ...full, terms_version: 7 }).find(r => r.kind === 'terms').version, '');
+
+  // A timestamp that is a string but not a DATE is the dangerous one, and it is reachable:
+  // this metadata is writable by the user it describes — which is the entire reason the
+  // evidence table exists — and the three rows go in as ONE insert. Postgres rejects the
+  // whole statement if any value is not a timestamp, so `age_confirmed_at: 'lol'` used to
+  // stop the health-data and terms rows being filed as well, letting a user unilaterally
+  // suppress the controller's own Art. 7(1) evidence. The bad row must drop out and the
+  // other two must survive.
+  eq('consentRowsFor: an unparseable timestamp drops only its own row',
+    consentRowsFor('u1', { ...full, age_confirmed_at: 'lol' }).length, 2);
+  eq('consentRowsFor: …and the surviving rows are the other two kinds',
+    consentRowsFor('u1', { ...full, age_confirmed_at: 'lol' }).map(r => r.kind).sort().join(','),
+    'health_data,terms');
+  eq('consentRowsFor: a hostile timestamp cannot take the health-data row down with it',
+    consentRowsFor('u1', { ...full, terms_accepted_at: "2026-01-01'); drop table consents;--" })
+      .map(r => r.kind).sort().join(','), 'age,health_data');
+  // Stored normalised, not as typed. Date.parse accepts forms Postgres does not, so the
+  // insert must carry a value Postgres is guaranteed to take — and normalising also means
+  // the client-side dedupe compares like with like against what comes back out.
+  eq('consentRowsFor: a non-ISO but parseable date is stored normalised',
+    consentRowsFor('u1', { ...full, age_confirmed_at: 'August 1, 2026 10:00:00 UTC' })
+      .find(r => r.kind === 'age').granted_at, '2026-08-01T10:00:00.000Z');
+  eq('consentRowsFor: an already-ISO date round-trips unchanged',
+    consentRowsFor('u1', full).find(r => r.kind === 'terms').granted_at, '2026-08-01T10:00:00.000Z');
+
+  eq('needsReconsentFor: current versions need nothing', needsReconsentFor(full), false);
+  eq('needsReconsentFor: an old policy version asks again',
+    needsReconsentFor({ ...full, health_data_consent_version: '0.9' }), true);
+  eq('needsReconsentFor: an old terms version asks again',
+    needsReconsentFor({ ...full, terms_version: '1.0' }), true);
+  // No record at all is the case that matters most: an account with no evidence of
+  // consent must be asked, not quietly assumed to have agreed.
+  eq('needsReconsentFor: no record at all asks again', needsReconsentFor({}), true);
+  eq('needsReconsentFor: null metadata asks again', needsReconsentFor(null), true);
+
+  const day = 24 * 60 * 60 * 1000;
+  const eff = Date.parse(POLICIES_EFFECTIVE_FROM);
+  eq('reconsentDue: not due the day before the effective date', reconsentDue(eff - day), false);
+  eq('reconsentDue: due exactly on the effective date', reconsentDue(eff), true);
+  eq('reconsentDue: due after the effective date', reconsentDue(eff + day), true);
+  // A typo in POLICIES_EFFECTIVE_FROM must not gate the entire user base out of the
+  // app. Asking late is a smaller failure than asking at the wrong moment.
+  eq('reconsentDue: an unparseable effective date is never due', reconsentDue(Date.now(), 'not-a-date'), false);
+  eq('reconsentDue: a missing effective date is never due', reconsentDue(Date.now(), ''), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

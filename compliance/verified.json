@@ -1,0 +1,91 @@
+{
+  "_readme": [
+    "Facts the PUBLISHED policies assert that live outside this repository — in the",
+    "Supabase dashboard, in the production database, or with a provider. Nothing in the",
+    "build or the type system can see any of them, so an inaccurate statement here is",
+    "invisible until a regulator reads the page. `npm run check:claims` fails while a",
+    "published page makes one of these claims and the matching entry is unverified.",
+    "",
+    "Set `verified` to the ISO date you CHECKED it, not the date you intended to. That",
+    "date is the evidence; a tick with no date is a guess. Re-verify anything that could",
+    "have drifted (a plan change, a provider migration, someone toggling a setting).",
+    "",
+    "`expires` (optional) is for a claim that is true today but stops being true on a",
+    "knowable date unless someone acts, or that could silently drift and should be",
+    "re-checked on a cadence. check:claims FAILS once the date passes while the claim is",
+    "still published — so a deadline lives in the gate rather than in a prose note beside",
+    "a green tick, which is the same silent failure this file exists to prevent."
+  ],
+  "claims": {
+    "db_region_ireland": {
+      "verified": "2026-08-05",
+      "expires": "2027-02-05",
+      "expiresWhy": "Six-monthly re-check. A project migration or a provider region change would not announce itself, and the whole Art. 44-49 position rests on this one fact.",
+      "claim": "Account and app data is stored in Ireland (eu-west-1).",
+      "published": ["privacy.html", "consumer-health-data-privacy.html"],
+      "phrase": "eu-west-1",
+      "why": "The whole Art. 44-49 position rests on it. If the region is not in the EEA, every transfer statement in both documents is wrong and an Art. 46 safeguard is required that is not in place.",
+      "howToVerify": "Supabase dashboard -> Project Settings -> General -> Region."
+    },
+    "leaked_password_protection": {
+      "verified": null,
+      "note": "2026-08-05: HaveIBeenPwned leaked-password protection is a Supabase Pro-plan feature; the project is on the free plan (Management API PATCH returns HTTP 402). The claim was therefore REMOVED from legal/PRIVACY.md § 8 rather than left unbacked — check:claims no longer requires it. To restore the claim, upgrade to Pro, enable Auth -> Passwords -> leaked password protection, re-add the sentence, and set verified here.",
+      "claim": "New passwords are checked against known breached-password lists.",
+      "published": [],
+      "phrase": "breached-password",
+      "why": "PRIVACY.md § 8 states it as a fact about the running service, in the section a regulator reads first. It is a dashboard toggle: the app cannot enforce or detect it.",
+      "howToVerify": "Auth -> Sign In / Providers -> Passwords -> leaked password protection ON. Then re-run the Supabase security advisor: `auth_leaked_password_protection` must no longer appear."
+    },
+    "min_password_length_server": {
+      "verified": "2026-08-05",
+      "claim": "New passwords must be at least 10 characters.",
+      "published": ["privacy.html"],
+      "phrase": "at least 10 characters",
+      "why": "MIN_PASSWORD enforces this in the client only. A request straight to the auth API bypasses the client, so the server minimum is the real gate and the one the sentence describes.",
+      "howToVerify": "Auth -> Sign In / Providers -> Passwords -> minimum length = 10 (must match MIN_PASSWORD in src/gym-tracker-app.tsx)."
+    },
+    "secure_email_change": {
+      "verified": "2026-08-05",
+      "claim": "An email change is confirmed from both the old and the new address.",
+      "published": ["privacy.html"],
+      "phrase": "old and the new address",
+      "why": "With 'Secure email change' off, one confirmation on the NEW address is enough — so anyone with a borrowed unlocked device could move the account to their own inbox, and § 9's promise would be false. Note the claim is made in TWO places: PRIVACY.md § 9 (which check:claims scans, via the built page) and the in-app success message in SettingsScreen ('we sent a confirmation link to your old and new address'), which no gate can see because check:claims reads public/*.html only. If this setting is ever turned off, both have to change.",
+      "howToVerify": "Auth -> Emails -> Secure email change ON. Then check the in-app copy in src/gym-tracker-app.tsx still matches."
+    },
+    "consents_table_live": {
+      "verified": "2026-08-05",
+      "claim": "The consent record is stored in a table the user cannot alter or delete from.",
+      "published": ["privacy.html"],
+      "phrase": "a table you cannot alter or delete from",
+      "why": "Until migration 0004 is applied the only consent record is the user-writable auth metadata copy — which is exactly the Art. 7(1) gap the table closes. The app feature-detects the table and stays silent while it is absent, so nothing fails; the claim just is not true. The wording is deliberately narrowed to what 0004 delivers against the threat it was built for (a user rewriting their own consent timestamp): the service_role key bypasses RLS entirely, and § 8 already tells the reader the operator reaches the database through the admin console, so an unqualified 'cannot be altered by anyone' would have been overstated. See consents_immutable_trigger for the insert side.",
+      "howToVerify": "Run supabase/migrations/0004_add_consents_table.sql, then confirm `update public.consents set granted_at = now();` ERRORS (no UPDATE policy)."
+    },
+    "auth_log_purge_available": {
+      "verified": "2026-08-05",
+      "claim": "The mechanism that enforces the 90-day sign-in-log retention exists in production.",
+      "published": [],
+      "phrase": "90 days",
+      "why": "Half of the § 7 claim, split out from auth_log_purge_scheduled so the half that IS done is not carrying the half that is not. Not published on its own — the published sentence needs both halves.",
+      "howToVerify": "Migration 0005 applied to prod 2026-08-05: public.purge_auth_audit_log() present, SECURITY DEFINER, EXECUTE granted to service_role only (not authenticated/anon)."
+    },
+    "auth_log_purge_scheduled": {
+      "verified": null,
+      "expires": "2026-10-01",
+      "expiresWhy": "The date the first entries reach 90 days. Until the job recurs, the published sentence describes a practice that is not happening.",
+      "note": "2026-08-05: the mechanism exists (see auth_log_purge_available) but is NOT recurring. Applying the migration is not the claim; running it on a schedule is. This entry is deliberately unverified rather than ticked-with-a-caveat: it was previously marked verified with a note conceding the practice had not started, which is exactly the shape of failure check:claims exists to catch — a green gate satisfied by a date its own adjacent prose contradicted. It is not yet FALSE (the project is ~3 weeks old and nothing is 90 days stale), which is why it is tracked here with a deadline rather than treated as a live inaccuracy.",
+      "claim": "The provider's sign-in security log is kept for 90 days — i.e. we purge it on that schedule.",
+      "published": ["privacy.html"],
+      "phrase": "90 days",
+      "why": "auth.audit_log_entries has no FK to auth.users and survives account deletion. The retention only exists if migration 0005 is applied AND `npm run purge:auth-log -- --purge` is actually run on a schedule — the failure mode is silence.",
+      "howToVerify": "Put `npm run purge:auth-log -- --purge` on the same cadence as `npm run dormant`, run it once, and record the date here. Also confirm the function's owner holds DELETE on auth.audit_log_entries (see supabase/migrations/README.md § To apply 0005) — only the counting path has ever run."
+    },
+    "consents_immutable_trigger": {
+      "verified": null,
+      "claim": "The consent record's server-side timestamps cannot be set by the client.",
+      "published": [],
+      "phrase": "cannot be rewritten after the fact",
+      "why": "Migration 0004's append-only RLS stops a row being UPDATEd; it does not stop a backdated row being INSERTed, because a column DEFAULT applies only when the client omits the column. 0007 adds the BEFORE INSERT trigger that makes recorded_at genuinely the server's. Not published on its own — PRIVACY.md § 3 was narrowed to what 0004 alone actually delivers, so this entry has nothing riding on it until the wording is strengthened again.",
+      "howToVerify": "Apply supabase/migrations/0007_server_stamp_consents.sql, then confirm an insert carrying recorded_at = '2000-01-01' still stores now(), and that granted_at two days in the future is refused."
+    }
+  }
+}

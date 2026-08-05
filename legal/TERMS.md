@@ -1,6 +1,6 @@
 # FitPulse — Terms of Service
 
-**Version 1.1 · Effective 2 August 2026 · Last updated 2 August 2026**
+**Version 1.2 · Effective 4 September 2026 · Last updated 5 August 2026**
 
 <!-- internal:start -->
 > **NOT LEGAL ADVICE — no placeholders remain, but this has not been reviewed by a lawyer.**
@@ -10,6 +10,52 @@
 > restore the `legal:draft` HTML-comment marker on this line. (Write it as a real comment;
 > it is deliberately not spelled out here, because the build script scans this file for that
 > exact string before it strips internal notes, so even a mention inside this box counts.)
+>
+> **Version 1.2 (5 August 2026, effective 4 September 2026)** answers the v4 liability audit
+> in [LEGAL-LIABILITY-AUDIT.md](../LEGAL-LIABILITY-AUDIT.md) Part D. Six changes, none of
+> which imposes an obligation on the user or removes a right:
+> **§ 2.2(a)** is made expressly subject to § 8.5 — the two clauses contradicted each other on
+> whether these Terms or the Privacy Policy win on a data protection point, and D3/D4 are
+> exactly such points (audit D6(d));
+> **§ 12.7** grows from three limbs to five: support correspondence and the authentication
+> provider's security log both survive a deletion, and the old list closed with "and nothing
+> else", which was therefore false the moment anyone emailed us or signed in (audit D3, D4);
+> **§ 13.1(a)** no longer warrants fitness against an App Store listing that does not exist
+> for a web app (audit D6(c));
+> **§ 17.3** is narrowed to business users and a new **§ 17.4** says plainly that a consumer
+> outside the EEA/UK keeps their local rights — the old wording put exclusive Latvian
+> jurisdiction on, say, a US consumer, which is a standard unconscionability hook and can
+> taint the whole document. Old 17.4 becomes **17.5**; Schedule B.3.2 is rewritten to match
+> (audit D6(b));
+> **§ 19.8** adds 2.2, 8.5 and 11.2 to the survival list, so the clauses that decide a
+> post-deletion retention dispute outlive the agreement that dispute is about (audit D6(e)).
+>
+> A second batch landed in the same unreleased v1.2, from the **v5** pass (Part E of the
+> audit): **§ 12.9** now makes the dormancy warning a *condition* of the deletion rather
+> than a courtesy — `scripts/dormant.mjs` refuses to delete an account with no recorded
+> notice, and migration `0006` is the evidence table, so the rule is inert until a warning
+> genuinely goes out; **§ 16.2** (and § 10.3, § 12.5(a), which now point at it) describe
+> notice as in-app **and** by email where we can send one, because there is no outbound mail
+> channel in the project and a clause promising one was unperformable; **§ 6.2** stops
+> claiming ownership of individual exercise names and of third-party images and fonts; and
+> **§ 8.9** stops purporting to take feedback "without attribution", which is a moral right
+> that cannot be waived by contract in much of Europe.
+>
+> Sections 12, 13, 17 and 19 changed, and § 16.3 makes changes to 12, 13 and 17 material —
+> so this needs affirmative acceptance, not just notice. `TERMS_VERSION` is bumped to 1.2 and
+> `POLICIES_EFFECTIVE_FROM` is set to the effective date above in the same commit, which is
+> what gives the § 16.2 thirty days and the in-app notice banner their meaning. The Service
+> still has no users, so no notice was actually sent.
+>
+> **Still open and NOT fixed here — audit D6(a), and it wants a lawyer.** § 19.9 provides
+> these Terms in English only, while § 17.1 chooses Latvian law and § 18.2 names PTAC as our
+> supervisor. Latvia's Official Language Law requires consumer-facing information about a
+> service to be given in the state language, and Directive 93/13 Art. 5 requires plain,
+> intelligible language. English-only terms from a Latvian-established trader are therefore
+> arguable both ways. Do not resolve this by machine-translating the document — a bad
+> translation of a contract is worse than none, and § 19.9 would then have to say which
+> language governs. Get advice, then either commission a Latvian version or accept the
+> exposure knowingly and write the decision here.
 >
 > **Version 1.1 (2 August 2026)** answers an external review of v1.0. It imposes no new
 > obligation on the user and removes no right: every change either defines a term v1.0 left
@@ -89,11 +135,18 @@ govern your access to and use of FitPulse.
 
 2.2 Our agreement with you consists of, in this order of precedence where they conflict:
 
-&nbsp;&nbsp;(a) these Terms;
+&nbsp;&nbsp;(a) these Terms, **except** that on any data protection matter clause 8.5
+applies and the Privacy Policy governs;
 &nbsp;&nbsp;(b) our [**Privacy Policy**](/privacy.html), which explains how we handle your
 personal data and is incorporated into these Terms by reference;
 &nbsp;&nbsp;(c) any additional terms we present to you and you accept for a specific
 feature, which apply only to that feature.
+
+The exception in (a) matters because the two documents describe overlapping ground: what we
+hold, how long we hold it, and what survives a deletion are all set out in both. Where they
+differ on such a point, the Privacy Policy is the one to rely on — it is the document written
+to the standard the data protection law requires, and reading it as subordinate would let a
+summary in these Terms narrow a disclosure the law obliges us to make in full.
 
 2.3 If you obtained FitPulse through the Apple App Store or Google Play, the additional
 terms in **Schedule A** also apply, and the store's own terms apply between you and the
@@ -195,9 +248,17 @@ about names and content before it shipped.
 licence** to install and use FitPulse on devices you own or control, for your own personal,
 non-commercial fitness tracking, for as long as these Terms are in force.
 
-6.2 FitPulse is **licensed, not sold**. We and our licensors keep all intellectual property
-rights in the Service, including its software, design, exercise catalogue, text and
-branding. You get no rights other than those expressly granted in clause 6.1.
+6.2 FitPulse is **licensed, not sold**. We and our licensors keep whatever intellectual
+property rights exist in the Service — its software, its design, the selection and
+arrangement of its exercise catalogue, and its text. You get no rights other than those
+expressly granted in clause 6.1.
+
+Two honest limits on that sentence, because a licence clause that claims more than it has is
+worth less, not more. **Individual exercise names are not ours** — "Bench Press" is a fact
+about the world, and nothing in this clause stops you using, writing down or publishing the
+name of any exercise; what we claim is the particular selection, grouping and ordering we
+assembled, and the text we wrote around it. And where an image, font or library in the
+Service belongs to somebody else, it is theirs on their own licence terms, not ours.
 
 6.3 You may not, and may not permit anyone else to:
 
@@ -344,8 +405,11 @@ today.
 
 8.9 **Feedback.** You never have to send us feedback. If you choose to — a bug report, a
 suggestion, a review, a feature request — you allow us to use it to improve FitPulse, free of
-charge, without attribution and without any obligation to you, including where the same idea
-reaches us from someone else. Feedback is not confidential unless we agree otherwise in
+charge, without any obligation to you, and including where the same idea reaches us from
+someone else. We do not normally credit feedback and are not obliged to, though any moral
+right of attribution you have under the law of your country is unaffected — those rights
+cannot be given away by a clause like this one in much of Europe, and we would rather say so
+than write something unenforceable. Feedback is not confidential unless we agree otherwise in
 writing beforehand, so please do not send us anything you need kept secret. If you send a
 screenshot, an export file or a copy of your data so we can reproduce a problem, that is Your
 Data and not feedback: we use it only to investigate the problem, section 8 governs it, and
@@ -422,9 +486,10 @@ platform or provider we depend on;
 service we rely on changes or ceases.
 
 10.3 **If a change would materially reduce a feature you use**, we will give you at least
-**30 days' notice** by email before it takes effect, explain what is changing, and you may
-close your account and export Your Data before the change applies. We will not make a
-material reduction retroactively.
+**30 days' notice** before it takes effect — in the app, and by email where we are able to
+send one, as clause 16.2 describes — explain what is changing, and you may close your account
+and export Your Data before the change applies. We will not make a material reduction
+retroactively.
 
 10.4 We may suspend the Service temporarily for maintenance, repairs, or to address a
 security issue. Where the suspension is planned we will give reasonable advance notice.
@@ -587,7 +652,8 @@ unaffected.
 
 12.5 **We may terminate your account and this agreement** only:
 
-&nbsp;&nbsp;(a) on **30 days' written notice**, if we discontinue the Service;
+&nbsp;&nbsp;(a) on **30 days' written notice** given the way clause 16.2 describes, if we
+discontinue the Service;
 &nbsp;&nbsp;(b) where you do not accept a material change to these Terms under clause 16.3,
 with effect no earlier than the effective date of that change and on the notice already
 required by clause 16.2; or
@@ -614,7 +680,7 @@ used. See our [account deletion page](/delete-account.html) for the full detail.
 12.7 **What "immediately" means, and what is left afterwards.** Deleting in the app is a
 single database operation, not a queued job: your login, your workouts, your weigh-ins and
 your settings are removed when you confirm, and we hold no backup of the database for them to
-survive in. Three things sit outside that sentence, and we would rather name them than let
+survive in. Five things sit outside that sentence, and we would rather name them than let
 you assume otherwise:
 
 &nbsp;&nbsp;(a) **infrastructure logs.** Our providers keep short-lived technical logs of
@@ -625,11 +691,24 @@ are not your training data, they are deleted automatically on the schedule set o
 delete from. We cannot reach the others, and we will not pretend to: clear the site's data in
 that browser, or sign out there. The [account deletion page](/delete-account.html) explains
 this in full;
-&nbsp;&nbsp;(c) **anything the law requires us to keep**, under clause 12.6(c), and nothing
+&nbsp;&nbsp;(c) **email between us — what you have sent, our replies, and any notice we
+have sent you.** If you have written to the address in section 1, that correspondence sits in
+our mailbox and is not deleted by deleting your account. The same is true of a notice we sent
+you: a warning under clause 12.9, or a change notice under clause 16.2, is a message
+addressed to you and a record that we gave the notice those clauses require. We keep both for
+the period set out in section 7 of the [Privacy Policy](/privacy.html) and use them only to
+handle your request, to send the notice, and to show that we did. If you would rather it went
+at the same time as your account, say so and we will delete the thread;
+&nbsp;&nbsp;(d) **our authentication provider's security log.** Signing in, signing up and
+resetting a password are recorded by the provider that performs them, with the time, the
+network address and the email address used. It is a security record, not your training data,
+it is never used to reconstruct a deleted account, and section 7 of the
+[Privacy Policy](/privacy.html) gives the period we keep it for;
+&nbsp;&nbsp;(e) **anything the law requires us to keep**, under clause 12.6(c), and nothing
 else.
 
 Crash and error reporting is switched off in the app we ship, so no error report containing
-your data exists anywhere. If we ever turn it on, it becomes a fourth item in this list and
+your data exists anywhere. If we ever turn it on, it becomes a sixth item in this list and
 the Privacy Policy will say so before it starts. Deletion by email under clause 12.6(b) is
 the one route that is not instant, because we have to verify the request first.
 
@@ -644,19 +723,39 @@ export and deletion while it lasts. This is the second reason clause 11.2 asks y
 your own copy: a service run by one person can stop for reasons that no notice period can
 cover.
 
-12.9 **We do not delete accounts for inactivity.** There is no dormancy rule in FitPulse.
-Stop using it for five years and your data will be there when you come back. If we ever
-needed to introduce one — and we have no plan to — it would be a material change under clause
-16.3, and no account would be touched without at least **30 days'** notice by email and a
-clear chance to export first.
+12.9 **Abandoned accounts are eventually deleted.** We keep your data for as long as you are
+using FitPulse, and we do not want to hold a stranger's training history forever because they
+tried the app once. So:
+
+&nbsp;&nbsp;(a) after **24 months** with no activity we email you to say the account is due
+for deletion, when that will happen, and that signing in once cancels it and resets the clock;
+&nbsp;&nbsp;(b) after **36 months** with no activity — a full year after that warning — the
+account and everything in it are deleted;
+&nbsp;&nbsp;(c) **"no activity" means no activity of any kind**: no sign-in, no logged
+session, no weigh-in and no settings change in the whole period. Any one of those keeps the
+account, so simply using FitPulse is enough and you never have to do anything special.
+
+**The warning is a condition of the deletion, not a courtesy attached to it.** We will not
+delete an account under this clause unless the warning in (a) was actually sent to you and we
+hold a record of when. If for any reason it was not sent, the account is not deleted — the
+clock does not start until you have been told. We have built it this way round on purpose:
+this is the only thing in these Terms that would destroy your data, and "we meant to warn
+you" is not a warning.
+
+Section 7 of the [Privacy Policy](/privacy.html) states the same rule as a retention period,
+which is what it is: holding personal data with no end date is not something we are entitled
+to do just because it would be convenient. If we ever change either number, that is a
+material change under clause 16.3.
 
 ## 13. What we promise, and what we do not
 
 13.1 **What we promise.** We will supply the Service with reasonable care and skill, and it
 will be:
 
-&nbsp;&nbsp;(a) fit for the purpose it is described as serving in the App Store or Google
-Play listing, on our website, and in these Terms;
+&nbsp;&nbsp;(a) fit for the purpose it is described as serving on our website and in these
+Terms, and — where FitPulse is distributed through an app store — in that store listing.
+FitPulse is a web app today and has no store listing, so the description that binds us is
+the one on our own pages and in this document;
 &nbsp;&nbsp;(b) of the quality and possess the features and performance that is normal for a
 free personal fitness logging app, and that you can reasonably expect given our public
 descriptions of it; and
@@ -804,10 +903,17 @@ price of a plan you have already bought without your agreement;
 &nbsp;&nbsp;(f) to improve the clarity or fairness of these Terms in your favour;
 &nbsp;&nbsp;(g) to address a security or fraud risk.
 
-16.2 **Notice.** For any change that is not purely clerical, we will email you at least
+16.2 **Notice.** For any change that is not purely clerical, we will tell you at least
 **30 days** before it takes effect. The notice will state the effective date, summarise what
 is changing in plain language, and link to the full new version and to a marked-up
 comparison against the current one.
+
+We give that notice **in the app**, where it appears whenever you open FitPulse during the
+notice period, **and by email** to your registered address where we are able to send one. The
+in-app notice is the one we can always perform, so it is the one this clause relies on; email
+is in addition to it, not instead of it. Clause 19.10 governs a notice that does not reach
+you, and clause 16.3 asks for your acceptance of a material change in the app rather than by
+email for the same reason.
 
 16.3 **Material changes require your acceptance.** For changes to sections 8, 9, 12, 13, 14,
 17 or to any pricing, we will ask you to accept the new version in the app. If you do not
@@ -844,8 +950,17 @@ may bring proceedings in the courts of your country of residence or in the court
 **Latvia**. We may bring proceedings against you only in the courts of your country of
 residence.
 
-17.3 **If you are not a consumer resident in the EEA or the UK**, the courts of **Latvia**
-have exclusive jurisdiction.
+17.3 **If you are not a consumer** — that is, if you use FitPulse for business purposes —
+the courts of **Latvia** have exclusive jurisdiction.
+
+17.4 **If you are a consumer resident outside the EEA and the UK**, clause 17.3 does not
+apply to you. We are a single individual established in Latvia with no entity anywhere else,
+so Latvia is where we would bring or defend a claim, and clause 17.1 chooses Latvian law for
+that purpose. But we do not ask you to give up a protection your own
+law does not let you give up: where the mandatory consumer law of your country of residence
+gives you the right to bring a claim locally, or applies its own rules to this agreement,
+that right and those rules prevail over this section. Schedule B.3 says the same thing for
+readers in the United States.
 
 <!-- internal:start -->
 *Drafting note, not part of the published agreement: a US arbitration + class-waiver module
@@ -855,7 +970,7 @@ treats compulsory consumer arbitration as the textbook unfair term. See TERMS-RA
 §4.3 for what such a clause needs to contain.*
 <!-- internal:end -->
 
-17.4 **Talk to us first.** Before starting any formal proceedings, please contact us at
+17.5 **Talk to us first.** Before starting any formal proceedings, please contact us at
 **smalkaisk@gmail.com** and give us **30 days** to resolve the matter. This does not stop you
 from going to court, and does not affect any limitation period.
 
@@ -917,9 +1032,16 @@ you and will resume as soon as reasonably possible. If the event continues for m
 19.7 **Third parties.** Except as stated in Schedule A, no one other than you and us has any
 right to enforce these Terms.
 
-19.8 **Survival.** Sections 1, 2.4, 6.2, 6.5, 8.1–8.3, 8.6–8.9, 9, 12.6, 12.7, 13.2, 13.3,
-14, 15, 17, 18, 19 and 20, and Schedule B, survive termination of this agreement for any
-reason.
+19.8 **Survival.** Sections 1, 2.2, 2.4, 6.2, 6.5, 8.1–8.3, 8.5–8.9, 9, 11.2, 12.6, 12.7,
+13.2, 13.3, 14, 15, 17, 18, 19 and 20, and Schedule B, survive termination of this agreement
+for any reason.
+
+Clauses 2.2, 8.5 and 11.2 are in that list for a reason worth stating. The clauses that
+matter most after you leave are the ones about what was deleted and what was kept (12.6 and
+12.7), and those are data protection matters — so the rule that the Privacy Policy governs
+them (8.5, and the exception in 2.2(a)) has to outlive the agreement too, or you would be
+arguing about retention under clauses that survived against a hierarchy that did not.
+Clause 11.2 survives because clause 14.6 allocates risk by reference to it.
 
 19.9 **Language.** These Terms are provided in **English**.
 
@@ -1110,10 +1232,11 @@ as part of a class. If we ever propose to add an arbitration clause, it would be
 section 17 — which clause 16.3 says we cannot apply to you without asking you to accept it
 first, and which you could refuse.
 
-**B.3.2 Jurisdiction, stated honestly.** Clause 17.3 says the Latvian courts have exclusive
-jurisdiction for consumers outside the EEA and UK. We are a single individual established in
-Latvia with no US entity. That clause states where we would bring or defend a claim; it does
-not, and cannot, waive a right your state law gives you that cannot be waived by contract.
+**B.3.2 Jurisdiction, stated honestly.** The exclusive-jurisdiction clause in 17.3 applies to
+business users, **not to you as a consumer** — clause 17.4 says so expressly. We are a single
+individual established in Latvia with no US entity, so Latvia is where we would bring or
+defend a claim; that does not, and cannot, waive a right your state law gives you that cannot
+be waived by contract, and where your state law lets you sue locally, you may.
 
 **B.3.3 Your health data.** Body weight and training history are health data under US law as
 well as EU law. The [Privacy Policy](/privacy.html) sets out how we handle it, and we are
@@ -1160,4 +1283,4 @@ will always answer a complaint sent to the address in section 1.
 
 ---
 
-*End of Terms of Service, version 1.1.*
+*End of Terms of Service, version 1.2.*
