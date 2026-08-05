@@ -246,9 +246,11 @@ grant  execute on function public.delete_account() to authenticated;
 -- SECURITY DEFINER because `auth` is not exposed through PostgREST. Execute is granted
 -- to service_role ONLY — run from scripts/purge-auth-log.mjs, never from the browser. A
 -- user must never be able to erase the log that would evidence an attack on their own
--- account. dry_run counts without deleting and is the default the script always calls
--- first, because a retention job whose first run is destructive is a bad way to discover
--- a wrong retain_days.
+-- account. `dry_run => true` counts without deleting and is what the script always calls
+-- first; the DEFAULT is false, so a bare `purge_auth_audit_log(90)` deletes. That is
+-- deliberate — a retention function that no-ops when the flag is omitted would leave
+-- § 7's 90-day claim true on paper and false in the table — so every caller passes it
+-- explicitly.
 create or replace function public.purge_auth_audit_log(
   retain_days int     default 90,
   dry_run     boolean default false

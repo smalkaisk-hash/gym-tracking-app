@@ -14,9 +14,11 @@ the strength of a warning email the project has no way to send.
 
 **v6 pass — 2026-08-05.** The v4/v5 fixes were then code-reviewed as a diff. **Part F** records thirteen defects that review found in the compliance machinery itself — including two that restored E1's failure mode by a different route — and their fixes. Read it alongside Part E.
 
-**v5 fix pass — status.** E1, E3, E5, E6(a), E6(b) and E6(d) are **fixed**. E2, E4 and the
-image-rights half of E3 are **decisions, not edits**, and are now gated: `npm run
-check:decisions` fails while any is unanswered, and it is wired into `npm run release:check`.
+**v5 fix pass — status.** E1, E3, E5, E6(a), E6(b) and E6(d) are **fixed** — E3 fully, as of
+2026-08-05: the image-rights half was a decision rather than an edit, it was answered *drop
+the photographs*, and the files are gone (see E3 and Part G). **E2 and E4** remain decisions,
+not edits, and stay gated: `npm run check:decisions` fails while either is unanswered, and it
+is wired into `npm run release:check`.
 E6(c), E6(e), E6(f) and E6(g) are unfixed and remain as recorded below. Gate after the fixes:
 `npm run build` succeeds (now including `check:backups`), `legal:check` clean, all five suites
 pass — **145 / 8 / 9 / 73 / 135**.
@@ -699,7 +701,66 @@ must not still be there at launch.
    "by in-app notice, and by email where we are able to reach you".
 3. Only then decide whether to add real outbound mail.
 
-## E2. The app's name is already several other fitness apps ⚠ *unassessed until now*
+## E2. The app's name is already several other fitness apps ⚠ *decided 2026-08-05: RENAME — not yet executed*
+
+> **Decision.** The `trademark_clearance` entry in
+> [launch-decisions.json](compliance/launch-decisions.json) was answered on 2026-08-05:
+> **rename before launch.** One further prior user was found that makes the position worse
+> than the finding below records — [fitpulse.jp](https://fitpulse.jp/index.html) ships a free
+> iOS workout tracker that logs strength and cardio and "visualises muscle engagement" to
+> "reveal imbalances": the same name, the same Nice class, and a feature set that matches
+> this app's own muscle donut. The EUIPO/UKIPO/USPTO register searches were **not** done
+> (Justia returns HTTP 403 to automated fetches, and the registers are not web-indexed) and
+> are no longer decision-relevant, since prior use this close settles it either way.
+>
+> **The rename itself is outstanding.** `check:decisions` is green because the *question* was
+> answered; the app, the documents and the package are all still called FitPulse. Do not read
+> that gate as "the name is settled". The inventory and the one trap are below.
+
+### Rename inventory — every hard-coded occurrence
+
+`grep -rioE "fitpulse"` outside `node_modules/`, `dist/` and `public/` (the last is
+generated — it regenerates from `legal/`):
+
+| Where | Count | Notes |
+| --- | --- | --- |
+| `legal/TERMS.md` | 69 | The bulk of the work. § 6.2 also **claims ownership of the branding** — that sentence has to change or go regardless of the new name. |
+| `LEGAL-LIABILITY-AUDIT.md` | 15 | This file. Historical findings — rewriting them would falsify the record; leave them and note the rename. |
+| `src/gym-tracker-app.tsx` | 10 | See the trap below. |
+| `legal/PRIVACY.md` | 8 | |
+| `legal/TERMS-RATIONALE.md`, `legal/PRIVACY-POLICY-GUIDE.md` | 10 | Internal, never published. |
+| `compliance/launch-decisions.json` | 7 | Includes this decision; keep the old name where it is describing history. |
+| `scripts/build-legal.mjs` | 6 | Page titles and the footer. |
+| `BACKUP-RESTORE.md` | 6 | |
+| `scripts/{backup,restore,dormant,notify-policy-change,notice-lib}.mjs` | 14 | Notice copy and backup-file headers — user-visible in emails. |
+| `legal/DELETE-ACCOUNT.md`, `legal/CONSUMER-HEALTH-DATA-PRIVACY.md` | 7 | Published. |
+| `index.html` | 1 | `<title>` — user-visible in the browser tab and in search results. |
+| `README.md`, `CLAUDE.md`, `PRODUCT-ROADMAP.md`, `SUPABASE-SETUP.md`, `supabase/migrations/README.md`, `compliance/*` | ~10 | Docs. |
+| `tests/qa/{fuzz,load-app}.mjs` | 2 | |
+
+`package.json` is already neutral (`"name": "gym-tracker-app"`), as is the repository folder.
+
+### The trap: renaming naively destroys every existing export
+
+`src/gym-tracker-app.tsx` stamps `app: 'FitPulse'` into the export envelope (~line 5597) and
+`importData` **refuses any file whose `app` is not exactly `'FitPulse'`** (~line 5650):
+
+```js
+if (d.app != null && d.app !== 'FitPulse') { resolve(false); return; }
+```
+
+Change both to the new name in one edit and every backup a user has already downloaded stops
+importing — silently rejected as "not a FitPulse backup". That is data loss in the one feature
+offered as the GDPR Art. 20 portability route, so the import check must accept **both** names:
+write the new one, accept the old one forever. The export filename prefix
+(`fitpulse-backup-<date>.json`, ~line 5626) can change freely; nothing reads it back.
+
+Also user-visible and easy to miss: the auth-screen wordmark (~3966), the header wordmark
+(~6146), the onboarding greeting (~4354), and **both consent tick-box texts** (~4215, ~4490) —
+the last two name the controller in the sentence the user is consenting to, so they are part
+of the consent record's wording, not decoration.
+
+---
 
 Nobody has ever checked whether **FitPulse** is available, and it substantially is not. In the
 identical market and the identical trademark class, currently live:
@@ -731,7 +792,19 @@ into a § 19.3 / fraudulent-misrepresentation problem.
 brand, the domain, the store listing and every link. If the name stays, drop "branding" from
 § 6.2 or qualify it.
 
-## E3. Four stock photographs ship with no licence record and no model releases ⚠ *unassessed until now*
+## E3. Four stock photographs ship with no licence record and no model releases ✅ *closed 2026-08-05 — the images were removed*
+
+> **Resolution.** Both limbs are closed, and not by mitigation: the `image_rights` decision
+> was answered **drop the photographs entirely**, and all five files (the four imported plus
+> one unused) were deleted on 2026-08-05. `SessionType`'s `img`/`pos` fields and the `<img>`
+> branch in the tile markup went with them, so a photograph cannot be re-added as a one-line
+> tile field — it takes a deliberate edit that re-opens the decision. The provenance record
+> survives the files in [Assets/CREDITS.md](Assets/CREDITS.md), which also corrects this
+> finding on one point of fact: re-opening each photo ID first-hand showed the "identifiable
+> person" claim below was **wrong for two of the four** (one is a pure back view, one is
+> partial). That does not change the outcome — it is why the record is kept rather than the
+> assessment being trusted from memory. The original finding stands unedited below.
+
 
 `src/gym-tracker-app.tsx:8-11` imports four Pexels photographs, which are bundled into `dist/`
 and shown as the push/pull/legs/custom day tiles. Nothing anywhere in the repository records
@@ -758,7 +831,21 @@ the repo; re-read the Pexels licence against the "health and fitness" use specif
 prefer images where no face is identifiable — for tiles showing equipment and movement, that
 costs nothing visually and removes the entire category.
 
-## E4. The UK GDPR breach is documented, deliberate, and still a breach
+## E4. The UK GDPR breach is documented, deliberate, and still a breach *— re-taken 2026-08-05, unchanged and now fully informed*
+
+> **Decision.** The `uk_gdpr_representative` entry was answered on 2026-08-05: **accept the
+> risk knowingly.** No representative, no geo-block, Schedule B.2 stays. Both objections this
+> finding raises were put to the controller explicitly and neither changed the answer —
+> `compliance/DECISIONS-AND-ASSESSMENTS.md` § 3 now records the re-taking, including that
+> Schedule B.2 is kept *deliberately* (withdrawing UK consumer protections to improve the
+> Art. 27 position would trade a real user protection for a paper one) and that Art. 83(2)(b)
+> aggravation was understood and accepted.
+>
+> **This finding is closed as a decision, not as a problem.** The breach is still a breach.
+> What changed is that it is now a knowing, priced choice with a hard revisit trigger —
+> **deployment**, not the first UK complaint, because appointing a representative later does
+> not cure the period without one. It is defensible today only because the project is
+> undeployed with no UK users; it stops being defensible the moment that is untrue.
 
 `compliance/DECISIONS-AND-ASSESSMENTS.md` § 3 records the decision to serve UK users without
 appointing a UK Art. 27 representative, and the analysis in it is correct — including that the
@@ -881,3 +968,122 @@ F9 (schedule the purge job), F11 (apply `0007`), E6(g) (no CSP), and the older P
 4. **C7** — raise the password floor, decide on gender. (MFA is settled: not enabled, and no
    longer claimed anywhere.)
 5. **C2, C4, C6** — the withdrawal control, a notice channel, and the Art. 30 record.
+
+---
+
+# Part G — repository housekeeping pass (2026-08-05)
+
+Not an audit of the documents — an audit of the *files around* them, asking which ones still
+earn their place. One finding is a legal-record matter and belongs here rather than in a
+commit message.
+
+## G1. `FitPulse_Terms_Review.md` was a fossil of the v1.0 external review ✅ *removed*
+
+**What it was.** A root-level file listing 40 numbered suggestions against the Terms
+("Define commercial use", "Clarify how timestamps behave across time zones", "Extend health
+disclaimers to future AI-generated recommendations"), with a closing "highest-priority
+improvements" list. It carried **no dates, no statuses and no version reference**, and
+`CLAUDE.md` pointed readers at it as a live second list to check "before assuming a point is
+unaddressed".
+
+**What it actually was.** The external review of **Terms v1.0** — the one the internal note at
+the head of `legal/TERMS.md` records as answered by **v1.1 (2 August 2026)**. That note
+describes the v1.1 changes in exactly the review's own categories: terms v1.0 left vague
+(*commercial use, material reduction, disproportionate load, anonymous*), practices the code
+already had (*device-clock dating, offline reconciliation, what survives deletion, what the
+export holds*), and promises written against one implementation (*security measures, export
+format, providers, browsers, free of charge*).
+
+**Verified before deletion.** All 40 items were checked against the current `legal/TERMS.md`
+and every one is answered. The clause-by-clause mapping, for the record:
+
+| # | Review item | Answered by |
+| --- | --- | --- |
+| 1 | Define "commercial use" | § 6.4, indexed at § 20.7 |
+| 2 | Account sharing → suspension | § 5.4 with § 5.8 |
+| 3 | Export format permanence | § 11.2 — "documented, machine-readable, non-proprietary" |
+| 4 | Import compatibility across versions | § 11.6 |
+| 5 | "Immediate deletion" | § 12.7 — *What "immediately" means, and what is left afterwards* |
+| 6 | Offline sync conflicts | § 11.8 — *what happens when two devices disagree* |
+| 7 | Email verification | § 5.6 — access to the registered mailbox is what proves the account |
+| 8 | Password recovery | § 5.6 — reset link to the registered address is the only route |
+| 9 | Retention after deletion | § 12.7, five limbs (logs, support mail, auth security log …) |
+| 10 | Inactive accounts | § 12.9, with the `dormancy_notices` interlock |
+| 11 | Automated abuse detection | § 7.5 — *Automated detection* |
+| 12 | Future APIs | § 6.7 — *There is no public interface, yet* |
+| 13 | Discontinuation when notice is impossible | § 12.8 — insolvency, provider shutdown, legal order |
+| 14 | Force majeure vs export | § 19.6 **and** § 19.11 — the latter is this item exactly |
+| 15 | Sole-operator wording | § 11.1 / § 12.8 — "today that is one person", not a headcount promise |
+| 16 | Browser support | § 13.4 — a current version of a supported browser |
+| 17 | Device compatibility | § 13.4, indexed at § 20.7 |
+| 18 | Time zones | § 9.7 |
+| 19 | Device clock authority | § 9.7 — expressly *no* authoritative clock on our side |
+| 20 | Fraudulent / mis-entered data | § 13.5 and § 14.3(e) |
+| 21 | Custom exercise ownership | § 6.2 (v1.2 stopped claiming exercise names) |
+| 22 | Usernames | § 5.9 — N/A by design; there are none |
+| 23 | Benchmarking / public comparison | § 6.6 — expressly permitted |
+| 24 | Feedback licence | § 8.9 (v1.2 removed the attribution waiver) |
+| 25 | Multiple accounts | § 5.8 |
+| 26 | Invalid email addresses | § 19.10 |
+| 27 | Spam filters, full mailboxes | § 19.10 |
+| 28 | Rate limits | § 7.4 with § 6.7 |
+| 29 | "Material feature" | § 10.6, indexed at § 20.7 |
+| 30 | "Reasonable advance notice" | § 10.7, indexed at § 20.7 |
+| 31 | Implementation-specific security promises | § 11.1 — "providers change, so we may change how we meet the obligation" |
+| 32 | Aggregated / anonymous | § 8.8, indexed at § 20.7 |
+| 33 | Export completeness | § 11.2 — format and contents, restated on change in a release note |
+| 34 | Consumer vs business users | § 17.3–17.4 with Schedule B.3 |
+| 35 | Which sanctions lists | § 4.2 — EU Consolidated, UN Security Council, named |
+| 36 | Changing infrastructure providers | § 10.8 — with two limits, and § 8.2 not widened |
+| 37 | User error vs software defect | § 13.5 / § 14.3(e) |
+| 38 | Free-app wording vs future paid plans | § 13.6 |
+| 39 | Export abuse | § 7.4 — bulk import/export repeated at disproportionate load |
+| 40 | Future AI features | § 9.8 — extends the health disclaimer to "a simple rule, a statistical model, or an AI model" |
+
+**Why removing it is the fix rather than annotating it.** This is the failure mode
+`compliance/reviews/README.md` was written to prevent, sitting at the repository root instead
+of under a date: *a stale finding that reads as current is worse than no finding, because it
+sends someone to fix something that is already fixed and lends false weight to whatever else
+the file says.* Four of its items are ones a keyword search will not find in the Terms —
+"force majeure" is § 19.6's *Events outside our control*, "material feature" is § 10.6's
+*material reduction* — so a future reader checking it quickly would have concluded, wrongly,
+that the Terms had gaps and re-opened settled clauses.
+
+The review's content is not lost: it is above, mapped to clauses, and the file remains in git
+history. `CLAUDE.md`'s pointer to it is removed in the same change, so this document is again
+*the* record, which is the rule that file sets for itself.
+
+**Nothing was changed in `legal/`.** This entry records a verification and a deletion, not an
+edit to any published document.
+
+## G2. The rest of the pass — non-legal, recorded here for completeness
+
+Nothing below touches `legal/`; it is listed so this file remains a complete account of what
+changed on 2026-08-05.
+
+- **CI now exists.** [.github/workflows/ci.yml](.github/workflows/ci.yml) runs
+  `legal:check` → `build` → `test` on every push and PR, with no secrets. Until now *every*
+  gate this document relies on — the five suites, the four `check:*` scripts, the legal
+  build — was enforced only by someone remembering to run it, which is the exact control
+  failure the rest of the project is engineered against. `legal:check` runs **first** on
+  purpose: the build's own first step regenerates `public/*.html`, so running it later would
+  silently rewrite a page committed stale and then "verify" the rewrite.
+  `release:check` is a separate **manual** job — it fails by design until launch, and a
+  permanently red CI is one nobody reads.
+- **`npm test`** chains the five suites in order; they had no single entry point.
+- **The day-tile images** were deleted (E3), which also removed ~448 KB of JPEG from `dist/`
+  — down from 8.8 MB, after a downscaling pass earlier the same day that the removal then
+  made moot. `dist/` went from 11 MB to ~1.6 MB.
+- **`README.md`** stated Node 18+; Vite 8 requires ^20.19 || >=22.12. `npm install` would
+  still succeed on 18 (there is no `engines` field to enforce it, and npm's own check is a
+  warning by default) — it is `npm run dev` and `npm run build` that fail, which is the more
+  confusing order to discover it in. CI pins 22.
+
+**Gate after this pass:** `npm run legal:check` clean, `npm run build` succeeds, all five
+suites pass — **150 / 8 / 9 / 87 / 143**. `npm run check:decisions` **passes**: all three
+launch decisions are resolved (`image_rights`, `trademark_clearance`, `uk_gdpr_representative`).
+Read that as "the questions were asked and answered", not "the work is done" — the
+`trademark_clearance` answer is *rename before launch*, and the rename itself is outstanding
+(see § 'Rename (trademark_clearance)'). `legal:release` (4 placeholders, all the unchosen
+static host) and `check:claims` (1 unverified claim, the auth-log purge) still fail by
+design, per B1 and the auth-log purge claim.

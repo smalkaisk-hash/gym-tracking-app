@@ -16,10 +16,50 @@
     "asked the question."
   ],
   "decisions": {
-    "trademark_clearance": {
+    "auth_redirect_urls": {
       "decided": null,
       "outcome": null,
       "evidence": null,
+      "question": "What origin do the authentication emails send a real user to?",
+      "why": [
+        "Read from the live project on 2026-08-05: site_url is http://localhost:5173 and",
+        "uri_allow_list is http://localhost:5173/**. Every link GoTrue generates — signup",
+        "confirmation, password reset, email-change confirmation — resolves against a",
+        "developer's machine.",
+        "This became load-bearing the moment mailer_autoconfirm was turned OFF (also",
+        "2026-08-05, closing the account-squatting hole). Confirmation is now REQUIRED, so",
+        "the first real account cannot be completed at all, and no password can be reset.",
+        "The app asks for the right thing — resetPasswordForEmail passes redirectTo:",
+        "window.location.origin — but GoTrue validates that against uri_allow_list and",
+        "silently FALLS BACK to site_url when it does not match. So there is no open",
+        "redirect here; there is a silent one. Nothing in the app, the build, the five",
+        "suites or CI can observe a dashboard setting, which is why this is a gate and not",
+        "a note.",
+        "Listing localhost as a permitted callback also means any process on that port on a",
+        "user's machine is a valid recipient of an auth token fragment.",
+        "This is NOT a second static-host decision — it is the half of that decision that",
+        "lives outside the repository. legal:release already blocks on the {{FILL}}",
+        "placeholders; nothing at all blocks on this, and the two are resolved by different",
+        "people in different places on different days. That asymmetry is the whole reason",
+        "for the entry."
+      ],
+      "howToResolve": [
+        "Answer the static-host question first (DECISIONS-AND-ASSESSMENTS.md s.7) — this is",
+        "downstream of it and cannot be settled before it.",
+        "Then, in the Supabase dashboard: Authentication -> URL Configuration. Set Site URL",
+        "to that https:// origin and replace the allow list with '<origin>/**'. Keep",
+        "http://localhost:5173/** only if local development against PRODUCTION auth is",
+        "genuinely wanted; preferring a separate dev project is the safer answer and closes",
+        "the token-to-localhost path.",
+        "Verify with: curl https://dhxsamkaqszffajcwuzn.supabase.co/auth/v1/settings and a",
+        "real password-reset mail to yourself — the link must land on the deployed app.",
+        "Then add it to compliance/verified.json so it is re-checked rather than assumed."
+      ]
+    },
+    "trademark_clearance": {
+      "decided": "2026-08-05",
+      "outcome": "RENAME before launch. The question is answered; the rename itself is NOT done — the app, the documents and the package are all still called FitPulse. This entry records the decision, not its execution: the outstanding work is tracked in LEGAL-LIABILITY-AUDIT.md under 'Rename (trademark_clearance)', which lists every hard-coded occurrence. Do not read a green check:decisions as 'the name is settled'. Launch is blocked independently by legal:release while the static host is unchosen, so the two cannot silently diverge before a deploy.",
+      "evidence": "LEGAL-LIABILITY-AUDIT.md § 'Rename (trademark_clearance)'. Search evidence gathered 2026-08-05: beyond the App Store and Google Play listings already recorded below, https://fitpulse.jp ships a free iOS workout tracker that logs strength and cardio and 'visualises muscle engagement' to 'reveal imbalances' — the same name, the same Nice class and a feature set matching this app's muscle donut. That is the strongest form of prior use short of a registration. The EUIPO/UKIPO/USPTO register searches were NOT completed (Justia returns HTTP 403 to automated fetches and the registers are not indexed by web search); they were not needed, because prior use this close settles the decision on its own and the answer is to rename either way.",
       "question": "Is the name FitPulse available to use, and are we prepared to defend it?",
       "why": [
         "The name is already in live use by several fitness apps in the identical trademark",
@@ -39,9 +79,9 @@
       ]
     },
     "uk_gdpr_representative": {
-      "decided": null,
-      "outcome": null,
-      "evidence": "compliance/DECISIONS-AND-ASSESSMENTS.md section 3 records the current position",
+      "decided": "2026-08-05",
+      "outcome": "ACCEPT THE RISK KNOWINGLY. No UK Art. 27 representative is appointed, UK signup is not geo-blocked, and TERMS.md Schedule B.2 continues to hold the service out to UK consumers. This is a deliberate, informed choice re-taken on 2026-08-05 with Schedule B.2 expressly weighed and with Art. 83(2)(b) understood — an intentional infringement is an aggravating factor, and this record is itself evidence the breach is knowing. That was accepted as the price of not paying for a representative on a pre-launch personal project with no users. Revisit before any real user acquisition: the exposure scales with UK users, and appointing a representative later does not cure the period without one.",
+      "evidence": "compliance/DECISIONS-AND-ASSESSMENTS.md section 3, updated 2026-08-05 to record this as re-taken with Schedule B.2 in view rather than before it",
       "question": "Do we appoint a UK GDPR Art. 27 representative, or stop serving UK users?",
       "why": [
         "Establishment in Latvia settles Art. 27 for the EEA and does nothing for the UK.",
@@ -65,9 +105,9 @@
       ]
     },
     "image_rights": {
-      "decided": null,
-      "outcome": null,
-      "evidence": "Assets/CREDITS.md",
+      "decided": "2026-08-05",
+      "outcome": "DROP THE PHOTOGRAPHS ENTIRELY — done, not merely decided. All four day-tile images were deleted from Assets/, their imports removed from src/, and SessionType's img/pos fields plus the tile markup's <img> branch removed with them, so the app now ships no third-party imagery at all and the personality-rights category is closed rather than mitigated. Verification done first and it changed the picture: all four Pexels IDs were re-opened and confirmed live under the licence, and the images themselves were inspected — only 5327522 (push) and 5799855 (legs) show an identifiable face, 34043598 (pull) is a pure back view and 8544616 (custom) is capped with the face shadowed. Assets/CREDITS.md had recorded 'Yes' for all four and is now corrected. NOTE: this answer is correct for NO images. Adding any image back makes it stale — re-open this entry in the same change, because check:decisions cannot detect that on its own.",
+      "evidence": "Assets/CREDITS.md — kept as the provenance record now that the files are gone; carries the confirmed photo IDs, the per-image identifiability assessment and the 2026-08-05 checked dates",
       "question": "Do we keep stock photographs of identifiable people in a health product?",
       "why": [
         "The four day-tile images are Pexels photographs of identifiable people, used to",

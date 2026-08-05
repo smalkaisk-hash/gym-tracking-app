@@ -1,0 +1,110 @@
+# CI — runs the gates this repository already has.
+#
+# Every guard here was written before this workflow existed and was enforced only by a
+# person remembering to run it. That is the one failure mode the whole project is built to
+# avoid everywhere else: the check:* scripts, the fuzz source guards and the legal build
+# all exist precisely because "someone will notice" is not a control. This file applies the
+# same standard to the checks themselves.
+#
+# No secrets are required. The app reads VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY at
+# runtime and renders a config screen when they are absent (src/supabase.ts), so a build
+# with no environment is a valid build — it just produces a bundle that shows ConfigError
+# until it is configured. Nothing here talks to production.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Vite 8 requires ^20.19.0 || >=22.12.0.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # MUST run before `npm run build`. The build's first step is `npm run legal`, which
+      # REGENERATES public/*.html — so if it ran first, a stale committed page would be
+      # silently rewritten and tests/legal-pages.test.mjs would then compare the freshly
+      # generated output against its own source and pass. This is the check that actually
+      # catches "edited legal/*.md and forgot to run npm run legal".
+      - name: Published pages match legal/ (no write)
+        run: npm run legal:check
+
+      # legal → check:monitoring → check:backups → tsc → vite build.
+      # tsc is the only typecheck in the project; there is no separate script.
+      - name: Build
+        run: npm run build
+
+      # The five plain-Node assertion suites. fuzz.test.mjs compiles the real src/ bytes,
+      # so a failure here is a bug in the app, not a broken test (tests/qa/README.md).
+      - name: Test
+        run: npm test
+
+  # Launch readiness, deliberately NOT part of the required checks.
+  #
+  # release:check fails by design until the project is ready to launch. As of 2026-08-05 it
+  # reports 4 unfilled placeholders (all four are the same unmade decision — the static host
+  # is not chosen, see DECISIONS-AND-ASSESSMENTS.md § 7), 1 unverified published claim
+  # (the 90-day auth-log purge does not recur yet — migration 0008 is written and not
+  # applied), and 1 open launch decision: `auth_redirect_urls`, opened by the 2026-08-05
+  # security review because the production auth project's Site URL and redirect allowlist
+  # still point at http://localhost:5173 — which, now that email confirmation is required,
+  # means no real account can be confirmed and no password reset can land. That one is
+  # downstream of the same static-host question as the placeholders.
+  # Wiring that into every push would mean a permanently red CI, and a CI that is always red
+  # is a CI nobody reads. Run it from the Actions tab when you want the current answer, and
+  # move it into build-and-test once it passes for the first time.
+  release-readiness:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run legal
+
+      # Run as three steps rather than one `npm run release:check`, which chains them with
+      # `&&`. As a single step it stops at the first failure — and legal:release fails by
+      # design today, so check:claims and check:decisions would never run and this job could
+      # not produce the three-part answer it exists to give. `!cancelled()` runs the later
+      # gates even after an earlier one fails; the job still goes red if any of them does.
+      - name: Unfilled placeholders (legal:release)
+        run: npm run legal:release
+      - name: Unverified published claims (check:claims)
+        if: ${{ !cancelled() }}
+        run: npm run check:claims
+      - name: Open launch decisions (check:decisions)
+        if: ${{ !cancelled() }}
+        run: npm run check:decisions
+
+# Not run here, on purpose:
+#
+#   npm run test:e2e — the Playwright baselines in tests/e2e/*-snapshots/ are *-win32.png.
+#   Font rasterisation differs between Windows and Linux, so every screenshot would fail on
+#   ubuntu-latest and re-baselining on Linux would break them for local runs on Windows.
+#   Fixing this properly means either committing per-platform baselines (run the suite once
+#   on windows-latest with --update-snapshots and keep both sets) or moving the suite to a
+#   container so local and CI rasterise identically. Until then it stays a local check.
+#
+#   npm run backup / restore / dormant / notify:policy-change / purge:auth-log — all of
+#   these touch real user data and need a service_role key. They are operator tasks run by
+#   hand from a machine that holds the credential, never from CI.

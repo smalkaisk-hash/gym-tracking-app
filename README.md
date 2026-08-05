@@ -52,7 +52,8 @@ architecture guide, not just an agent prompt. Read it before making structural c
 
 ## Getting started
 
-Prerequisites: Node.js (18+) and a Supabase project.
+Prerequisites: Node.js **20.19+ or 22.12+** (what Vite 8 requires — CI pins 22) and a
+Supabase project.
 
 ```bash
 npm install
@@ -91,13 +92,15 @@ npm run dev       # Vite dev server
 npm run legal     # publish legal/*.md → public/*.html (policies, terms, deletion page)
 npm run build     # npm run legal && tsc && vite build — tsc is the only typecheck
 npm run preview   # serve the production build from dist/
+npm test          # the five Node assertion suites, in order
 npm run backup    # logical JSON backup of the three tables — see BACKUP-RESTORE.md
 npm run restore   # restore a backup (scratch target by default; --force-prod to overwrite prod)
 npm run test:e2e  # Playwright screenshot baselines for the auth screens
 ```
 
 There's no linter or formatter, and no test framework — the suites are plain Node
-assertion scripts you run directly. `npm run build` plus all five is the full check:
+assertion scripts. `npm run build && npm test` is the full check. The suites are also
+runnable one at a time, which is what you want while iterating on one of them:
 
 ```bash
 node tests/unit-logic.test.mjs         # value assertions for the pure helpers
@@ -112,6 +115,21 @@ failure there is a bug in `src/`, not a broken test. The Playwright suite
 (`npm run test:e2e`, one-time `npx playwright install chromium`) guards the auth screens
 against silent visual regressions; re-baseline deliberately with
 `npm run test:e2e -- --update-snapshots`.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `legal:check` → `build` →
+`test` on every push and pull request, with no secrets. The order matters: `legal:check`
+must run *before* the build, because the build's first step regenerates `public/*.html` and
+would paper over a page that was committed stale.
+
+`npm run release:check` (the launch gate — placeholders, unverified claims, open decisions)
+is a separate **manual** job in that workflow. It fails by design until launch, and a CI
+that is always red is a CI nobody reads; run it from the Actions tab, and fold it into the
+required job once it passes for the first time.
+
+The Playwright baselines are Windows-rasterised (`*-win32.png`) and are deliberately **not**
+in CI — see the note at the foot of the workflow.
 
 ## Database
 

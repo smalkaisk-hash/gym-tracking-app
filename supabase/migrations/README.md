@@ -18,9 +18,10 @@ by hand. Run each un-applied file's SQL in the **Supabase SQL editor** (or via
 | `0002_add_delete_account_function.sql` | ✅ applied — **verified live 2026-08-05**: `public.delete_account()` exists, `SECURITY DEFINER`, owner `postgres`, `search_path = ''`, ACL `authenticated=X, service_role=X` (no `anon`, no `PUBLIC`) |
 | `0003_enforce_same_owner_on_weigh_in_workout_link.sql` | ✅ **applied 2026-08-05** (via Management API) — verified: `body_weight_log_workout_id_fkey` is now `FOREIGN KEY (workout_id, user_id) REFERENCES workouts(id, user_id) ON DELETE CASCADE`, so a weigh-in cannot link to another user's workout |
 | `0004_add_consents_table.sql` | ✅ **applied 2026-08-05** — verified: `public.consents` exists, RLS on, only `INSERT` + `SELECT` policies (no UPDATE/DELETE → append-only by construction) |
-| `0005_purge_auth_audit_log.sql` | ✅ **applied 2026-08-05** — verified: `public.purge_auth_audit_log()` exists, `SECURITY DEFINER`, EXECUTE granted to `service_role` only (not `authenticated`/`anon`). **Still needs scheduling** — the 90-day retention is only real once `npm run purge:auth-log -- --purge` runs on a schedule (nothing is yet >90d old; first entries reach it ~2026-10) |
+| `0005_purge_auth_audit_log.sql` | ✅ **applied 2026-08-05** — verified: `public.purge_auth_audit_log()` exists, `SECURITY DEFINER`, EXECUTE granted to `service_role` only (not `authenticated`/`anon`); its owner (`postgres`) **holds DELETE on `auth.audit_log_entries`** — checked 2026-08-05, so the first destructive run will not fail the way "To apply 0005" warns. **Still needs scheduling → that is `0008`** (nothing is yet >90d old; first entries reach it ~2026-10) |
 | `0006_add_dormancy_notices.sql` | ✅ **applied 2026-08-05** — verified: `public.dormancy_notices` exists, RLS on, `SELECT`-only policy (no session-writable INSERT/UPDATE/DELETE); `scripts/dormant.mjs` now has its gate row and the dormancy rule can operate |
-| `0007_server_stamp_consents.sql` | ⬜ **not applied** — additive, needs no app deploy. Makes `consents.recorded_at`/`created_at` server-controlled and bounds `granted_at`. Until it is applied, `legal/PRIVACY.md` § 3's immutability sentence holds only against *rewriting* a row, not against appending a backdated one |
+| `0007_server_stamp_consents.sql` | ⬜ **not applied** — additive, needs no app deploy. Makes `consents.recorded_at`/`created_at` server-controlled and bounds `granted_at`. Until it is applied, `legal/PRIVACY.md` § 3's immutability sentence holds only against *rewriting* a row, not against appending a backdated one. Re-confirmed absent on prod 2026-08-05: no `consents_stamp` function and no trigger on `public.consents` |
+| `0008_schedule_auth_log_purge.sql` | ⬜ **not applied** — additive, needs no app deploy. Installs `pg_cron` and schedules `purge_auth_audit_log(90, false)` daily at 03:17 UTC, which is what finally makes `legal/PRIVACY.md` § 7's 90-day retention an ongoing practice rather than a function nobody calls. **This is the one with a deadline**: `compliance/verified.json` fails `npm run check:claims` from **2026-10-01**, the date the first entries reach 90 days |
 
 ### To apply 0001
 
@@ -168,6 +169,63 @@ values ('<some-user-uuid>', 'terms', 'test', now() + interval '2 days');
 
 (Then delete the test rows — which needs the service_role key, because the table has no
 DELETE policy. That is the table working as intended.)
+
+### To apply 0008
+
+Paste the file into the SQL editor and run it. Additive, no app deploy, nothing in the
+browser is affected. It installs `pg_cron` (available on this project but **not currently
+installed** — confirmed 2026-08-05) and schedules the purge daily.
+
+It installs it **`with schema pg_catalog`**, which is not interchangeable with a bare
+`create extension`: `pg_cron` is `relocatable = false` with no schema in its control file,
+so it binds to whatever the creation schema is — and the SQL editor's `search_path` is
+`"$user", public`, which would land it in the one schema PostgREST exposes, permanently
+(a non-relocatable extension cannot be moved afterwards). Confirm after applying:
+
+```sql
+select e.extname, n.nspname from pg_extension e
+join pg_namespace n on n.oid = e.extnamespace where e.extname = 'pg_cron';
+-- expected: pg_cron | pg_catalog   (NOT public)
+```
+
+The file grants `usage on schema cron` to `postgres` before it schedules anything. The SQL
+editor runs a script as a single transaction, so if the extension turns out to be already
+installed by the platform and this role lacks that grant, `cron.unschedule` fails and the
+whole file rolls back with nothing scheduled. The grants are wrapped in a `do` block that
+swallows a privilege error, so if they cannot be made the failure surfaces at
+`cron.schedule` — where it means something — rather than three statements early.
+
+This is the migration that turns `legal/PRIVACY.md` § 7's 90-day sentence from a capability
+into a practice, so verify it in two steps rather than one — that the job exists, and that
+it actually *fires*:
+
+```sql
+-- 1. the job is registered, active, and running as a role that can execute the function
+select jobid, jobname, schedule, active, username, command
+from cron.job where jobname = 'purge-auth-audit-log';
+-- expected: one row, active = true, username = postgres
+
+-- 2. it has actually run. Nothing here proves a schedule until a run is recorded.
+select status, return_message, start_time, end_time
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'purge-auth-audit-log')
+order by start_time desc limit 5;
+-- expected: status = 'succeeded'. return_message carries the row count deleted (0 is a
+-- correct answer today — nothing on this project is 90 days old yet).
+```
+
+Step 2 is the one that matters and the one worth waiting for. A job that is registered but
+errors every night — a permission it lacks, a function renamed underneath it — looks
+identical to a working one in `cron.job`, and reports nothing to anybody. That is the same
+silent-failure shape the laptop-cron plan had, just relocated, and `cron.job_run_details`
+is the only thing that distinguishes them.
+
+**Do not tick `auth_log_purge_scheduled` in `compliance/verified.json` when you apply this.**
+Tick it when step 2 shows a succeeded run. Applying the migration is not the claim; the job
+running is. That entry was once marked verified with a note conceding the practice had not
+started, which is exactly the failure `check:claims` exists to catch.
+
+To wind it back: `select cron.unschedule('purge-auth-audit-log');`
 
 ## Per-user deletion: what is guaranteed
 

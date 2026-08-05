@@ -15,6 +15,7 @@
     "release:check": "npm run legal:release && npm run check:claims && npm run check:decisions",
     "build": "npm run legal && npm run check:monitoring && npm run check:backups && tsc && vite build",
     "preview": "vite preview",
+    "test": "node tests/unit-logic.test.mjs && node tests/sync-merge.test.mjs && node tests/exercise-identity.test.mjs && node tests/legal-pages.test.mjs && node tests/qa/fuzz.test.mjs",
     "backup": "node scripts/backup.mjs",
     "restore": "node scripts/restore.mjs",
     "dormant": "node scripts/dormant.mjs",

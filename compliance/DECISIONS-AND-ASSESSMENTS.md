@@ -115,9 +115,33 @@ same contact address as everyone else, and `legal/PRIVACY.md` § 9 tells them th
 complain to the authority in their own country of residence — for the UK, the Information
 Commissioner's Office.
 
-**Revisit when:** any UK marketing or distribution begins, UK users become a material
-share of the base, or the cost of a representative (roughly €100–500/yr) stops being the
-deciding factor.
+### Re-taken 5 August 2026, with the two things the first pass had not weighed
+
+The `uk_gdpr_representative` gate in `compliance/launch-decisions.json` deliberately did
+**not** treat the decision above as closing it, on two grounds. Both have now been put to
+the controller and the answer is unchanged — **accept the risk knowingly**:
+
+- **`legal/TERMS.md` Schedule B.2 actively targets UK consumers.** This is not incidental
+  reachability. The Terms carry a UK consumer section with Consumer Rights Act wording, UK
+  courts and a UK complaints route. Holding the service out to a market and declining the
+  representative that market requires is a worse position than being merely accessible from
+  it, and it forecloses the "we did not offer services to the UK" reading of Art. 3(2). The
+  controller's answer: keep Schedule B.2 — withdrawing the UK consumer protections to
+  improve the Art. 27 position would trade a real user protection for a paper one.
+- **Art. 83(2)(b) treats an intentional infringement as an aggravating factor**, and this
+  file is itself the evidence of intent. That was put plainly and accepted: a documented
+  knowing choice is still better than an undocumented ignorant one, because the same
+  record demonstrates the Art. 5(2) accountability the rest of this directory exists for.
+
+**Why it is acceptable *now*:** the project is pre-launch, undeployed (see § 7), has no UK
+users and no route to acquiring any — the nine accounts on production are the developer's
+own test accounts. The exposure is currently theoretical and scales only with real UK users.
+
+**Revisit when — and this is now a hard trigger, not a soft one:** any UK marketing or
+distribution begins, the app is deployed to a public host, UK users become a material share
+of the base, or the cost of a representative (roughly €100–500/yr) stops being the deciding
+factor. Appointing a representative later does **not** cure the period without one, so the
+trigger is deployment, not the first UK complaint.
 
 ## 4. `gender` retained — accepted minimisation finding
 

@@ -102,7 +102,46 @@ for (const f of allHtml) {
     !/multi-factor|multifactor|two-factor|\b2FA\b/i.test(html),
     'MFA is not enabled on the production console — saying so in a published policy is a '
     + 'misrepresentation, not an aspiration');
+
+  // No inline event handler, anywhere. These pages are static prose served from the
+  // app's own origin, so they have no legitimate reason to carry one — and the
+  // generator has no code path that emits one on purpose. That is exactly what makes
+  // this a usable tripwire: build-legal.mjs interpolates a link target straight into
+  // a double-quoted href, and escapeHtml did not escape `"`, so a target of
+  //   /privacy.html"/onmouseover="…"/x="
+  // passed the SAFE_URL scheme whitelist (it starts with `/`), needed no whitespace,
+  // no parentheses and none of `< > &`, and rendered as a live handler next to the
+  // app's session token in localStorage. Fixed in escapeHtml; asserted on the OUTPUT
+  // here so the guard survives a rewrite of how the fix is spelled.
+  check(`${f} carries no inline event handler`,
+    !/<[^>]+\son[a-z]+\s*=/i.test(html),
+    'a published page emitted an on*= attribute — these pages are same-origin with the app');
+
+  // The other half of that bug's signature: a link target that closed its own
+  // attribute. A legitimate href never contains a bare quote.
+  check(`${f} has no link target that breaks out of its attribute`,
+    ![...html.matchAll(/href="([^"]*)"/g)].some(([, u]) => /^\s*$/.test(u) === false && /[<>]/.test(u)),
+    'an href contains markup');
 }
+
+console.log('\n── the generator escapes what it interpolates');
+
+// Source guards, not output guards, and deliberately so: the output checks above can
+// only fail once someone has ALREADY written a bad link into legal/. These fail the
+// moment the defence is removed, which is the point at which it is cheap to notice.
+// Both halves are asserted because they fail differently — without the escape the
+// injection lands; without the loud rejection it lands silently encoded, and nobody
+// asks who wrote a quote into a link target.
+check('escapeHtml escapes the double quote',
+  /\.replace\(\/"\/g,\s*'&quot;'\)/.test(gen),
+  'every interpolation in this generator ends up inside a double-quoted attribute as '
+  + 'well as in text — an unescaped `"` closes the attribute and the rest of the link '
+  + 'target becomes markup');
+
+check('a quote in a link target is a build error',
+  /QUOTE_IN_URL/.test(gen) && /QUOTE_IN_URL\.test\(url\)/.test(gen),
+  'the scheme whitelist (SAFE_URL) does not cover this: `/x"onmouseover="…` starts with '
+  + '`/` and passes it');
 
 console.log('\n── the markdown actually rendered');
 

@@ -21,10 +21,16 @@
 -- `authenticated` and `anon` are revoked explicitly — a user must never be able to
 -- erase the security log that would evidence an attack on their own account.
 --
--- Returns the number of rows affected. `dry_run => true` counts without deleting, so
--- the script can report the same number it is about to remove; that is the default
--- because a retention job whose first run is destructive is a bad way to discover a
--- wrong `retain_days`.
+-- Returns the number of rows affected. `dry_run => true` counts without deleting, so a
+-- caller can report the same number it is about to remove: scripts/purge-auth-log.mjs
+-- always counts first and only passes `false` when invoked with `-- --purge`.
+--
+-- The DEFAULT is `false` — i.e. `select public.purge_auth_audit_log(90);` DELETES, and
+-- irreversibly. That is deliberate rather than an oversight: a retention function that
+-- no-ops when the flag is omitted fails silently, and legal/PRIVACY.md § 7 would go on
+-- claiming 90 days while nothing was ever removed. Every caller therefore passes the
+-- flag explicitly (0008 schedules `purge_auth_audit_log(90, false)`, and the README's
+-- verification query passes `true`) — do the same, and never call it bare.
 
 create or replace function public.purge_auth_audit_log(
   retain_days int     default 90,

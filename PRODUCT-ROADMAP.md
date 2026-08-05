@@ -11,7 +11,9 @@ why now is the cheap moment to fix the things that get expensive with scale. Two
 phases (0 and 1) have a brutal cost curve — an afternoon today, a migration project with a
 maintenance window at 100k rows. Do those before launch, not after.
 
-Nothing here is implemented yet. This is the plan, written down.
+Each phase carries its own status heading — Phase 0 is implemented, the rest are not. Treat
+those headings as the truth: this file is the plan, and it is edited as the plan is worked
+through rather than rewritten.
 
 ---
 

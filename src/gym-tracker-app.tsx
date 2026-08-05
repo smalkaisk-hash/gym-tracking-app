@@ -4,11 +4,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW, bwToRow } from './supabase';
 import { reportError } from './monitoring';
 
-// Vite hashes and copies these into dist/assets at build time.
-import pushImg from '../Assets/pexels-tima-miroshnichenko-5327522.jpg';
-import pullImg from '../Assets/pexels-zeal-creative-studios-58866141-34043598.jpg';
-import legsImg from '../Assets/pexels-kong-khawlhring-3896794-5799855.jpg';
-import customImg from '../Assets/pexels-koolshooters-8544616.jpg';
+// No image imports. The day tiles used to carry stock photographs; they were
+// dropped on 2026-08-05 — see Assets/CREDITS.md for what was there and why it
+// went. Re-adding a photograph of an identifiable person to a health product
+// re-opens the personality-rights decision that removal closed.
 
 // ═════════════════════════════════════════════════════════════════════════════
 // MODULE MAP — this is the whole app in one file (see CLAUDE.md for the "why").
@@ -924,14 +923,14 @@ const cleanImportedBW = (e: any) => {
   return { date: e.date, weight };
 };
 
-// Home-screen session picker. A tile with `img` renders the photo full-bleed;
-// one without stays a flat surface.
+// Home-screen session picker. Every tile is a flat surface: the three PPL days
+// and Custom used to render a stock photograph full-bleed, and no longer do.
 //
-// `pos` is the crop knob, per photo — the tile is a wide letterbox, so only a
-// horizontal band of each shot survives. Lower % = image sits lower in the box,
-// subject drops in frame. It must be a literal class string for Tailwind's
-// scanner to emit the rule.
-type SessionType = { name: string; label: string; sub: string; img?: string; pos?: string };
+// The fields that drove that (`img`, and `pos` for the per-photo crop) are gone
+// rather than left optional-and-unused, so re-introducing a photo has to be a
+// deliberate edit that passes back through the image-rights decision in
+// compliance/launch-decisions.json rather than a one-line addition to a tile.
+type SessionType = { name: string; label: string; sub: string };
 
 // The session tiles are the user's SPLIT, not a fixed PPL assumption. `prefs.split`
 // picks one; the home card renders its days (plus Custom, which every split gets).
@@ -939,17 +938,16 @@ type SessionType = { name: string; label: string; sub: string; img?: string; pos
 // `name` IS the stored `workout.type`, so the ids must be stable and shared wherever
 // the day is the same — 'legs' is one id across PPL, bro and Arnold, and history
 // logged under a split you've since left keeps rendering (TYPE_CONFIG holds every
-// label, forever). Only PPL carries photos; the rest are flat tiles, which the tile
-// markup already handles by falling back to bg-raised when `img` is absent.
+// label, forever).
 type Split = { id: string; label: string; sub: string; days: SessionType[] };
 
-const CUSTOM_DAY: SessionType = { name: 'custom', label: 'Custom', sub: 'Build your own', img: customImg, pos: 'object-[center_55%]' };
+const CUSTOM_DAY: SessionType = { name: 'custom', label: 'Custom', sub: 'Build your own' };
 
 const SPLITS: Split[] = [
   { id: 'ppl', label: 'Push / Pull / Legs', sub: 'Three days, by movement', days: [
-    { name: 'push', label: 'Push Day', sub: 'Chest · Shoulders · Triceps', img: pushImg, pos: 'object-[center_80%]' },
-    { name: 'pull', label: 'Pull Day', sub: 'Back · Biceps · Deadlifts',   img: pullImg, pos: 'object-[center_50%]' },
-    { name: 'legs', label: 'Leg Day',  sub: 'Quads · Hamstrings · Glutes', img: legsImg, pos: 'object-[center_55%]' },
+    { name: 'push', label: 'Push Day', sub: 'Chest · Shoulders · Triceps' },
+    { name: 'pull', label: 'Pull Day', sub: 'Back · Biceps · Deadlifts'   },
+    { name: 'legs', label: 'Leg Day',  sub: 'Quads · Hamstrings · Glutes' },
   ] },
   { id: 'upperLower', label: 'Upper / Lower', sub: 'Two days, alternating', days: [
     { name: 'upper', label: 'Upper Body', sub: 'Chest · Back · Shoulders · Arms' },
@@ -6306,28 +6304,15 @@ const GymTrackerApp = () => {
               </div>
             ) : (
             <div className="grid grid-cols-2 gap-2">
-              {daysOfSplit(splitId).map(({ name, sub, img, pos }) => (
+              {daysOfSplit(splitId).map(({ name, sub }) => (
                 <button
                   key={name}
                   onClick={() => startWorkout(name)}
-                  className={`group relative overflow-hidden flex flex-col justify-end text-left p-4 min-h-[112px] rounded-ctl border border-line hover:border-accent active:scale-[0.99] transition-all ${img ? '' : 'bg-raised'}`}
+                  className="group relative overflow-hidden flex flex-col justify-end text-left p-4 min-h-[112px] rounded-ctl border border-line bg-raised hover:border-accent active:scale-[0.99] transition-all"
                 >
-                  {img && (
-                    <>
-                      <img
-                        src={img}
-                        alt=""
-                        aria-hidden="true"
-                        className={`absolute inset-0 h-full w-full object-cover ${pos ?? 'object-center'} transition-transform duration-300 group-hover:scale-[1.04]`}
-                      />
-                      {/* The shot is lit dark, so this tile commits to a dark ground in
-                          both themes rather than washing the photo out in light. */}
-                      <span aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/55 to-black/20" />
-                    </>
-                  )}
                   <span className="relative">
-                    <span className={`block font-semibold text-sm ${img ? 'text-white' : 'text-ink'}`}>{labelForType(name, prefs.dayNames)}</span>
-                    <span className={`block text-[11px] mt-1 leading-tight ${img ? 'text-white/75' : 'text-faint'}`}>{sub}</span>
+                    <span className="block font-semibold text-sm text-ink">{labelForType(name, prefs.dayNames)}</span>
+                    <span className="block text-[11px] mt-1 leading-tight text-faint">{sub}</span>
                   </span>
                 </button>
               ))}
