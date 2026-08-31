@@ -287,3 +287,30 @@ $$;
 
 revoke all     on function public.purge_auth_audit_log(int, boolean) from anon, authenticated, public;
 grant  execute on function public.purge_auth_audit_log(int, boolean) to service_role;
+
+-- ── Schedule the sign-in-log purge (migration 0008) ─────────────────────────
+-- purge_auth_audit_log() above only CAN delete; legal/PRIVACY.md § 7's 90-day
+-- sentence is true only while something runs it on a schedule. pg_cron moves that
+-- recurrence inside the database, where cron.job_run_details records every run.
+-- WITH SCHEMA pg_catalog: pg_cron is non-relocatable and names no schema, so a bare
+-- CREATE EXTENSION here would bind it to `public` (the SQL editor's search_path) with
+-- no way to move it afterwards. 90 must match § 7 and RETAIN_DAYS in
+-- scripts/purge-auth-log.mjs. See supabase/migrations/0008 for the full rationale.
+create extension if not exists pg_cron with schema pg_catalog;
+
+do $$
+begin
+  grant usage on schema cron to postgres;
+  grant all privileges on all tables in schema cron to postgres;
+exception when insufficient_privilege or undefined_object then
+  raise notice 'could not grant on schema cron (%) — continuing to cron.schedule', sqlerrm;
+end $$;
+
+select cron.unschedule('purge-auth-audit-log')
+where exists (select 1 from cron.job where jobname = 'purge-auth-audit-log');
+
+select cron.schedule(
+  'purge-auth-audit-log',
+  '17 3 * * *',
+  $$select public.purge_auth_audit_log(90, false)$$
+);
