@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ — FitPulse</title>
+<meta name="description" content="Common questions about using FitPulse, your account and your data.">
+<style>
+  :root {
+    --ground: 238 241 243; --surface: 255 255 255; --line: 215 222 227;
+    --ink: 13 18 21; --muted: 90 104 116; --faint: 147 161 172;
+    --accent: 27 95 191; --warn: 169 116 31;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: 13 18 21; --surface: 21 28 33; --line: 38 49 58;
+      --ink: 230 237 243; --muted: 139 154 167; --faint: 90 104 116;
+      --accent: 46 123 214; --warn: 224 166 60;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem 5rem;
+    background: rgb(var(--ground)); color: rgb(var(--ink));
+    font: 400 16px/1.65 Barlow, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1, h2, h3, h4 {
+    font-family: "Barlow Condensed", Barlow, ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.15; margin: 2.25rem 0 .75rem; font-weight: 700;
+  }
+  h1 { font-size: 2rem; text-transform: uppercase; letter-spacing: .02em; margin-top: 0; }
+  h2 { font-size: 1.4rem; border-bottom: 1px solid rgb(var(--line)); padding-bottom: .4rem; }
+  h3 { font-size: 1.15rem; }
+  h4 { font-size: 1rem; color: rgb(var(--muted)); text-transform: uppercase; letter-spacing: .08em; }
+  p { margin: 0 0 .9rem; }
+  p.sub { margin: 0 0 .35rem; padding-left: 1.5rem; text-indent: -1.5rem; }
+  a { color: rgb(var(--accent)); text-underline-offset: 2px; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.35rem; }
+  li { margin-bottom: .35rem; }
+  hr { border: 0; border-top: 1px solid rgb(var(--line)); margin: 2rem 0; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .875em;
+    background: rgb(var(--surface)); border: 1px solid rgb(var(--line));
+    border-radius: 3px; padding: .1em .35em;
+  }
+  blockquote {
+    margin: 0 0 1rem; padding: .75rem 1rem;
+    background: rgb(var(--surface)); border-left: 3px solid rgb(var(--accent));
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p:last-child { margin-bottom: 0; }
+  .scroll { overflow-x: auto; margin: 0 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .925rem; }
+  th, td { border: 1px solid rgb(var(--line)); padding: .5rem .65rem; text-align: left; vertical-align: top; }
+  th { background: rgb(var(--surface)); font-weight: 600; }
+  .draft {
+    background: rgb(var(--surface)); border: 1px solid rgb(var(--warn));
+    border-left-width: 3px; border-radius: 6px; padding: .75rem 1rem; margin: 0 0 2rem;
+    color: rgb(var(--muted)); font-size: .925rem;
+  }
+  .home { display: inline-block; margin-bottom: 2rem; font-size: .875rem; color: rgb(var(--muted)); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgb(var(--line));
+           color: rgb(var(--faint)); font-size: .8125rem; }
+</style>
+</head>
+<body>
+<main>
+<a class="home" href="/">← FitPulse</a>
+
+<h1>FitPulse FAQ</h1>
+<p>FitPulse is a personal gym tracker: you log your workouts and body weight, and it shows your training history, muscle balance and progress over time.</p>
+<p><strong>Can't find your answer here?</strong> Email <strong>smalkaisk@gmail.com</strong> and we'll help.</p>
+<p>This page explains how the app works. It is not part of the <a href="/terms.html">Terms of Service</a> or the <a href="/privacy.html">Privacy Policy</a> — where a question touches your data or your rights, those documents are the ones that bind.</p>
+<h2>Using the app</h2>
+<h3>How do I start a workout?</h3>
+<p>The first time, the home screen asks you to pick a training split (Push / Pull / Legs, Upper / Lower, Full Body, and others). After that:</p>
+<ol><li>On the home screen, tap the day you're training.</li><li>Enter your body weight if you're asked for it.</li><li>The session opens pre-filled with that day's usual exercises. Type your reps and weight for each set, and add or remove exercises as you go.</li><li>Tap <strong>Finish</strong> when you're done. Exercises you didn't touch are dropped automatically.</li></ol>
+<p>You can't accidentally navigate away from a workout in progress — the bottom tab bar is hidden until you finish or discard it.</p>
+<h3>I closed the app mid-workout. Did I lose it?</h3>
+<p>No. An unfinished session is saved on the device and restored when you reopen the app. If it has been sitting for a long time the sets are still kept — only the session timer is switched off, so the workout won't be logged with a misleading duration.</p>
+<h3>Can I log an exercise with no weight?</h3>
+<p>Yes, for core exercises. Leave the weight field empty and log the reps on their own. An empty weight means bodyweight, which is different from a weight of zero, so don't type <code>0</code> for a bodyweight set.</p>
+<h3>Weights are showing in the wrong unit</h3>
+<p>Open <strong>Settings → Units</strong> and switch between kilograms and pounds. This changes the display only. Every weight is stored in kilograms, so switching units never rewrites your logged workouts.</p>
+<h3>How do I rename my training days?</h3>
+<p>On the home screen, choose <strong>Rename days</strong> and type your own label for each day. This is display-only: your history, stats and filters keep working, because the underlying day type never changes.</p>
+<h3>A widget disappeared from my dashboard</h3>
+<p>You can hide widgets per screen in <strong>Settings → Widgets</strong>, and the same widget can be hidden on the dashboard while staying visible on Progress. Turn it back on from the same list. Starting a workout and the Progress filter can't be hidden.</p>
+<h3>What does the muscle chart count?</h3>
+<p>The donut on the dashboard and Progress screen totals your training by muscle group. <strong>Settings → Display</strong> lets you choose whether it counts sets, total volume (reps times weight), or sessions. Counting sessions deliberately adds up to more than your session count, because one workout is counted once for every muscle group it worked.</p>
+<h3>Does FitPulse work offline?</h3>
+<p>Yes. Changes you make offline are saved on the device and upload the next time you have a connection. While something is waiting to sync you'll see a banner with a count, and a <strong>Not synced</strong> chip on the affected workout in History. There is no automatic retry yet — a change that failed to upload goes up on your next successful save or when you tap <strong>Retry</strong>.</p>
+<h2>Your account and your data</h2>
+<h3>How do I change my email address or password?</h3>
+<p>Both are in <strong>Settings → Account</strong>.</p>
+<ul><li><strong>Email:</strong> you'll be asked to confirm the change from <em>both</em> the old and the new address, so a typo can't lock you out.</li><li><strong>Password:</strong> you have to enter your current password as well as the new one.</li></ul>
+<h3>What syncs between my devices?</h3>
+<p>Your workouts, body-weight log and settings are stored on the server and appear on every device you sign in on. The offline cache in each browser is just a local copy of that. Your light/dark theme choice is per-device.</p>
+<h3>How do I get a copy of my data?</h3>
+<p><strong>Settings → Data → Export backup</strong> downloads a JSON file containing your workouts, your body-weight log, your settings and your account details, including the record of the consent you gave at sign-up. This is also our answer to a data-access or data-portability request under the GDPR.</p>
+<h3>How do I import a backup?</h3>
+<p><strong>Settings → Data → Import backup.</strong> Importing <em>replaces everything</em> on your account with the contents of the file, so only import a backup you exported yourself. A file that would replace your data with nothing is rejected.</p>
+<h3>What's the difference between signing out and deleting my data?</h3>
+<ul><li><strong>Sign out</strong> (Settings → Account) clears the copy of your data on the device you're using. Your data stays on the server and on your other devices.</li><li><strong>Delete all my data</strong> (Settings → Data) permanently deletes every workout, weigh-in and setting from the server. It cannot be undone.</li></ul>
+<h3>How do I delete my whole account?</h3>
+<p>See <a href="/delete-account.html">Delete your account</a>. You can do it from inside the app or, if you can't sign in, by email. Deletion is permanent and there is no backup to restore from, so export first if you want to keep your history.</p>
+<h3>I forgot my password</h3>
+<p>On the sign-in screen, choose <strong>Forgot password?</strong> and enter your email. You'll be sent a link to set a new one.</p>
+<h2>Privacy and legal</h2>
+<h3>What data does FitPulse collect, and do you sell it?</h3>
+<p>Your email address, the workouts and body weight you log, and your settings. We do not sell your data and we do not use it for advertising. The <a href="/privacy.html">Privacy Policy</a> is the full account of what we collect, why, and who it is shared with.</p>
+<h3>Is my workout data treated as health data?</h3>
+<p>Yes. Because it can reveal information about your body and your health, we treat it as health data and ask for your explicit consent to process it — as a separate tick-box from accepting the Terms — when you create your account. The <a href="/consumer-health-data-privacy.html">Consumer Health Data Privacy notice</a> sets out the extra rights that come with that.</p>
+<h3>Does the app send crash reports or analytics?</h3>
+<p>No. The <a href="/privacy.html">Privacy Policy</a> says so, and that statement is kept true by a build check — the app cannot ship crash reporting without the policy being updated in the same change.</p>
+<h3>Why am I being asked to accept updated Terms?</h3>
+<p>When we change the <a href="/terms.html">Terms of Service</a> or the <a href="/privacy.html">Privacy Policy</a> in a way that matters, we email you at least 30 days beforehand and then ask you to accept the new version. You can keep using the current version until the change takes effect, and you can always export your data or delete your account instead of accepting.</p>
+<h3>Where do I read the full policies?</h3>
+<ul><li><a href="/terms.html">Terms of Service</a></li><li><a href="/privacy.html">Privacy Policy</a></li><li><a href="/consumer-health-data-privacy.html">Consumer Health Data Privacy notice</a></li><li><a href="/delete-account.html">Delete your account</a></li></ul>
+<h2>Still need help?</h2>
+<p>Email <strong>smalkaisk@gmail.com</strong>. We read every message.</p>
+<footer>FitPulse · <a href="/faq.html">FAQ</a> · <a href="/privacy.html">Privacy</a> · <a href="/consumer-health-data-privacy.html">Consumer Health Data</a> · <a href="/terms.html">Terms</a> · <a href="/delete-account.html">Delete account</a></footer>
+</main>
+</body>
+</html>

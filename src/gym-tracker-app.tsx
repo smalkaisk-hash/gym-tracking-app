@@ -1,8 +1,28 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { X, Plus, Trash2, TrendingUp, Dumbbell, Calendar, FileText, Edit2, Save, ChevronRight, ChevronDown, ChevronUp, Sun, Moon, Settings, ChevronLeft, Timer, Download, Upload, Pause, Play, LogOut, LogIn, Mail, Loader2, Eye, EyeOff, KeyRound, CloudOff } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { supabase, supabaseEnabled, rowToWorkout, workoutToRow, rowToBW, bwToRow } from './supabase';
 import { reportError } from './monitoring';
+
+// The recharts drawing layer is lazy-loaded — it is ~105 kB gzipped and nothing on
+// the critical path (auth, onboarding, logging a workout, History, Settings) draws
+// a chart. `Chart` resolves the recharts chunk only when a chart first renders; the
+// callers compute the data/palette/formatters and pass primitives in (see charts.tsx).
+const Chart = lazy(() => import('./charts'));
+const ChartFallback = ({ h }: any) => (
+  <div style={{ height: h }} className="w-full rounded-ctl bg-raised animate-pulse" aria-hidden="true" />
+);
+// A chart chunk that fails to load (offline, first visit) or throws while drawing
+// must not reach the root ErrorBoundary — that blanks the whole app over a missing
+// card. This local boundary keeps the failure to the one slot.
+class ChartArea extends React.Component<{ h: number; children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(err: any) { reportError(err, { at: 'chartLazyLoad' }); }
+  render() {
+    if (this.state.failed) return <ChartFallback h={this.props.h} />;
+    return <Suspense fallback={<ChartFallback h={this.props.h} />}>{this.props.children}</Suspense>;
+  }
+}
 
 // No image imports. The day tiles used to carry stock photographs; they were
 // dropped on 2026-08-05 — see Assets/CREDITS.md for what was there and why it
@@ -1015,6 +1035,69 @@ const STARTER_TEMPLATES: Record<string, string[]> = {
 // The exercise cards a session opens with. Ids are stamped here, same as addExercise.
 const starterExercises = (type: string) => (pick(STARTER_TEMPLATES, type) ?? []).map(newExerciseCard);
 
+// ── Local dev: walk past the login gate ─────────────────────────────────────────
+// Set VITE_DEV_AUTH_BYPASS=1 in .env.local (gitignored — never present in a real
+// build) to skip LoginScreen and land on a dashboard painted from seeded demo data.
+// There is NO session in this mode, so every Supabase effect stays inert and nothing
+// is persisted: it is a viewer for the UI, not a usable account. Delete the env line
+// (or run `npm run build`, where the var is absent) to get the real login back.
+const DEV_AUTH_BYPASS = import.meta.env.VITE_DEV_AUTH_BYPASS === '1';
+
+const seedDemoData = () => {
+  try {
+    if (localStorage.getItem(STORAGE_KEY)) return;   // real or already-seeded data — leave it
+    let s = 0x9e3779b9;
+    const rnd = () => (((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000));
+    const jit = (n: number, spread: number) => Math.round((n + (rnd() - 0.5) * spread) / 2.5) * 2.5;
+    const BASE: Record<string, number> = {
+      'Bench Press': 70, 'Incline Dumbbell Press': 28, 'Shoulder Press': 45, 'Lateral Raises': 12,
+      'Tricep Pushdowns': 25, Deadlift: 130, 'Pull-ups': 0, 'Barbell Row': 65, 'Face Pulls': 22,
+      'Barbell Curl': 30, Squat: 100, 'Romanian Deadlift': 90, 'Leg Press': 160, 'Leg Curl': 45,
+      'Calf Raises': 80,
+    };
+    const DAYS = ['push', 'pull', 'legs'];
+    const now = Date.now();
+    const workouts: any[] = [];
+    const bw: any[] = [];
+    for (let wk = 17; wk >= 0; wk--) {
+      const prog = (17 - wk) / 17;                       // linear progression over ~4 months
+      for (let d = 0; d < 3; d++) {
+        const type = DAYS[d];
+        const date = new Date(now - (wk * 7 + (2 - d) * 2) * 86400000);
+        workouts.push({
+          id: crypto.randomUUID(),
+          type,
+          bodyWeight: null,
+          date: date.toISOString(),
+          notes: '',
+          exercises: (pick(STARTER_TEMPLATES, type) as string[]).map((name) => {
+            const top = (BASE[name] ?? 40) * (1 + prog * 0.22);
+            return {
+              name,
+              notes: '',
+              sets: Array.from({ length: 3 }, (_, i) => ({
+                reps: 6 + Math.floor(rnd() * 5),
+                weight: BASE[name] === 0 ? null : Math.max(2.5, jit(top - i * top * 0.08, 5)),
+              })),
+            };
+          }),
+        });
+      }
+      bw.push({
+        id: crypto.randomUUID(),
+        date: new Date(now - wk * 7 * 86400000).toISOString(),
+        weight: Math.round((78 + (17 - wk) * 0.18 + (rnd() - 0.5)) * 10) / 10,
+      });
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(workouts));
+    localStorage.setItem(BW_LOG_KEY, JSON.stringify(bw));
+    localStorage.setItem(GOAL_KEY, '3');
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ name: 'Demo', units: 'kg', split: 'ppl' }));
+  } catch { /* a private-mode localStorage throw just means no seed — the app still loads */ }
+};
+
+if (DEV_AUTH_BYPASS) seedDemoData();
+
 // The tiles a split shows: its days, then Custom (always available, whatever you train).
 const daysOfSplit = (id: string): SessionType[] => [...(pick(SPLIT_BY_ID, id)?.days ?? []), CUSTOM_DAY];
 
@@ -1164,6 +1247,11 @@ const TERMS_URL       = '/terms.html';
 // page a user can reach without reinstalling — and that URL goes in the Data safety
 // form. The in-app "Delete account" button satisfies Apple 5.1.1(v) but not this.
 const DELETE_REQUEST_URL = '/delete-account.html';
+// The FAQ is informational, not a contract — published by `npm run legal` like the
+// policies, but it carries no draft/placeholder machinery and deliberately restates
+// no fact gated by compliance/verified.json (it links the policy instead). It also
+// serves as the store-listing "inquiry mechanism", so the contact address is on it.
+const FAQ_URL = '/faq.html';
 // The one address every privacy route terminates at. legal/PRIVACY.md § 13 and the
 // two other published policies name it; keep them in step. It goes into the export
 // so a file that outlives this app still tells its holder where to send a request.
@@ -1267,6 +1355,37 @@ const needsReconsentFor = (meta: any): boolean => {
 const reconsentDue = (now: number = Date.now(), from: string = POLICIES_EFFECTIVE_FROM): boolean => {
   const t = Date.parse(from);
   return Number.isFinite(t) && now >= t;
+};
+
+// ── Browser tab title ───────────────────────────────────────────────────────
+// There's no router, so without this every screen shares the one <title> baked
+// into index.html. `documentTitleFor` maps the active pre-render gate (or, past
+// them, `currentScreen`) to a tab label; an effect in GymTrackerApp writes it on
+// every change, and ErrorBoundary sets its own. Wording mirrors the published
+// legal pages ("History — FitPulse"); the dashboard keeps index.html's base
+// title rather than a redundant "Home —". Gates that are transient by nature
+// (the auth loader, the hydrate loader) keep the base title rather than flash a
+// label nobody reads — `settling` carries that.
+const BASE_TITLE = 'FitPulse — Gym Tracker';
+const SCREEN_TITLES: Record<string, string> = {
+  home: BASE_TITLE,
+  enterBodyWeight: 'Log body weight — FitPulse',
+  workout: 'Workout — FitPulse',
+  history: 'History — FitPulse',
+  progress: 'Progress — FitPulse',
+  settings: 'Settings — FitPulse',
+};
+const documentTitleFor = (g: {
+  settling: boolean; configured: boolean; recovery: boolean; signedIn: boolean;
+  onboarding: boolean; reconsent: boolean; screen: string;
+}): string => {
+  if (!g.configured) return 'Backend not configured — FitPulse';
+  if (g.settling) return BASE_TITLE;
+  if (g.recovery) return 'Set a new password — FitPulse';
+  if (!g.signedIn) return 'Sign in — FitPulse';
+  if (g.onboarding) return 'Welcome — FitPulse';
+  if (g.reconsent) return 'Review updated policies — FitPulse';
+  return pick(SCREEN_TITLES, g.screen) ?? BASE_TITLE;
 };
 
 const sanitizePrefs = (raw: any): Prefs => {
@@ -2878,23 +2997,15 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
     <div>
       <div className="flex flex-col sm:flex-row items-center gap-4">
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={slices} dataKey="value" nameKey="group"
-                innerRadius="62%" outerRadius="88%" paddingAngle={1.5}
-                startAngle={90} endAngle={-270}
-                stroke={c.surface} strokeWidth={2} isAnimationActive={false}
-              >
-                {slices.map((d, i) => <Cell key={d.group} fill={colorAt(d.group, i)} />)}
-              </Pie>
-              <Tooltip
-                contentStyle={{ backgroundColor: c.surface, border: `1px solid ${c.line}`, borderRadius: '6px', fontFamily: 'Barlow, system-ui, sans-serif', fontSize: '12px' }}
-                labelStyle={{ color: c.muted }}
-                formatter={(v: any, _n: any, p: any) => [`${metricValueLabel(metric, v, units)} · ${Math.round(p.payload.pct)}%`, p.payload.count > 1 ? `Other · ${p.payload.count} groups` : p.payload.group]}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+          <ChartArea h={size}>
+            <Chart
+              kind="donut"
+              slices={slices}
+              fills={slices.map((d, i) => colorAt(d.group, i))}
+              surface={c.surface} line={c.line} muted={c.muted}
+              formatter={(v: any, _n: any, p: any) => [`${metricValueLabel(metric, v, units)} · ${Math.round(p.payload.pct)}%`, p.payload.count > 1 ? `Other · ${p.payload.count} groups` : p.payload.group]}
+            />
+          </ChartArea>
           {/* Centre readout — the metric total in the hole. Overlay so it needs no
               chart colour; pointer-events-none keeps slice hovers alive underneath. */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -2944,35 +3055,14 @@ const MuscleGroupDonut = ({ workouts, theme, prefs, metric = 'sets', units = 'kg
 // Progress exercise line), so body weight reads in the app's colour everywhere.
 const BodyWeightTrend = ({ data, theme, prefs, chartType = 'line', units = 'kg', height = 220, compact = false }: any) => {
   const c = resolveChart(prefs, theme);
-  const font = { fontSize: compact ? '10px' : '11px', fontFamily: 'Barlow, system-ui, sans-serif' };
-  const margin = { top: 4, right: compact ? 4 : 8, left: compact ? -20 : -12, bottom: 0 };
-  const chrome = (
-    <>
-      <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
-      <XAxis dataKey="date" stroke={c.axis} tickLine={false} style={font} />
-      <YAxis stroke={c.axis} tickLine={false} width={compact ? 38 : 44} domain={['dataMin - 1', 'dataMax + 1']} style={font} unit={compact ? undefined : ` ${units}`} />
-      <Tooltip
-        contentStyle={{ backgroundColor: c.surface, border: `1px solid ${c.line}`, borderRadius: '6px', fontFamily: 'Barlow, system-ui, sans-serif', fontSize: '12px' }}
-        labelStyle={{ color: c.muted }}
-        cursor={{ stroke: c.grid }}
-        formatter={(v: any) => [`${v} ${units}`, 'Body weight']}
-      />
-    </>
-  );
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      {chartType === 'bar' ? (
-        <BarChart data={data} margin={margin}>
-          {chrome}
-          <Bar dataKey="bodyWeight" fill={c.accent} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-        </BarChart>
-      ) : (
-        <LineChart data={data} margin={margin}>
-          {chrome}
-          <Line type="monotone" dataKey="bodyWeight" stroke={c.accent} strokeWidth={2} dot={{ fill: c.accent, r: compact ? 2.5 : 3, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
-        </LineChart>
-      )}
-    </ResponsiveContainer>
+    <ChartArea h={height}>
+      <Chart
+        kind="bodyweight"
+        data={data} chartType={chartType} units={units} height={height} compact={compact}
+        accent={c.accent} grid={c.grid} axis={c.axis} surface={c.surface} line={c.line} muted={c.muted}
+      />
+    </ChartArea>
   );
 };
 
@@ -3123,16 +3213,6 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
     [bodyWeightLog, timeframe, customStartDate, customEndDate, units],
   );
 
-  const tooltipStyle = {
-    backgroundColor: c.surface,
-    border: `1px solid ${c.line}`,
-    borderRadius: '6px',
-    fontFamily: 'Barlow, system-ui, sans-serif',
-    fontSize: '12px',
-  };
-
-  const axis = { stroke: c.axis, style: { fontSize: '11px', fontFamily: 'Barlow, system-ui, sans-serif' } };
-
   // One exercise's top-set chart card. Shared so the single-exercise view and
   // every card in the All-exercises view are visually identical.
   const topSetCard = (name: string, data: any[]) => (
@@ -3145,22 +3225,13 @@ const ProgressScreen = ({ workouts, bodyWeightLog, theme, prefs }: any) => {
           Logged as bodyweight — no external load to chart.
         </p>
       ) : (
-      <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={data} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="2 4" stroke={c.grid} vertical={false} />
-          <XAxis dataKey="date" {...axis} tickLine={false} />
-          <YAxis {...axis} tickLine={false} width={44} unit={` ${units}`} />
-          <Tooltip
-            contentStyle={tooltipStyle}
-            labelStyle={{ color: c.muted }}
-            cursor={{ stroke: c.grid }}
-            formatter={(value: any, _name: string, props: any) =>
-              [`${value} ${units} × ${props.payload.repsAtMaxWeight} reps`, 'Top set']
-            }
+        <ChartArea h={220}>
+          <Chart
+            kind="topset"
+            data={data} units={units}
+            accent={accent} grid={c.grid} axisStroke={c.axis} surface={c.surface} line={c.line} muted={c.muted}
           />
-          <Line type="monotone" dataKey="maxWeight" stroke={accent} strokeWidth={2} dot={{ fill: accent, r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
-        </LineChart>
-      </ResponsiveContainer>
+        </ChartArea>
       )}
     </div>
   );
@@ -3816,8 +3887,9 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
           record is surfaced here because a consent you can't see is one you can't
           meaningfully withdraw. */}
       <div className={`${card} p-4`}>
-        <h3 className={`${label} mb-3`}>Legal</h3>
+        <h3 className={`${label} mb-3`}>Help &amp; legal</h3>
         <div className="flex flex-col gap-2">
+          <a href={FAQ_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:brightness-110 transition-all">FAQ</a>
           <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:brightness-110 transition-all">Terms of Service</a>
           <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:brightness-110 transition-all">Privacy Policy</a>
           <a href={CHD_PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:brightness-110 transition-all">Consumer Health Data Privacy</a>
@@ -3865,7 +3937,9 @@ const AuthShell = ({ children }: any) => (
 // My Health My Data Act §19.373.020 requires the consumer-health-data policy to
 // carry its own prominent homepage link — a link to the general privacy policy does
 // not satisfy it, so the two are listed separately and never collapsed into one.
-// target=_blank so following one never discards a half-typed sign-up form.
+// target=_blank so following one never discards a half-typed sign-up form. The FAQ
+// link is informational — it is not part of the MHMDA homepage-link requirement, but
+// the signed-out screen is where a store-listing visitor lands, so it belongs here.
 const LegalLinks = () => (
   <p className="text-[11px] text-faint text-center mt-5 leading-relaxed">
     <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors underline underline-offset-2">Terms</a>
@@ -3873,6 +3947,8 @@ const LegalLinks = () => (
     <a href={PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors underline underline-offset-2">Privacy Policy</a>
     <span className="mx-1.5">·</span>
     <a href={CHD_PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors underline underline-offset-2">Consumer Health Data Privacy</a>
+    <span className="mx-1.5">·</span>
+    <a href={FAQ_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors underline underline-offset-2">FAQ</a>
   </p>
 );
 
@@ -6082,6 +6158,21 @@ const GymTrackerApp = () => {
   const streak     = getWorkoutStreak();
   const inSession  = currentScreen === 'workout' || currentScreen === 'enterBodyWeight';
 
+  // Keep the browser tab label in step with the current gate / screen — see
+  // documentTitleFor. Must run before the early returns below (it's a hook), and
+  // its inputs are the same ones those returns branch on.
+  useEffect(() => {
+    document.title = documentTitleFor({
+      settling: !authReady || (!hydrated && !prefs.name),
+      configured: supabaseEnabled,
+      recovery,
+      signedIn: !!session,
+      onboarding: needsOnboarding,
+      reconsent: needsReconsent && reconsentDue(),
+      screen: currentScreen,
+    });
+  }, [authReady, hydrated, prefs.name, recovery, session, needsOnboarding, needsReconsent, currentScreen]);
+
   // Auth/config gates. Every hook above runs on each render, so these early
   // returns are safe. Missing env → config help; still checking → loader;
   // reset link in progress → set-new-password (checked before !session because
@@ -6090,7 +6181,7 @@ const GymTrackerApp = () => {
   if (!supabaseEnabled) return <ConfigError />;
   if (!authReady)       return <FullScreenLoader />;
   if (recovery)         return <ResetPasswordScreen onDone={() => setRecovery(false)} onSignOut={signOut} />;
-  if (!session)         return <LoginScreen />;
+  if (!session && !DEV_AUTH_BYPASS) return <LoginScreen />;
   // `needsOnboarding` is set asynchronously by the hydrate effect (after it learns
   // there's no server settings row), so until hydrate resolves the render would fall
   // through to the dashboard and flash it. Show a NEUTRAL loader during that window —
@@ -6616,6 +6707,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
   componentDidCatch(error: Error, info: any) {
     console.error('App crashed', error, info);
     reportError(error, { boundary: 'root', componentStack: info?.componentStack });
+    try { document.title = 'Something broke — FitPulse'; } catch { /* ignore */ }
   }
 
   private recover = () => {

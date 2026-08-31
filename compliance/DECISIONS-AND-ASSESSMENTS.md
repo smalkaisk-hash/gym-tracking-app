@@ -244,6 +244,12 @@ repository but cannot currently reach a user.
    the Terms back into draft is not a one-line change. Getting to zero placeholders and
    dropping both banners is the intended route.
 5. Work the checklist in § 5 to green, then `npm run release:check`.
+6. Wire the chosen host to serve `/404.html` for unknown paths and **verify it returns an
+   HTTP 404 status** — some hosts serve the file as 200 unless configured. `dist/404.html`
+   already ships (generated from `build-legal.mjs`'s `STATIC_PAGES`); the host config is the
+   only remaining piece, and its form depends on the host (`_redirects` / `vercel.json` /
+   `_routes.json` / a Pages setting). If a SPA catch-all rewrite is ever added it would
+   shadow `404.html`, so route unknown paths to `/404.html` explicitly with a 404 status.
 
 **Revisit when:** a deployment is actually planned. Until then this item needs no work.
 

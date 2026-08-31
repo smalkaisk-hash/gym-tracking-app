@@ -37,6 +37,13 @@ const published = [...gen.matchAll(/file: '([A-Z0-9-]+\.md)',\s*\n\s*slug: '([a-
   .map(([, file, slug]) => ({ file, slug, html: `${slug}.html` }));
 const internal = [...(/const INTERNAL = \[([^\]]*)\]/.exec(gen)?.[1] ?? '').matchAll(/'([^']+)'/g)]
   .map((m) => m[1]);
+// Non-markdown pages the generator also emits into public/ (currently just 404).
+// No legal/*.md source, so they are tracked apart from `published` and only take
+// part in the checks that run over every file in public/. `[a-z0-9-]+` here (vs
+// `published`'s digit-excluding `[a-z-]+`) so the `404` slug is captured.
+const staticPages = [...(/const STATIC_PAGES = \[([\s\S]*?)\n\];/.exec(gen)?.[1] ?? '')
+  .matchAll(/slug: '([a-z0-9-]+)'/g)]
+  .map(([, slug]) => ({ slug, html: `${slug}.html` }));
 
 console.log('\n── the build is reproducible and public/ is not stale');
 
@@ -57,6 +64,17 @@ for (const doc of published) {
   check(`legal/${doc.file} exists (its source)`, fs.existsSync(path.join(LEGAL, doc.file)));
 }
 
+console.log('\n── every static page the generator declares was built');
+
+check('scripts/build-legal.mjs still declares the 404 static page',
+  staticPages.some((p) => p.slug === '404'),
+  `STATIC_PAGES slugs: ${staticPages.map((p) => p.slug).join(', ') || '(none)'}`);
+
+for (const p of staticPages) {
+  check(`public/${p.html} exists`, fs.existsSync(path.join(PUBLIC, p.html)),
+    'run `npm run legal` and commit the generated page');
+}
+
 console.log('\n── nothing internal was published');
 
 for (const doc of internal) {
@@ -65,10 +83,11 @@ for (const doc of internal) {
 }
 
 const allHtml = fs.existsSync(PUBLIC) ? fs.readdirSync(PUBLIC).filter((f) => f.endsWith('.html')) : [];
+const knownHtml = new Set([...published, ...staticPages].map((d) => d.html));
 
 check('public/ contains no page the generator does not know about',
-  allHtml.every((f) => published.some((d) => d.html === f)),
-  `stray: ${allHtml.filter((f) => !published.some((d) => d.html === f)).join(', ')}`);
+  allHtml.every((f) => knownHtml.has(f)),
+  `stray: ${allHtml.filter((f) => !knownHtml.has(f)).join(', ')}`);
 
 for (const f of allHtml) {
   const html = read(f);

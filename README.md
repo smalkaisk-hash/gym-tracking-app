@@ -89,7 +89,7 @@ choice, optional email-template copy). It's a one-time walkthrough in
 
 ```bash
 npm run dev       # Vite dev server
-npm run legal     # publish legal/*.md → public/*.html (policies, terms, deletion page)
+npm run legal     # publish legal/*.md → public/*.html (policies, terms, deletion page, FAQ)
 npm run build     # npm run legal && tsc && vite build — tsc is the only typecheck
 npm run preview   # serve the production build from dist/
 npm test          # the five Node assertion suites, in order
@@ -152,7 +152,7 @@ blob). A `delete_account()` `SECURITY DEFINER` function backs self-service delet
 | [SUPABASE-SETUP.md](SUPABASE-SETUP.md) | One-time dashboard setup for the auth flows |
 | [schema.sql](schema.sql) | Canonical Postgres schema, with design notes inline |
 | [supabase/migrations/README.md](supabase/migrations/README.md) | Migration chain + apply runbook |
-| [legal/](legal/) | The legal documents as source. `TERMS.md`, `PRIVACY.md`, `CONSUMER-HEALTH-DATA-PRIVACY.md` and `DELETE-ACCOUNT.md` are published to `public/*.html` by `npm run legal`; `TERMS-RATIONALE.md` and `PRIVACY-POLICY-GUIDE.md` are internal reasoning and are never published |
+| [legal/](legal/) | The published pages as source. `TERMS.md`, `PRIVACY.md`, `CONSUMER-HEALTH-DATA-PRIVACY.md`, `DELETE-ACCOUNT.md` and `FAQ.md` are published to `public/*.html` by `npm run legal` (`FAQ.md` is informational, not a contract); `TERMS-RATIONALE.md` and `PRIVACY-POLICY-GUIDE.md` are internal reasoning and are never published |
 
 The published pages are generated, so **edit `legal/*.md`, never `public/*.html`** — the next
 `npm run legal` (which `npm run build` runs first) would overwrite the hand edit, and

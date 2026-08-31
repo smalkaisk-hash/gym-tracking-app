@@ -54,6 +54,16 @@ const PUBLISH = [
     title: 'Delete your account',
     description: 'How to delete your FitPulse account and everything in it.',
   },
+  {
+    // Informational, not a contract: it ships in force (no draft marker, no
+    // placeholders) and deliberately restates no fact that lives in
+    // compliance/verified.json — every privacy answer links the policy rather
+    // than re-asserting it, so the FAQ never enters check:claims or check:decisions.
+    file: 'FAQ.md',
+    slug: 'faq',
+    title: 'FAQ',
+    description: 'Common questions about using FitPulse, your account and your data.',
+  },
 ];
 
 // Internal drafting notes. These must never reach public/.
@@ -404,11 +414,51 @@ const page = ({ title, description, body, draft }) => `<!doctype html>
 <a class="home" href="/">← FitPulse</a>
 ${draft ? '<p class="draft"><strong>Draft.</strong> This document is not yet in force and has not been reviewed by a lawyer. It is published here so it can be read and commented on.</p>' : ''}
 ${body}
-<footer>FitPulse · <a href="/privacy.html">Privacy</a> · <a href="/consumer-health-data-privacy.html">Consumer Health Data</a> · <a href="/terms.html">Terms</a> · <a href="/delete-account.html">Delete account</a></footer>
+<footer>FitPulse · <a href="/faq.html">FAQ</a> · <a href="/privacy.html">Privacy</a> · <a href="/consumer-health-data-privacy.html">Consumer Health Data</a> · <a href="/terms.html">Terms</a> · <a href="/delete-account.html">Delete account</a></footer>
 </main>
 </body>
 </html>
 `;
+
+// ── Static pages ─────────────────────────────────────────────────────────────
+// Non-markdown pages that still ride the shared shell: same tokens, same dark
+// mode, same footer, self-contained, no build step. They are NOT legal documents
+// — there is no legal/*.md source, they are not in PUBLISH, and the draft /
+// placeholder rules do not apply to them — but they ARE part of public/, so they
+// are generated (never hand-edited) and kept in sync by --check exactly like the
+// legal pages.
+//
+// 404 lives here rather than as legal/404.md on purpose: it is a host artifact,
+// not a document a store listing or a regulator links to, and the slug `404` is
+// not a legal-page slug (the test derivations key off `file: '…md'` plus a
+// lowercase slug).
+const NOT_FOUND_BODY = `<h1>Page not found</h1>
+<p>There is nothing at this address. The link that brought you here is broken or out of date, or the page it pointed to has moved since it was saved.</p>
+<p>Nothing is wrong with your account. Everything you have logged in FitPulse is stored on the server, not on this page, and is still there when you go back.</p>
+<p>This page is static: it does not need the app to load, and it reads the same whether or not you are signed in.</p>
+<p><a href="/">Return to FitPulse</a></p>
+<h2>Common destinations</h2>
+<p>Most of what lives outside the app is one of these:</p>
+<ul>
+<li><a href="/faq.html">FAQ</a> — how the app, your account and your data work, and the address to write to for help.</li>
+<li><a href="/privacy.html">Privacy Policy</a> — what FitPulse collects, why, and how long it is kept.</li>
+<li><a href="/consumer-health-data-privacy.html">Consumer Health Data Privacy</a> — the separate notice required by the Washington My Health My Data Act.</li>
+<li><a href="/terms.html">Terms of Service</a> — the agreement between you and FitPulse.</li>
+<li><a href="/delete-account.html">Delete your account</a> — how to remove your account and everything stored in it.</li>
+</ul>
+<h2>If you typed the address</h2>
+<p>Check it for a small mistake — a missing letter, or <code>.htm</code> where it should read <code>.html</code>. Every published page ends in <code>.html</code> and sits at the top level of the site; there are no nested folders to get wrong.</p>
+<h2>If you followed a link from inside the app</h2>
+<p>That is a bug worth reporting. Note the screen you came from, what you clicked, and roughly when it happened, then send those details to the contact address on the <a href="/faq.html">FAQ</a> page. Include the address shown in your browser's location bar — it tells us exactly which link is wrong so it can be fixed.</p>`;
+
+const STATIC_PAGES = [
+  {
+    slug: '404',
+    title: 'Page not found',
+    description: 'That FitPulse page does not exist. Links to the app and to every published policy.',
+    body: NOT_FOUND_BODY,
+  },
+];
 
 // ── Build ────────────────────────────────────────────────────────────────────
 
@@ -491,6 +541,22 @@ const main = () => {
     }
   }
 
+  // Static pages: same shell, same "public/ never drifts" guarantee. No draft or
+  // placeholder rules apply — they have no legal/*.md source — so --release skips
+  // them.
+  for (const p of STATIC_PAGES) {
+    if (release) continue;
+    const html = page({ title: p.title, description: p.description, body: p.body, draft: false });
+    const target = path.join(OUT, `${p.slug}.html`);
+    if (check) {
+      const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+      if (current !== html) stale.push(`${p.slug}.html`);
+    } else {
+      fs.writeFileSync(target, html, 'utf8');
+      console.log(`  public/${p.slug}.html  ←  scripts/build-legal.mjs (static)`);
+    }
+  }
+
   if (release) {
     if (!drafts.length) {
       console.log(`build-legal --release: all ${PUBLISH.length} documents are in force — no placeholders, no draft banners.`);
@@ -530,11 +596,13 @@ const main = () => {
       console.error('Run `npm run legal` and commit the result.');
       process.exit(1);
     }
-    console.log(`build-legal --check: public/ matches legal/ (${PUBLISH.length} documents)`);
+    console.log(
+      `build-legal --check: public/ matches legal/ (${PUBLISH.length} documents, ${STATIC_PAGES.length} static page(s))`,
+    );
     return;
   }
 
-  console.log(`\n${PUBLISH.length} legal pages written to public/.`);
+  console.log(`\n${PUBLISH.length} legal pages + ${STATIC_PAGES.length} static page(s) written to public/.`);
   if (drafts.length) console.log(`Still marked draft: ${drafts.join(', ')}.`);
 };
 
