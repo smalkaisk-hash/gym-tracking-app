@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="lv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BUJ — FitPulse</title>
+<meta name="description" content="Biežāk uzdotie jautājumi par FitPulse lietošanu, jūsu kontu un datiem.">
+<style>
+  :root {
+    --ground: 238 241 243; --surface: 255 255 255; --line: 215 222 227;
+    --ink: 13 18 21; --muted: 90 104 116; --faint: 147 161 172;
+    --accent: 27 95 191; --warn: 169 116 31;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: 13 18 21; --surface: 21 28 33; --line: 38 49 58;
+      --ink: 230 237 243; --muted: 139 154 167; --faint: 90 104 116;
+      --accent: 46 123 214; --warn: 224 166 60;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem 5rem;
+    background: rgb(var(--ground)); color: rgb(var(--ink));
+    font: 400 16px/1.65 Barlow, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1, h2, h3, h4 {
+    font-family: "Barlow Condensed", Barlow, ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.15; margin: 2.25rem 0 .75rem; font-weight: 700;
+  }
+  h1 { font-size: 2rem; text-transform: uppercase; letter-spacing: .02em; margin-top: 0; }
+  h2 { font-size: 1.4rem; border-bottom: 1px solid rgb(var(--line)); padding-bottom: .4rem; }
+  h3 { font-size: 1.15rem; }
+  h4 { font-size: 1rem; color: rgb(var(--muted)); text-transform: uppercase; letter-spacing: .08em; }
+  p { margin: 0 0 .9rem; }
+  p.sub { margin: 0 0 .35rem; padding-left: 1.5rem; text-indent: -1.5rem; }
+  a { color: rgb(var(--accent)); text-underline-offset: 2px; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.35rem; }
+  li { margin-bottom: .35rem; }
+  hr { border: 0; border-top: 1px solid rgb(var(--line)); margin: 2rem 0; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .875em;
+    background: rgb(var(--surface)); border: 1px solid rgb(var(--line));
+    border-radius: 3px; padding: .1em .35em;
+  }
+  blockquote {
+    margin: 0 0 1rem; padding: .75rem 1rem;
+    background: rgb(var(--surface)); border-left: 3px solid rgb(var(--accent));
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p:last-child { margin-bottom: 0; }
+  .scroll { overflow-x: auto; margin: 0 0 1.25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .925rem; }
+  th, td { border: 1px solid rgb(var(--line)); padding: .5rem .65rem; text-align: left; vertical-align: top; }
+  th { background: rgb(var(--surface)); font-weight: 600; }
+  .draft {
+    background: rgb(var(--surface)); border: 1px solid rgb(var(--warn));
+    border-left-width: 3px; border-radius: 6px; padding: .75rem 1rem; margin: 0 0 2rem;
+    color: rgb(var(--muted)); font-size: .925rem;
+  }
+  .home { display: inline-block; margin-bottom: 2rem; font-size: .875rem; color: rgb(var(--muted)); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgb(var(--line));
+           color: rgb(var(--faint)); font-size: .8125rem; }
+</style>
+</head>
+<body>
+<main>
+<a class="home" href="/">← FitPulse</a>  ·  <a class="home" href="/faq.html">English</a>
+<p class="draft"><strong>Tulkojums ērtībai.</strong> Šis ir neoficiāls tulkojums. Juridiski saistošā ir šī dokumenta <a href="/faq.html">oriģinālversija angļu valodā</a>. Šo tulkojumu vēl nav pārbaudījis jurists.</p>
+<h1>FitPulse BUJ</h1>
+<p>FitPulse ir personīgs treniņu žurnāls: jūs pierakstāt savus treniņus un ķermeņa svaru, un tas parāda jūsu treniņu vēsturi, muskuļu grupu līdzsvaru un progresu laika gaitā.</p>
+<p><strong>Neatradāt atbildi šeit?</strong> Rakstiet uz <strong>smalkaisk@gmail.com</strong>, un mēs palīdzēsim.</p>
+<p>Šī lapa skaidro, kā darbojas lietotne. Tā nav daļa no <a href="/terms.html">Lietošanas noteikumiem</a> vai <a href="/privacy.html">Privātuma politikas</a> — ja jautājums skar jūsu datus vai tiesības, tieši šie dokumenti ir saistoši.</p>
+<h2>Lietotnes lietošana</h2>
+<h3>Kā sākt treniņu?</h3>
+<p>Pirmajā reizē sākumekrāns lūdz izvēlēties treniņu sadalījumu (Push / Pull / Legs, Upper / Lower, Full Body un citi). Pēc tam:</p>
+<ol><li>Sākumekrānā pieskarieties dienai, kuru trenējat.</li><li>Ievadiet savu ķermeņa svaru, ja tas tiek prasīts.</li><li>Sesija atveras jau aizpildīta ar attiecīgās dienas ierastajiem vingrojumiem. Katram piegājienam ierakstiet atkārtojumus un svaru, un pievienojiet vai noņemiet vingrojumus gaitā.</li><li>Kad esat pabeidzis, pieskarieties <strong>Finish</strong>. Vingrojumi, kurus neaiztikāt, tiek automātiski atmesti.</li></ol>
+<p>Jūs nevarat nejauši aiziet no iesākta treniņa — apakšējā ciļņu josla ir paslēpta, līdz jūs treniņu pabeidzat vai atmetat.</p>
+<h3>Aizvēru lietotni treniņa vidū. Vai es to zaudēju?</h3>
+<p>Nē. Nepabeigta sesija tiek saglabāta ierīcē un atjaunota, kad no jauna atverat lietotni. Ja tā ir stāvējusi ilgu laiku, piegājieni joprojām tiek saglabāti — tiek izslēgts tikai sesijas taimeris, lai treniņš netiktu reģistrēts ar maldinošu ilgumu.</p>
+<h3>Vai varu pierakstīt vingrojumu bez svara?</h3>
+<p>Jā, pamata (core) vingrojumiem. Atstājiet svara lauku tukšu un pierakstiet tikai atkārtojumus. Tukšs svars nozīmē ķermeņa svaru, kas atšķiras no svara, kas vienāds ar nulli, tāpēc neierakstiet <code>0</code> ķermeņa svara piegājienam.</p>
+<h3>Svari tiek rādīti nepareizā mērvienībā</h3>
+<p>Atveriet <strong>Iestatījumi → Mērvienības</strong> un pārslēdzieties starp kilogramiem un mārciņām. Tas maina tikai attēlojumu. Katrs svars tiek glabāts kilogramos, tāpēc mērvienību pārslēgšana nekad nepārraksta jūsu reģistrētos treniņus.</p>
+<h3>Kā pārdēvēt savas treniņu dienas?</h3>
+<p>Sākumekrānā izvēlieties <strong>Rename days</strong> un ierakstiet savu apzīmējumu katrai dienai. Tas ir tikai attēlojums: jūsu vēsture, statistika un filtri turpina darboties, jo pamatā esošais dienas tips nemainās.</p>
+<h3>No mana informācijas paneļa pazuda logrīks</h3>
+<p>Logrīkus var paslēpt katram ekrānam atsevišķi sadaļā <strong>Iestatījumi → Logrīki</strong>, un vienu un to pašu logrīku var paslēpt informācijas panelī, atstājot to redzamu sadaļā Progress. Ieslēdziet to atpakaļ no tā paša saraksta. Treniņa sākšanu un Progress filtru paslēpt nevar.</p>
+<h3>Ko skaita muskuļu diagramma?</h3>
+<p>Riņķa diagramma informācijas panelī un Progress ekrānā apkopo jūsu treniņus pa muskuļu grupām. <strong>Iestatījumi → Attēlojums</strong> ļauj izvēlēties, vai tā skaita piegājienus, kopējo apjomu (atkārtojumi reiz svars) vai sesijas. Sesiju skaitīšana apzināti dod summu, kas ir lielāka par jūsu sesiju skaitu, jo viens treniņš tiek ieskaitīts vienreiz katrai muskuļu grupai, ko tas noslogoja.</p>
+<h3>Vai FitPulse darbojas bezsaistē?</h3>
+<p>Jā. Izmaiņas, ko veicat bezsaistē, tiek saglabātas ierīcē un augšupielādētas nākamajā reizē, kad ir savienojums. Kamēr kaut kas gaida sinhronizāciju, jūs redzēsiet joslu ar skaitītāju un atzīmi <strong>Not synced</strong> pie attiecīgā treniņa sadaļā History. Automātiskas atkārtošanas vēl nav — izmaiņa, ko neizdevās augšupielādēt, tiek nosūtīta nākamajā veiksmīgajā saglabāšanā vai kad pieskaraties <strong>Retry</strong>.</p>
+<h2>Jūsu konts un dati</h2>
+<h3>Kā mainīt e-pasta adresi vai paroli?</h3>
+<p>Abi ir sadaļā <strong>Iestatījumi → Konts</strong>.</p>
+<ul><li><strong>E-pasts:</strong> jums tiks lūgts apstiprināt izmaiņu gan no <em>vecās</em>, gan no <em>jaunās</em> adreses, tāpēc drukas kļūda nevar liegt jums piekļuvi.</li><li><strong>Parole:</strong> jāievada gan pašreizējā, gan jaunā parole.</li></ul>
+<h3>Kas sinhronizējas starp manām ierīcēm?</h3>
+<p>Jūsu treniņi, ķermeņa svara žurnāls un iestatījumi tiek glabāti serverī un parādās katrā ierīcē, kurā pierakstāties. Bezsaistes kešatmiņa katrā pārlūkprogrammā ir tikai to lokāla kopija. Jūsu gaišās/tumšās tēmas izvēle ir katrai ierīcei atsevišķa.</p>
+<h3>Kā iegūt savu datu kopiju?</h3>
+<p><strong>Iestatījumi → Dati → Eksportēt dublējumu</strong> lejupielādē JSON failu, kurā ir jūsu treniņi, ķermeņa svara žurnāls, iestatījumi un konta informācija, tostarp ieraksts par piekrišanu, ko sniedzāt reģistrējoties. Tā ir arī mūsu atbilde uz datu piekļuves vai datu pārnesamības pieprasījumu saskaņā ar VDAR.</p>
+<h3>Kā importēt dublējumu?</h3>
+<p><strong>Iestatījumi → Dati → Importēt dublējumu.</strong> Importēšana <em>aizstāj visu</em> jūsu kontā ar faila saturu, tāpēc importējiet tikai dublējumu, ko eksportējāt paši. Fails, kas aizstātu jūsu datus ar neko, tiek noraidīts.</p>
+<h3>Kāda ir atšķirība starp izrakstīšanos un manu datu dzēšanu?</h3>
+<ul><li><strong>Izrakstīšanās</strong> (Iestatījumi → Konts) notīra jūsu datu kopiju ierīcē, kuru izmantojat. Jūsu dati paliek serverī un citās jūsu ierīcēs.</li><li><strong>Dzēst visus manus datus</strong> (Iestatījumi → Dati) neatgriezeniski dzēš no servera katru treniņu, svēršanos un iestatījumu. To nevar atsaukt.</li></ul>
+<h3>Kā dzēst visu savu kontu?</h3>
+<p>Skatiet <a href="/delete-account.html">Dzēsiet savu kontu</a>. To var izdarīt lietotnē vai, ja nevarat pierakstīties, pa e-pastu. Dzēšana ir neatgriezeniska, un nav dublējuma, no kā atjaunot, tāpēc vispirms eksportējiet, ja vēlaties saglabāt savu vēsturi.</p>
+<h3>Aizmirsu paroli</h3>
+<p>Pierakstīšanās ekrānā izvēlieties <strong>Forgot password?</strong> un ievadiet savu e-pastu. Jums tiks nosūtīta saite jaunas paroles iestatīšanai.</p>
+<h2>Privātums un juridiskie jautājumi</h2>
+<h3>Kādus datus FitPulse vāc, un vai jūs tos pārdodat?</h3>
+<p>Jūsu e-pasta adresi, treniņus un ķermeņa svaru, ko pierakstāt, un jūsu iestatījumus. Mēs nepārdodam jūsu datus un neizmantojam tos reklāmai. <a href="/privacy.html">Privātuma politika</a> ir pilns izklāsts par to, ko mēs vācam, kāpēc un ar ko tas tiek koplietots.</p>
+<h3>Vai mani treniņu dati tiek uzskatīti par veselības datiem?</h3>
+<p>Jā. Tā kā tie var atklāt informāciju par jūsu ķermeni un veselību, mēs tos uzskatām par veselības datiem un lūdzam jūsu skaidru piekrišanu to apstrādei — kā atsevišķu izvēles rūtiņu no Noteikumu pieņemšanas — kad jūs izveidojat kontu. <a href="/consumer-health-data-privacy.html">Patērētāju veselības datu privātuma paziņojums</a> izklāsta papildu tiesības, kas ar to saistās.</p>
+<h3>Vai lietotne sūta avāriju ziņojumus vai analītiku?</h3>
+<p>Nē. <a href="/privacy.html">Privātuma politika</a> to apliecina, un šo apgalvojumu uztur patiesu būvēšanas pārbaude — lietotne nevar tikt piegādāta ar avāriju ziņošanu bez tā, ka tajā pašā izmaiņā tiek atjaunināta politika.</p>
+<h3>Kāpēc man tiek lūgts pieņemt atjauninātos Noteikumus?</h3>
+<p>Kad mēs mainām <a href="/terms.html">Lietošanas noteikumus</a> vai <a href="/privacy.html">Privātuma politiku</a> tādā veidā, kam ir nozīme, mēs jums nosūtām e-pastu vismaz 30 dienas iepriekš un pēc tam lūdzam pieņemt jauno versiju. Jūs varat turpināt lietot pašreizējo versiju, līdz izmaiņa stājas spēkā, un jūs vienmēr varat eksportēt savus datus vai dzēst kontu, nevis pieņemt.</p>
+<h3>Kur lasīt pilnas politikas?</h3>
+<ul><li><a href="/terms.html">Lietošanas noteikumi</a></li><li><a href="/privacy.html">Privātuma politika</a></li><li><a href="/consumer-health-data-privacy.html">Patērētāju veselības datu privātuma paziņojums</a></li><li><a href="/delete-account.html">Dzēsiet savu kontu</a></li></ul>
+<h2>Joprojām nepieciešama palīdzība?</h2>
+<p>Rakstiet uz <strong>smalkaisk@gmail.com</strong>. Mēs izlasām katru ziņu.</p>
+<footer>FitPulse · <a href="/lv/faq.html">BUJ</a> · <a href="/consumer-health-data-privacy.html">Patērētāju veselības datu privātums</a> · <a href="/lv/delete-account.html">Konta dzēšana</a></footer>
+</main>
+</body>
+</html>

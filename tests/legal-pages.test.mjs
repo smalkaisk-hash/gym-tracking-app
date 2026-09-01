@@ -75,6 +75,71 @@ for (const p of staticPages) {
     'run `npm run legal` and commit the generated page');
 }
 
+console.log('\n── convenience translations (legal/<lang>/ → public/<lang>/)');
+
+// TRANSLATIONS in the generator is the source of truth for which documents are
+// offered in another language and where. Parse the dir and the slug list; each
+// slug must have a legal/<dir>/<FILE>.md and a built public/<dir>/<slug>.html,
+// and the page must carry the convenience banner and the right lang attribute.
+const bySlug = new Map(published.map((d) => [d.slug, d]));
+const translations = [...gen.matchAll(/\{\s*\n\s*dir: '([a-z]+)',\s*\n\s*lang: '([a-z]+)',[\s\S]*?slugs: \[([^\]]*)\]/g)]
+  .map(([, dir, lang, slugs]) => ({
+    dir, lang,
+    slugs: [...slugs.matchAll(/'([a-z-]+)'/g)].map((m) => m[1]),
+  }));
+
+check('scripts/build-legal.mjs declares at least one translation locale', translations.length >= 1);
+
+const lvHtml = [];
+for (const tr of translations) {
+  for (const slug of tr.slugs) {
+    const en = bySlug.get(slug);
+    check(`TRANSLATIONS[${tr.lang}] slug '${slug}' is a real published document`, !!en);
+    if (!en) continue;
+    const src = path.join(LEGAL, tr.dir, en.file);
+    const out = path.join(PUBLIC, tr.dir, `${slug}.html`);
+    check(`legal/${tr.dir}/${en.file} exists (translation source)`, fs.existsSync(src));
+    check(`public/${tr.dir}/${slug}.html exists`, fs.existsSync(out),
+      'run `npm run legal` and commit the generated page');
+    if (!fs.existsSync(out)) continue;
+    const html = fs.readFileSync(out, 'utf8');
+    lvHtml.push({ rel: `${tr.dir}/${slug}.html`, html });
+    check(`public/${tr.dir}/${slug}.html declares lang="${tr.lang}"`,
+      new RegExp(`<html lang="${tr.lang}">`).test(html));
+    check(`public/${tr.dir}/${slug}.html carries the convenience-translation banner`,
+      /class="draft"/.test(html) && html.includes(`href="/${slug}.html"`),
+      'the banner naming the English version as authoritative is missing');
+    // Draft state must match the English original: if the source .md carries the
+    // legal:draft marker, so must the built page, and vice versa.
+    const srcMd = fs.existsSync(src) ? fs.readFileSync(src, 'utf8') : '';
+    const enMd = fs.readFileSync(path.join(LEGAL, en.file), 'utf8');
+    check(`legal/${tr.dir}/${en.file} mirrors the English draft state`,
+      /<!--\s*legal:draft\s*-->/.test(srcMd) === /<!--\s*legal:draft\s*-->/.test(enMd),
+      'a translation may not be "in force" while its original is draft, or the reverse');
+  }
+  // No stray page in public/<dir>/.
+  const dirPath = path.join(PUBLIC, tr.dir);
+  const dirHtml = fs.existsSync(dirPath) ? fs.readdirSync(dirPath).filter((f) => f.endsWith('.html')) : [];
+  check(`public/${tr.dir}/ contains no page the generator does not know about`,
+    dirHtml.every((f) => tr.slugs.includes(f.replace(/\.html$/, ''))),
+    `stray: ${dirHtml.filter((f) => !tr.slugs.includes(f.replace(/\.html$/, ''))).join(', ')}`);
+}
+
+// The translated pages get the same output hygiene checks as the English ones:
+// nothing internal, no escaped comment, no inline handler, markdown fully rendered.
+for (const { rel, html } of lvHtml) {
+  const body = html.slice(html.indexOf('<main>'));
+  check(`${rel} carries no internal-only region`,
+    !html.includes('internal:start') && !html.includes('TERMS-RATIONALE') && !html.includes('PRIVACY-POLICY-GUIDE'));
+  check(`${rel} contains no escaped HTML comment`,
+    !html.includes('&lt;!--') && !html.includes('--&gt;'));
+  check(`${rel} carries no inline event handler`, !/<[^>]+\son[a-z]+\s*=/i.test(html));
+  check(`${rel} has no unrendered emphasis`, !body.includes('**'));
+  check(`${rel} has no unrendered link syntax`, !body.includes(']('));
+  check(`${rel} has no leaked code placeholder`, !body.includes('@@CODE'));
+  check(`${rel} has real content`, body.length > 1500, `only ${body.length} bytes`);
+}
+
 console.log('\n── nothing internal was published');
 
 for (const doc of internal) {

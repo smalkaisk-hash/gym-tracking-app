@@ -69,6 +69,65 @@ const PUBLISH = [
 // Internal drafting notes. These must never reach public/.
 const INTERNAL = ['PRIVACY-POLICY-GUIDE.md', 'TERMS-RATIONALE.md'];
 
+// ── Convenience translations ────────────────────────────────────────────────
+// English is the authoritative version of every document — TERMS.md § 19.9 says
+// so, and each translated page carries a banner that repeats it. A translation
+// exists only because Latvia's Official Language Law expects consumer-facing
+// information from a Latvian-established trader to be available in Latvian; it is
+// published ALONGSIDE the English page, never instead of it.
+//
+// Source lives in legal/<dir>/<FILE>.md and mirrors the English file name. Output
+// is public/<dir>/<slug>.html. The same strict parser, and the same draft /
+// placeholder enforcement, apply — so legal/lv/PRIVACY.md carries the English
+// file's <!-- legal:draft --> marker and its {{FILL}} spots until the host is
+// chosen, exactly like its original.
+//
+// A file in legal/<dir>/ that is not the translation of a listed slug — or a
+// listed slug with no file — is a build error, the same coverage guard the
+// top-level documents get. CONSUMER-HEALTH-DATA-PRIVACY is deliberately NOT
+// translated: it is a Washington State notice with no Latvian relevance.
+const TRANSLATIONS = [
+  {
+    dir: 'lv',
+    lang: 'lv',
+    label: 'Latviski',
+    enLabel: 'English',
+    // Grows as documents are translated. A slug listed here MUST have a
+    // legal/lv/<FILE>.md; the footer and the English-page language link are both
+    // derived from this list, so an untranslated document simply is not offered
+    // in Latvian rather than linking to a 404.
+    slugs: ['delete-account', 'faq'],
+    // <title> and meta description per slug. Falls back to the English doc's own
+    // if a slug is missing here.
+    meta: {
+      terms: ['Lietošanas noteikumi', 'Līgums starp jums un FitPulse.'],
+      privacy: ['Privātuma politika', 'Kā FitPulse vāc, izmanto un aizsargā jūsu personas datus.'],
+      'delete-account': ['Dzēst savu kontu', 'Kā dzēst savu FitPulse kontu un visu, kas tajā saglabāts.'],
+      faq: ['BUJ', 'Biežāk uzdotie jautājumi par FitPulse lietošanu, jūsu kontu un datiem.'],
+    },
+    // Rides the .draft style (warn border) on purpose: it marks text that is not
+    // the authoritative version. {en} is replaced with the English page's path.
+    bannerHtml: (enHref) =>
+      `<p class="draft"><strong>Tulkojums ērtībai.</strong> Šis ir neoficiāls tulkojums. ` +
+      `Juridiski saistošā ir šī dokumenta <a href="${enHref}">oriģinālversija angļu valodā</a>. ` +
+      `Šo tulkojumu vēl nav pārbaudījis jurists.</p>`,
+    // Footer wording. Keys are English slugs (plus 'chd'); order matches the
+    // English footer. Only entries whose slug is translated (or 'chd', which is
+    // always the English page) are rendered, so the footer never links to a
+    // Latvian page that does not exist yet.
+    footer: {
+      lead: 'FitPulse',
+      items: [
+        ['faq', 'BUJ', '/lv/faq.html'],
+        ['privacy', 'Privātuma politika', '/lv/privacy.html'],
+        ['chd', 'Patērētāju veselības datu privātums', '/consumer-health-data-privacy.html'],
+        ['terms', 'Noteikumi', '/lv/terms.html'],
+        ['delete-account', 'Konta dzēšana', '/lv/delete-account.html'],
+      ],
+    },
+  },
+];
+
 // ── Unresolved placeholders ──────────────────────────────────────────────────
 // A published policy that still reads "{{FILL: your project's region}}" where the
 // recipients belong is worse than no policy at all: it is an admission, in the
@@ -342,8 +401,14 @@ const toHtml = (md, ctx) => {
 // Self-contained: no build step, no Tailwind, no font files, no network. The
 // token values are copied from src/index.css — if you change a token there,
 // change it here too, the same way CHART mirrors them for recharts.
-const page = ({ title, description, body, draft }) => `<!doctype html>
-<html lang="en">
+// English footer, and the default when a page declares no translation footer.
+const EN_FOOTER =
+  'FitPulse · <a href="/faq.html">FAQ</a> · <a href="/privacy.html">Privacy</a> · ' +
+  '<a href="/consumer-health-data-privacy.html">Consumer Health Data</a> · ' +
+  '<a href="/terms.html">Terms</a> · <a href="/delete-account.html">Delete account</a>';
+
+const page = ({ title, description, body, draft, lang = 'en', convenienceBanner = '', altLink = null, footerHtml = EN_FOOTER }) => `<!doctype html>
+<html lang="${lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -411,10 +476,10 @@ const page = ({ title, description, body, draft }) => `<!doctype html>
 </head>
 <body>
 <main>
-<a class="home" href="/">← FitPulse</a>
-${draft ? '<p class="draft"><strong>Draft.</strong> This document is not yet in force and has not been reviewed by a lawyer. It is published here so it can be read and commented on.</p>' : ''}
+<a class="home" href="/">← FitPulse</a>${altLink ? `  ·  <a class="home" href="${altLink.href}">${altLink.label}</a>` : ''}
+${convenienceBanner}${draft ? '<p class="draft"><strong>Draft.</strong> This document is not yet in force and has not been reviewed by a lawyer. It is published here so it can be read and commented on.</p>' : ''}
 ${body}
-<footer>FitPulse · <a href="/faq.html">FAQ</a> · <a href="/privacy.html">Privacy</a> · <a href="/consumer-health-data-privacy.html">Consumer Health Data</a> · <a href="/terms.html">Terms</a> · <a href="/delete-account.html">Delete account</a></footer>
+<footer>${footerHtml}</footer>
 </main>
 </body>
 </html>
@@ -462,7 +527,7 @@ const STATIC_PAGES = [
 
 // ── Build ────────────────────────────────────────────────────────────────────
 
-const render = (doc) => {
+const render = (doc, shell = {}) => {
   const file = path.join(SRC, doc.file);
   if (!fs.existsSync(file)) throw new Error(`legal/${doc.file} is listed for publication but does not exist`);
   const md = fs.readFileSync(file, 'utf8');
@@ -497,7 +562,7 @@ const render = (doc) => {
     );
   }
 
-  return { html: page({ ...doc, body: toHtml(md, `legal/${doc.file}`), draft }), draft, holes };
+  return { html: page({ ...doc, ...shell, body: toHtml(md, `legal/${doc.file}`), draft }), draft, holes };
 };
 
 const main = () => {
@@ -526,8 +591,20 @@ const main = () => {
   const drafts = [];
   const stale = [];
   const openHoles = new Map();
+
+  // Slugs that have a translation get a language link in the English page header.
+  // { slug -> { href, label } } — first translation wins if there is ever more
+  // than one, which is fine for a single link.
+  const altForSlug = new Map();
+  for (const tr of TRANSLATIONS) {
+    for (const slug of tr.slugs) {
+      if (!altForSlug.has(slug)) altForSlug.set(slug, { href: `/${tr.dir}/${slug}.html`, label: tr.label });
+    }
+  }
+
   for (const doc of PUBLISH) {
-    const { html, draft, holes } = render(doc);
+    const alt = altForSlug.get(doc.slug);
+    const { html, draft, holes } = render(doc, alt ? { altLink: alt } : {});
     if (draft) drafts.push(doc.slug);
     if (holes.length) openHoles.set(doc.file, holes);
     if (release) continue;
@@ -554,6 +631,73 @@ const main = () => {
     } else {
       fs.writeFileSync(target, html, 'utf8');
       console.log(`  public/${p.slug}.html  ←  scripts/build-legal.mjs (static)`);
+    }
+  }
+
+  // Convenience translations. Same strict render and the same draft / placeholder
+  // enforcement — legal/lv/PRIVACY.md carries the English file's draft state until
+  // the host is chosen — but written under public/<dir>/ with a banner that names
+  // the English page as the authoritative one.
+  const enBySlug = new Map(PUBLISH.map((d) => [d.slug, d]));
+  for (const tr of TRANSLATIONS) {
+    for (const s of tr.slugs) {
+      if (!enBySlug.has(s)) throw new Error(`TRANSLATIONS[${tr.lang}] lists slug '${s}', which is not in PUBLISH`);
+    }
+    const trDir = path.join(SRC, tr.dir);
+    // Coverage guard for legal/<dir>/: every .md there must be the translation of
+    // a listed slug. A stray file (or a rename that left the old one behind) fails
+    // the build rather than shipping an unreferenced page or silently skipping one.
+    const trPresent = fs.existsSync(trDir)
+      ? fs.readdirSync(trDir).filter((f) => f.endsWith('.md') && f !== 'README.md').sort()
+      : [];
+    const trWanted = tr.slugs.map((s) => enBySlug.get(s).file);
+    const trOrphans = trPresent.filter((f) => !trWanted.includes(f));
+    if (trOrphans.length) {
+      throw new Error(
+        `legal/${tr.dir}/ contains ${trOrphans.join(', ')}, which is not the translation of any slug in ` +
+          `TRANSLATIONS[${tr.lang}].slugs.`,
+      );
+    }
+
+    if (!check && !release) fs.mkdirSync(path.join(OUT, tr.dir), { recursive: true });
+    const translated = new Set(tr.slugs);
+    const footerHtml =
+      `${tr.footer.lead} · ` +
+      tr.footer.items
+        .filter(([slug]) => slug === 'chd' || translated.has(slug))
+        .map(([, label, href]) => `<a href="${href}">${label}</a>`)
+        .join(' · ');
+
+    for (const slug of tr.slugs) {
+      const en = enBySlug.get(slug);
+      const src = path.join(trDir, en.file);
+      if (!fs.existsSync(src)) {
+        throw new Error(
+          `TRANSLATIONS[${tr.lang}].slugs lists '${slug}' but legal/${tr.dir}/${en.file} does not exist.\n` +
+            `Create the translation, or remove '${slug}' from the list.`,
+        );
+      }
+
+      const enHref = `/${slug}.html`;
+      const [title, description] = tr.meta[slug] ?? [en.title, en.description];
+      const doc = { file: `${tr.dir}/${en.file}`, slug, title, description };
+      const { html, draft, holes } = render(doc, {
+        lang: tr.lang,
+        convenienceBanner: tr.bannerHtml(enHref),
+        altLink: { href: enHref, label: tr.enLabel },
+        footerHtml,
+      });
+      if (draft) drafts.push(`${tr.dir}/${slug}`);
+      if (holes.length) openHoles.set(`${tr.dir}/${en.file}`, holes);
+      if (release) continue;
+      const target = path.join(OUT, tr.dir, `${slug}.html`);
+      if (check) {
+        const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+        if (current !== html) stale.push(`${tr.dir}/${slug}.html`);
+      } else {
+        fs.writeFileSync(target, html, 'utf8');
+        console.log(`  public/${tr.dir}/${slug}.html  ←  legal/${tr.dir}/${en.file}${draft ? '  (draft)' : ''}`);
+      }
     }
   }
 
