@@ -1036,12 +1036,16 @@ const STARTER_TEMPLATES: Record<string, string[]> = {
 const starterExercises = (type: string) => (pick(STARTER_TEMPLATES, type) ?? []).map(newExerciseCard);
 
 // ── Local dev: walk past the login gate ─────────────────────────────────────────
-// Set VITE_DEV_AUTH_BYPASS=1 in .env.local (gitignored — never present in a real
-// build) to skip LoginScreen and land on a dashboard painted from seeded demo data.
-// There is NO session in this mode, so every Supabase effect stays inert and nothing
-// is persisted: it is a viewer for the UI, not a usable account. Delete the env line
-// (or run `npm run build`, where the var is absent) to get the real login back.
-const DEV_AUTH_BYPASS = import.meta.env.VITE_DEV_AUTH_BYPASS === '1';
+// Set VITE_DEV_AUTH_BYPASS=1 in .env.local (gitignored) to skip LoginScreen and land
+// on a dashboard painted from seeded demo data. There is NO session in this mode, so
+// every Supabase effect stays inert and nothing is persisted: it is a viewer for the
+// UI, not a usable account.
+//
+// `import.meta.env.DEV` is a static boolean Vite substitutes at build time — true for
+// `vite dev`, false for `vite build`. Anding it in means a production build folds this
+// to `false`, and tree-shaking drops the bypass branch and seedDemoData entirely, no
+// matter what env vars are set when the build runs. The flag cannot ship.
+const DEV_AUTH_BYPASS = import.meta.env.DEV && import.meta.env.VITE_DEV_AUTH_BYPASS === '1';
 
 const seedDemoData = () => {
   try {
