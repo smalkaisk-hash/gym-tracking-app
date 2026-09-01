@@ -47,15 +47,16 @@
 > what gives the § 16.2 thirty days and the in-app notice banner their meaning. The Service
 > still has no users, so no notice was actually sent.
 >
-> **Still open and NOT fixed here — audit D6(a), and it wants a lawyer.** § 19.9 provides
-> these Terms in English only, while § 17.1 chooses Latvian law and § 18.2 names PTAC as our
-> supervisor. Latvia's Official Language Law requires consumer-facing information about a
-> service to be given in the state language, and Directive 93/13 Art. 5 requires plain,
-> intelligible language. English-only terms from a Latvian-established trader are therefore
-> arguable both ways. Do not resolve this by machine-translating the document — a bad
-> translation of a contract is worse than none, and § 19.9 would then have to say which
-> language governs. Get advice, then either commission a Latvian version or accept the
-> exposure knowingly and write the decision here.
+> **Partly addressed — audit D6(a), and it still wants a lawyer.** § 17.1 chooses Latvian
+> law and § 18.2 names PTAC; Latvia's Official Language Law expects consumer-facing
+> information from a Latvian-established trader to be available in Latvian, and Directive
+> 93/13 Art. 5 requires plain, intelligible language. § 19.9 now points at a **Latvian
+> convenience translation** (`legal/lv/TERMS.md` → `/lv/terms.html`), English authoritative,
+> with a consumer carve-out — which answers the Official Language Law expectation. **Still
+> open:** the translation (and the Privacy Policy translation) was produced without a lawyer
+> or a legal translator and ships under a "not yet reviewed" banner — §§ 9, 13, 14 and the
+> whole of PRIVACY.md need a professional read before the banner comes off. And every
+> `TERMS_VERSION` bump must re-translate in the same release. See `legal/lv/README.md`.
 >
 > **Version 1.1 (2 August 2026)** answers an external review of v1.0. It imposes no new
 > obligation on the user and removes no right: every change either defines a term v1.0 left
@@ -1043,12 +1044,21 @@ them (8.5, and the exception in 2.2(a)) has to outlive the agreement too, or you
 arguing about retention under clauses that survived against a hierarchy that did not.
 Clause 11.2 survives because clause 14.6 allocates risk by reference to it.
 
-19.9 **Language.** These Terms are provided in **English**.
+19.9 **Language.** The authoritative version of these Terms is the **English** version. We
+also publish a Latvian translation at [/lv/terms.html](/lv/terms.html) for convenience. If
+there is any inconsistency between the English version and a translation, the English
+version prevails — except that, if you are a consumer, you may rely on the translation in
+your own language to the extent that mandatory consumer-protection law where you live gives
+it effect.
 
 <!-- internal:start -->
-*Drafting note, not part of the published agreement: if you also publish a translation,
-state which language version governs, and note that a consumer may rely on the version in
-the language in which the Service was marketed to them.*
+*Maintainer note, not part of the published agreement: the Latvian translation at
+legal/lv/TERMS.md is a convenience translation and has NOT been reviewed by a lawyer or a
+legal translator — it ships under a "not yet reviewed" banner. Get §§ 9, 13 and 14
+(assumption of risk, warranties, liability cap) and the whole Privacy Policy translation
+professionally reviewed before that banner comes off. When TERMS_VERSION changes, the
+Latvian version must be re-translated in the same release, or this clause's "we also
+publish a Latvian translation" stops being true. Tracking: legal/lv/README.md.*
 <!-- internal:end -->
 
 19.10 **When a notice does not reach you.** Email is imperfect: filters divert it, mailboxes

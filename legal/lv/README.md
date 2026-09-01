@@ -26,9 +26,12 @@ the static host is chosen.
 | --- | --- | --- |
 | `DELETE-ACCOUNT.md` | ✅ 2026-09-01 | ⬜ not yet |
 | `FAQ.md` | ✅ 2026-09-01 | ⬜ not yet (informational — lower priority) |
-| `PRIVACY.md` | ⬜ pending | ⬜ |
-| `TERMS.md` | ⬜ pending | ⬜ |
+| `PRIVACY.md` | ✅ 2026-09-01 (mirrors the English draft state — same `{{FILL}}` spots) | ⬜ **needed before the banner comes off** |
+| `TERMS.md` | ✅ 2026-09-01 | ⬜ **needed before the banner comes off — §§ 9, 13, 14** |
 | `CONSUMER-HEALTH-DATA-PRIVACY.md` | ➖ not translated on purpose — Washington State notice, no Latvian relevance | — |
+
+`TERMS.md` § 19.9 was rewritten in the same change: English is now expressly the
+authoritative version, with a link to `/lv/terms.html` and a consumer carve-out.
 
 **Before any banner comes off:** a Latvian legal translator or a bilingual lawyer must
 review at least `TERMS.md` §§ 9, 13, 14 (assumption of risk, warranties, liability cap) and

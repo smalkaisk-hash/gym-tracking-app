@@ -1,0 +1,1212 @@
+# FitPulse — Lietošanas noteikumi
+
+**Versija 1.2 · Spēkā no 2026. gada 4. septembra · Pēdējoreiz atjaunināts 2026. gada 5. augustā**
+
+<!-- internal:start -->
+> **Latvian convenience translation of TERMS.md.** English is the authoritative
+> version — see `legal/lv/README.md` and § 19.9. This file must be re-translated in
+> the same release as any change to `legal/TERMS.md` or a `TERMS_VERSION` bump. The
+> full version history and the drafting rationale live in the English original and
+> in `TERMS-RATIONALE.md`; they are not duplicated here. This translation has NOT
+> been reviewed by a lawyer or a legal translator — get §§ 9, 13 and 14 reviewed
+> before the "not yet reviewed" banner comes off.
+<!-- internal:end -->
+
+---
+
+## Kopsavilkums (nav līguma daļa)
+
+Šis lodziņš ir vienkāršā valodā rakstīta ievadinformācija. Tas **nav** juridiski saistošs un
+neko no turpmāk minētā nemaina. Ja tas ir pretrunā ar numurētajiem noteikumiem, noteic
+numurētie noteikumi.
+
+- FitPulse ir treniņu un ķermeņa svara uzskaites lietotne. Tā **nav** medicīnisks padoms un
+  nav medicīniska ierīce.
+- Fiziskas aktivitātes nes reālu traumu risku. Jūs trenējaties uz savu risku, un pirms
+  programmas sākšanas vai maiņas jums vajadzētu konsultēties ar ārstu.
+- Jūsu treniņu dati pieder jums. Jūs varat tos eksportēt un dzēst savu kontu jebkurā laikā.
+- Mēs ļoti cenšamies nezaudēt jūsu datus, taču jums vajadzētu glabāt savus eksporta failus.
+  Skatiet 11. sadaļu.
+- FitPulse ir paredzēta **jūsu pašu** treniņu uzskaitei. Tās izmantošana citu cilvēku treniņu
+  vadīšanai vai kā daļa no pakalpojuma, par kuru jūs iekasējat maksu, ir komerciāla
+  izmantošana — skatiet 6.4. punktu.
+- Datumus, sērijas un nedēļas mērķi mēra **jūsu ierīces pulkstenis un laika josla**, nevis
+  mūsu. 9.7. punkts skaidro, ko tas nozīmē ceļojot.
+- Ja divas jūsu ierīces rediģē vienu un to pašu sesiju, noteic vēlākā izmaiņa, kas sasniedz
+  mūsu serverus. 11.8. punkts precīzi nosaka, kā tiek saskaņotas bezsaistes izmaiņas.
+- Mēs varam mainīt šos Noteikumus tikai 16. sadaļā uzskaitīto konkrēto iemeslu dēļ, un mēs
+  jums to paziņosim iepriekš.
+- Nekas šeit neatņem tiesības, ko likums jums dod kā patērētājam.
+
+---
+
+## 1. Kas mēs esam un kā ar mums sazināties
+
+FitPulse ("**FitPulse**", "**Pakalpojums**") darbina **Kārlis Smalkais**, privātpersona, kas
+rīkojas personīgā statusā, adrese: Klusā iela 2a, Rīga, LV-1007, Latvija ("**mēs**",
+"**mums**", "**mūsu**").
+
+Kontakts jebkuram jautājumam saskaņā ar šiem Noteikumiem, tostarp sūdzībām:
+**smalkaisk@gmail.com**.
+
+Mēs atbildēsim uz jebkuru ziņu par šiem Noteikumiem **10 darba dienu** laikā.
+
+## 2. Kas ir šie Noteikumi un kas vēl veido mūsu vienošanos
+
+2.1 Šie Lietošanas noteikumi ("**Noteikumi**") ir saistošs līgums starp jums un mums. Tie
+regulē jūsu piekļuvi FitPulse un tās izmantošanu.
+
+2.2 Mūsu vienošanās ar jums sastāv no turpmāk minētā, šādā prioritātes secībā gadījumā, ja
+tie ir savstarpēji pretrunā:
+
+&nbsp;&nbsp;(a) šie Noteikumi, **izņemot** to, ka jebkurā datu aizsardzības jautājumā piemēro
+8.5. punktu un noteic Privātuma politika;
+&nbsp;&nbsp;(b) mūsu [**Privātuma politika**](/lv/privacy.html), kas skaidro, kā mēs apstrādājam
+jūsu personas datus, un ir iekļauta šajos Noteikumos ar atsauci;
+&nbsp;&nbsp;(c) jebkuri papildu noteikumi, ko mēs jums piedāvājam un ko jūs pieņemat konkrētai
+funkcijai un kas attiecas tikai uz šo funkciju.
+
+Izņēmums (a) punktā ir svarīgs, jo abi dokumenti apraksta pārklājošos jautājumus: ko mēs
+glabājam, cik ilgi mēs to glabājam un kas paliek pēc dzēšanas — tas viss ir izklāstīts abos.
+Ja tie šādā jautājumā atšķiras, jāpaļaujas uz Privātuma politiku — tā ir dokuments, kas
+uzrakstīts atbilstoši standartam, ko pieprasa datu aizsardzības tiesību akti, un tās
+uzskatīšana par pakārtotu ļautu šo Noteikumu kopsavilkumam sašaurināt informāciju, ko likums
+mums liek sniegt pilnībā.
+
+2.3 Ja jūs ieguvāt FitPulse caur Apple App Store vai Google Play, piemēro arī papildu
+noteikumus **A pielikumā**, un attiecībās starp jums un veikala operatoru piemēro paša veikala
+noteikumus.
+
+2.4 **Jūsu patērētāja tiesības netiek skartas.** Nekas šajos Noteikumos neizslēdz, neierobežo
+un negroza nevienu tiesību vai tiesiskās aizsardzības līdzekli, kas jums ir saskaņā ar jūsu
+dzīvesvietas valsts imperatīvajiem patērētāju tiesību aizsardzības tiesību aktiem, un neviens
+turpmāk minētais noteikums nav piemērojams tiktāl, ciktāl tas to darītu. Ja noteikumu
+ierobežo šī sadaļa, pārējie šie Noteikumi turpina būt spēkā.
+
+2.5 **Jūsu dzīvesvieta maina dažus no šiem Noteikumiem.** Patērētāju tiesības nav visur
+vienādas, un atšķirības ir apkopotas **B pielikumā**, nevis izkaisītas pa visu dokumentu —
+lai jūs varētu izlasīt vienu sadaļu un zināt, kas attiecas uz jums. B pielikums nedod jums
+mazāk tiesību nekā galvenie Noteikumi: ja tas maina noteikumu, tas to norāda, un ja tas tikai
+apstiprina tiesību, ko likums jau piešķir, tas norāda arī to.
+
+## 3. Kā jūs pieņemat šos Noteikumus
+
+3.1 Jūs pieņemat šos Noteikumus, atzīmējot pieņemšanas izvēles rūtiņu un izvēloties
+**Izveidot kontu** reģistrācijas ekrānā. Šī darbība rada līgumu.
+
+3.2 Mēs saglabājam ierakstu par to, kuru šo Noteikumu versiju jūs pieņēmāt un kad. Jūs varat
+jebkurā laikā pieprasīt šī ieraksta un pieņemtās versijas kopiju, izmantojot 1. sadaļā
+norādīto kontaktadresi.
+
+3.3 Ja jūs nepiekrītat šiem Noteikumiem, neizveidojiet kontu un neizmantojiet FitPulse.
+
+## 4. Kas drīkst izmantot FitPulse
+
+4.1 Jūs drīkstat izmantot FitPulse tikai tad, ja esat **18 gadus vecs vai vecāks** un
+juridiski spējīgs noslēgt līgumu. FitPulse nav paredzēta un to nedrīkst izmantot neviens, kas
+jaunāks par 18 gadiem.
+
+4.2 **Kuri sankciju noteikumi tie ir.** Mēs esam reģistrēti Latvijā, tāpēc mums saistošie
+režīmi ir **Eiropas Savienības** un **Apvienoto Nāciju Organizācijas** režīmi. Jūs
+apstiprināt, ka neatrodaties un pastāvīgi nedzīvojat valstī vai teritorijā, uz kuru attiecas
+visaptverošs embargo saskaņā ar kādu no šiem režīmiem, un ka neesat persona vai vienība, kas
+minēta **ES konsolidētajā finanšu sankciju sarakstā**, **ANO Drošības padomes konsolidētajā
+sarakstā** vai līdzvērtīgā ierobežoto pušu sarakstā, kas uzturēts saskaņā ar tiem. Ja jūs
+ieguvāt FitPulse no Apple App Store vai Google Play, uz šo kopiju attiecas arī atsevišķais
+Amerikas Savienoto Valstu apstiprinājums A.7 pielikumā, jo šie veikali to no mums pieprasa.
+Neviena cita valsts sankciju saraksts šajos Noteikumos nav iekļauts.
+
+4.3 Ja mēs uzzinām, ka konts pieder personai, kas jaunāka par 18 gadiem, mēs to slēgsim un
+dzēsīsim ar to saistītos datus.
+
+## 5. Jūsu konts
+
+5.1 Jums jāsniedz precīza reģistrācijas informācija un jāuztur aktuāla jūsu e-pasta adrese.
+Mēs sūtām svarīgus paziņojumus — tostarp paziņojumu par izmaiņām šajos Noteikumos — uz šo
+adresi.
+
+5.2 Jūs esat atbildīgs par savas paroles konfidencialitātes saglabāšanu un par darbībām, kas
+notiek jūsu kontā, **izņemot** darbības, kas izriet no mūsu pašu nespējas nodrošināt
+Pakalpojuma drošību vai ko jūs saprātīgi nevarētu novērst.
+
+5.3 Nekavējoties paziņojiet mums uz **smalkaisk@gmail.com**, ja uzskatāt, ka jūsu kontam ir
+piekļūts bez jūsu atļaujas.
+
+5.4 Viena persona, viens konts. Nekoplietojiet savu kontu un nenododiet to nevienam citam.
+
+5.5 **Kas notiek, ja jūs pārkāpjat 5.4. punktu.** Konta koplietošana, ļaušana kādam citam to
+izmantot vai tā nodošana ir būtisks pārkāpums 12.2. punkta (a) apakšpunkta izpratnē, tāpēc
+mēs varam apturēt, ierobežot vai izbeigt konta darbību. Kad mēs to darām, pilnībā piemēro 12.
+sadaļu: mēs rīkojamies samērīgi, mēs jums to paziņojam un dodam iespēju to labot, ja vien
+12.3. punkts nenosaka citādi, un jūs varat apstrīdēt lēmumu saskaņā ar 12.4. punktu. Mēs
+neapturētu konta darbību par vienreizēju kļūmi, ko jūs jau esat izlabojis.
+
+5.6 **Jūsu e-pasta adrese ir veids, kā jūs atgriežaties.** Ja jūs aizmirstat paroli, mēs
+nosūtām atiestatīšanas saiti uz kontā reģistrēto adresi, un šīs saites atvēršana ir vienīgais
+veids, kā iestatīt jaunu. Mēs jūsu paroli neredzam un nevaram to jums atiestatīt. **Ja jūs
+zaudējat piekļuvi šai pastkastei, mēs nevaram pārbaudīt, ka konts pieder jums, un mēs nevaram
+atjaunot jums piekļuvi tam** — nav drošības jautājuma, nav rezerves koda un nav personu
+apliecinošu dokumentu ceļa, jo mums nav nekā, pret ko tos pārbaudīt. Divas sekas, uz kurām
+vērts rīkoties: uzturiet adresi aktuālu saskaņā ar 5.1. punktu un glabājiet savu eksportu
+saskaņā ar 11.2. punktu.
+
+5.7 **Jūsu e-pasta adreses apstiprināšana.** Mēs varam pieprasīt jums apstiprināt, ka jūsu
+reģistrētā adrese pieder jums — pirms konts kļūst lietojams vai vēlāk, ja mums ir pamats
+uzskatīt, ka adrese vairs nav jūsu vai tiek izmantota, lai uzdotos par kādu citu. Ja
+apstiprinājums vēl nav veikts, dažas funkcijas var nebūt pieejamas, līdz tas ir izdarīts. Mēs
+izmantojam apstiprinājumu tikai, lai pārbaudītu kontroli pār adresi; tā nav identitātes
+pārbaude, un mēs neprasām jums personu apliecinošus dokumentus.
+
+5.8 **Vairāk nekā viens konts.** 5.4. punkts ir vērsts uz konta koplietošanu un tā nodošanu
+kādam citam. Tas nav vērsts uz to, ka jums ir otrs savs konts: jauna konta izveide tāpēc, ka
+jūs zaudējāt piekļuvi pirmajam, vai lai kaut ko izmēģinātu, nav šo Noteikumu pārkāpums. Tāda
+konta izveide, lai izvairītos no darbības apturēšanas vai izbeigšanas saskaņā ar 12. sadaļu,
+ir pārkāpums un tiek uzskatīta par būtisku pārkāpumu saskaņā ar 12.2. punkta (a) apakšpunktu.
+
+5.9 **Nekas no tā, ko jūs ievadāt, netiek rādīts nevienam citam.** FitPulse nav publisku
+profilu, nav lietotājvārdu, nav koplietošanas, nav plūsmas un nav veida, kā vienam lietotājam
+redzēt cita datus. Izvēlētais redzamais vārds tiek izmantots tikai, lai jūs sveiktu jūsu pašu
+ekrānā. Tāpēc mēs neuzliekam nekādus ierobežojumus tam, kā jūs sevi saucat, ārpus 7.1. punkta
+— nav neviena, ko maldinošs vārds varētu maldināt. Ja mēs kādreiz pievienosim funkciju, kurā
+kaut kas, ko jūs rakstāt, kļūst redzams citai personai, tā ir būtiska izmaiņa saskaņā ar
+16.3. punktu, un tai pirms ieviešanas tiktu pievienoti noteikumi par vārdiem un saturu.
+
+## 6. Jūsu licence izmantot FitPulse
+
+6.1 Mēs piešķiram jums **personīgu, neekskluzīvu, nenododamu, apakšlicencēšanai nepakļautu,
+atsaucamu licenci** instalēt un izmantot FitPulse ierīcēs, kuras jums pieder vai kuras jūs
+kontrolējat, savai personīgai, nekomerciālai fizisko aktivitāšu uzskaitei, tik ilgi, kamēr
+šie Noteikumi ir spēkā.
+
+6.2 FitPulse ir **licencēta, nevis pārdota**. Mēs un mūsu licenču devēji saglabājam visas
+intelektuālā īpašuma tiesības, kas pastāv attiecībā uz Pakalpojumu — tā programmatūru, dizainu,
+vingrojumu kataloga atlasi un izkārtojumu, kā arī tā tekstu. Jūs neiegūstat nekādas tiesības,
+izņemot tās, kas skaidri piešķirtas 6.1. punktā.
+
+Divi godīgi šī teikuma ierobežojumi, jo licences noteikums, kas apgalvo vairāk, nekā tam ir,
+ir mazāk vērts, nevis vairāk. **Atsevišķi vingrojumu nosaukumi nepieder mums** — "Bench Press"
+ir fakts par pasauli, un nekas šajā punktā neliedz jums lietot, pierakstīt vai publicēt
+jebkura vingrojuma nosaukumu; ko mēs pieprasām, ir konkrētā atlase, grupēšana un secība, ko
+mēs izveidojām, un teksts, ko mēs rakstījām ap to. Un ja attēls, fonts vai bibliotēka
+Pakalpojumā pieder kādam citam, tas pieder viņam saskaņā ar viņa paša licences noteikumiem,
+nevis mums.
+
+6.3 Jūs nedrīkstat un nedrīkstat atļaut nevienam citam:
+
+&nbsp;&nbsp;(a) kopēt, modificēt, tulkot vai radīt atvasinātus darbus no Pakalpojuma;
+&nbsp;&nbsp;(b) veikt reverso inženieriju, dekompilēt vai disasemblēt jebkuru Pakalpojuma
+daļu, **izņemot** tiktāl, ciktāl piemērojamie tiesību akti jums dod tiesības to darīt, ko
+nevar izslēgt ar līgumu, un tad tikai pēc rakstiska pieprasījuma mums par nepieciešamo
+informāciju;
+&nbsp;&nbsp;(c) īrēt, iznomāt, aizdot, pārdot, apakšlicencēt vai citādi padarīt Pakalpojumu
+pieejamu trešajai pusei;
+&nbsp;&nbsp;(d) noņemt vai aizsegt jebkādu autortiesību, preču zīmes vai citu īpašumtiesību
+paziņojumu.
+
+6.4 **Ko nozīmē "personīga, nekomerciāla" 6.1. punktā.** Komerciāla izmantošana ir FitPulse
+izmantošana, lai uzskaitītu, plānotu, uzraudzītu vai vadītu **jebkuras citas personas, izņemot
+sevi,** treniņus, vai tās izmantošana kā daļa no pakalpojuma, ko jūs sniedzat citiem,
+neatkarīgi no tā, vai jums par to maksā. Neierobežojot minēto, katrs no šiem gadījumiem ir
+komerciāla izmantošana: treneris vai personīgais treneris, kas reģistrē klientu sesijas;
+sporta zāle, komanda, klubs vai darba devējs, kas uztur kontus biedru vārdā; pētnieks, kas
+vāc dalībnieku treniņu datus; kā arī piekļuves FitPulse tālākpārdošana vai apvienošana ar kaut
+ko citu.
+
+Šie **nav** komerciāla izmantošana, un uz tiem attiecas 6.1. punkts:
+
+&nbsp;&nbsp;(a) savu treniņu uzskaite neatkarīgi no tā, kā jūs pelnāt iztiku — profesionāls
+sportists, treneris vai fizioterapeits, kas reģistrē **savas** sesijas, ir personīgs
+lietotājs;
+&nbsp;&nbsp;(b) publiska runāšana par FitPulse, tostarp gadījumos, kad jums par to maksā: tās
+recenzēšana, savu datu ekrānuzņēmumu publicēšana, sevis filmēšana tās izmantošanā vai tās
+ieteikšana;
+&nbsp;&nbsp;(c) savu datu eksportēšana un darīšana ar tiem, ko vēlaties, tostarp to
+publicēšana vai ievadīšana kaut kur citur, ko jūs izmantojat.
+
+Ja vēlaties izmantot FitPulse komerciāli, jautājiet mums 1. sadaļā norādītajā adresē. Mēs
+šodien nepiedāvājam komerciālu licenci, un mēs labprātāk jums to pasakām, nekā ļaujam jums
+būvēt uz licences, kas jūs neaptver.
+
+6.5 **Ja jūs neesat patērētājs.** Šie Noteikumi ir rakstīti patērētājiem, un liela daļa no
+tā, ko tie jums dod, izriet no patērētāju tiesībām. Ja tie atsaucas uz jūsu kā patērētāja
+tiesībām, šīs atsauces attiecas uz jums tikai tad, ja jūs esat patērētājs saskaņā ar jums
+piemērojamiem tiesību aktiem. Ja jūs izmantojat FitPulse uzņēmējdarbības nolūkos: jūsu
+izmantošana ir ārpus 6.1. punktā minētās licences; 14.3. punkta (b) un (c) apakšpunkts
+izslēdz uzņēmējdarbības zaudējumus; un 2.4. punkts un B pielikums, kas saglabā patērētāju
+tiesību aizsardzību, nepaplašina tiesības, kuru jums nav. Viss pārējais šajos Noteikumos
+attiecas uz jums, kā rakstīts.
+
+6.6 **Jūs varat teikt par FitPulse, ko vēlaties.** Nekas 6.3. punktā neliedz jums aprakstīt,
+recenzēt, kritizēt, salīdzināt vai publiski salīdzināt Pakalpojumu vai publicēt to, ko jūs
+izmērījāt. 6.3. punkta (b) apakšpunkts ir par programmatūras izjaukšanu, nevis par jūsu
+viedokli par to, un mēs neprasām recenzijas apstiprinājumu un neuzskatīsim sliktu recenziju
+par pārkāpumu.
+
+6.7 **Publiskas saskarnes vēl nav.** FitPulse nav publiskas API, un 7.1. punkta (d)
+apakšpunkts nozīmē, ka pati lietotne ir dokumentētā saskarne. Ja mēs kādreiz publicēsim API,
+tai būs savi noteikumi, kvotas un ātruma ierobežojumi, kas ir papildu noteikumi saskaņā ar
+2.2. punkta (c) apakšpunktu un attiecas tikai uz šo saskarni — tās izmantošana būs neobligāta,
+un nekas ar to nemainīs jūsu tiesības saskaņā ar šiem Noteikumiem.
+
+## 7. Pieļaujamā izmantošana
+
+7.1 Jūs nedrīkstat izmantot FitPulse, lai darītu kaut ko no turpmāk minētā, un nedrīkstat
+mēģināt to darīt vai palīdzēt kādam citam to darīt:
+
+&nbsp;&nbsp;(a) pārkāpt jebkuru likumu vai aizskart jebkuras personas tiesības;
+&nbsp;&nbsp;(b) piekļūt vai mēģināt piekļūt cita lietotāja kontam vai datiem;
+&nbsp;&nbsp;(c) zondēt, skenēt vai testēt Pakalpojuma ievainojamību vai apiet vai pārvarēt
+jebkuru autentifikācijas, ātruma ierobežojuma vai drošības pasākumu — **izņemot** saskaņā ar
+drošības pētniecības izpaušanu, par kuru mēs esam iepriekš rakstiski vienojušies;
+&nbsp;&nbsp;(d) piekļūt Pakalpojumam ar jebkādiem automatizētiem līdzekļiem, tostarp datu
+izgūšanu (scraping) vai masveida izvilkšanu, izņemot caur saskarni, ko mēs esam dokumentējuši
+šim nolūkam;
+&nbsp;&nbsp;(e) augšupielādēt vai pārraidīt ļaunprogrammatūru vai jebko, kas paredzēts
+Pakalpojuma vai jebkura lietotāja ierīces darbības traucēšanai vai bojāšanai;
+&nbsp;&nbsp;(f) sūtīt saturu vai datus, kas ir nelikumīgi vai kas aizskar citas personas
+tiesības;
+&nbsp;&nbsp;(g) radīt Pakalpojumam slodzi, kas ir būtiski nesamērīga ar parasto individuālo
+izmantošanu, tādā veidā, kas pasliktina Pakalpojumu citiem lietotājiem;
+&nbsp;&nbsp;(h) sniegt nepatiesu informāciju par savu identitāti vai savu saistību ar jebkuru
+personu.
+
+7.2 Papildus 7.1. punktam jūs nedrīkstat izmantot Pakalpojumu jebkādā veidā, kas ir
+nelikumīgs vai par ko **mēs, pamatojoties uz konkrētiem pierādījumiem, saprātīgi konstatējam**,
+ka tas rada būtisku kaitējuma risku mums, citam lietotājam vai trešajai pusei. Iepriekš
+minētie punkti (a) līdz (h) ir šāda veida izmantošanas piemēri; tie to neierobežo, un rīcībai
+nav jālīdzinās tiem, lai uz to attiektos šis punkts.
+
+7.3 Ja mēs rīkojamies saskaņā ar šo sadaļu, mēs rīkosimies samērīgi un, ja iespējams,
+pastāstīsim jums, uz ko mēs paļāvāmies. 12. sadaļa nosaka, ko mēs varam darīt, un jūsu tiesības
+to apstrīdēt.
+
+7.4 **Kas uzskatāms par nesamērīgu slodzi saskaņā ar 7.1. punkta (g) apakšpunktu.** Mēs to
+mēram pēc mašīnu standartiem, nevis pēc tā, cik smagi jūs trenējaties. Tas būtībā nozīmē
+satiksmi, ko neviens cilvēks, kas darbina lietotni, nevarētu radīt ar rokām: skriptētus vai
+automatizētus pieprasījumus, masveida importu vai eksportu, kas atkārtots ar mašīnas
+frekvenci, vai pastāvīgu pieprasījumu apjomu, kas izmērāmi pasliktina Pakalpojumu citiem
+lietotājiem. **Parasta izmantošana nekad nav nesamērīga, lai cik smaga tā būtu** — katras
+dienas katras sesijas uzskaite, gadu vēstures rediģēšana, eksportēšana tik bieži, cik vēlaties,
+un lietotnes izmantošana tik daudzās jūsu pašu ierīcēs, cik vēlaties, viss ir parasta
+individuāla izmantošana. Ja ir nepieciešams ierobežojums, mēs drīzāk ierobežosim pieprasījumu
+ātrumu, nevis apturēsim konta darbību, uz iespējami īsāku laiku, un uz eksportu īpaši attiecas
+11.7. punkts.
+
+7.5 **Automatizēta atklāšana.** Mēs nedarbinām nevienu automatizētu sistēmu, kas aptur vai
+ierobežo kontus: katru lēmumu saskaņā ar 12. sadaļu pieņem persona, kas skata konkrētus
+pierādījumus. Mūsu infrastruktūras pakalpojumu sniedzējs piemēro savus automātiskos ātruma
+ierobežojumus pierakstīšanās, reģistrēšanās un paroles atiestatīšanas pieprasījumiem, kas var
+īslaicīgi atteikt pieprasījumus no jums vai jūsu tīkla — tas ir tehnisks ierobežojums, tā nav
+darbības apturēšana, tas notīrās pats, un lietotne jums pasaka, kad tas notiek. Ja mēs kādreiz
+ieviesīsim savu automatizētu atklāšanu, mēs to norādīsim šajā punktā, pirms tā sākas, mēs
+neizbeigsim konta darbību tikai uz automatizēta lēmuma pamata, un piemēro 12.4. punktā minētās
+tiesības uz to, ka lēmumu pārskata persona.
+
+## 8. Jūsu dati un jūsu saturs
+
+8.1 **Jūs saglabājat īpašumtiesības** uz treniņiem, svēršanās reizēm, piezīmēm, preferencēm
+un citiem datiem, ko jūs ievadāt FitPulse ("**Jūsu dati**"). Mēs nepretendējam uz
+īpašumtiesībām uz tiem.
+
+8.2 Jūs piešķirat mums **ierobežotu, vispasaules, bezatlīdzības, neekskluzīvu licenci**
+mitināt, glabāt, kopēt, pārraidīt, dublēt un attēlot Jūsu datus — **tikai** tiktāl, ciktāl tas
+nepieciešams, lai Pakalpojumu jums darbinātu, nodrošinātu, atbalstītu un uzturētu, un lai
+ievērotu likumu. Šī licence **nav** apakšlicencējama, izņemot mūsu mitināšanas un
+infrastruktūras pakalpojumu sniedzējiem, kas rīkojas pēc mūsu norādījumiem kā apstrādātāji, tā
+nedod mums tiesības publicēt Jūsu datus vai izmantot tos reklāmai, un tā beidzas, kad Jūsu
+dati tiek dzēsti.
+
+8.3 Mēs nepārdosim Jūsu datus.
+
+8.4 **Ja mēs kādreiz vēlēsimies izmantot Jūsu datus jebkam ārpus 8.2. punkta** — piemēram,
+apkopotai pētniecībai vai produkta analītikai, kas nav nepieciešama Pakalpojuma darbināšanai —
+mēs vispirms lūgsim jūsu atsevišķu, konkrētu, aktīvu piekrišanu, un jūs varat to atteikt vai
+atsaukt, nezaudējot piekļuvi Pakalpojumam.
+
+8.5 Kā mēs apstrādājam Jūsu datus kā personas datus — tostarp juridiskais pamats, glabāšanas
+periodi, mūsu apstrādātāji un jūsu tiesības uz piekļuvi, labošanu, dzēšanu, pārnesamību un
+iebildumu — ir izklāstīts [**Privātuma politikā**](/lv/privacy.html). Ja šie Noteikumi un
+Privātuma politika ir pretrunā datu aizsardzības jautājumā, noteic Privātuma politika.
+
+8.6 Jūs apstiprināt, ka jums ir tiesības iesniegt Jūsu datus un ka tā rīkošanās nepārkāpj
+nevienu likumu vai nevienas trešās puses tiesības.
+
+8.7 **Tas, ko jūs rakstāt, pieder jums; lietotne ap to pieder mums.** Vingrojumu nosaukumi, ko
+jūs pats ievadāt, nosaukumi, ko jūs dodat savām treniņu dienām, jūsu sesiju piezīmes un
+jebkurš cits teksts, ko jūs ievadāt, ir Jūsu dati saskaņā ar 8.1. punktu, un 8.2. punkts ir
+vienīgā licence, ko mēs uz tiem ņemam. Mūsu vingrojumu katalogs, tā grupēšana muskuļu grupās,
+sākuma veidnes un pārējais lietotnes teksts, dizains un programmatūra paliek mūsu saskaņā ar
+6.2. punktu. Tāda nosaukuma ievadīšana, kas nejauši sakrīt ar kādu no mūsējiem, nevienam no
+mums nedod nekādas tiesības uz otra nosaukumu — jūs neiegūstat mūsu katalogu, to pārrakstot,
+un mēs neiegūstam jūsu formulējumu tāpēc, ka tas atrodas blakus mūsējam.
+
+8.8 **Ko nozīmē "apkopots" un "anonīms" 8.4. punktā.** Dati ir anonīmi tikai tad, ja ne mēs,
+ne kāds cits nevar tos tieši vai netieši sasaistīt ar jums, un saiti nevar atjaunot — standarts
+VDAR 26. apsvērumā. Jūsu vārda un e-pasta dzēšana **nav** pietiekama: treniņu vēsture ir
+pietiekami atšķirīga, lai identificētu kādu. Jebkas, kas neatbilst šim standartam, joprojām ir
+jūsu personas dati, un uz to pilnībā attiecas 8.4. punkts, tostarp prasība par atsevišķu aktīvu
+piekrišanu. Patiesi anonīma statistika — piemēram, kopējais mēnesī visos kontos reģistrēto
+sesiju skaits — nav personas dati, nav Jūsu dati, un 8.4. punkts uz to neattiecas. Mēs šodien
+neveidojam nekādu šādu statistiku.
+
+8.9 **Atsauksmes.** Jums nekad nav mums jāsūta atsauksmes. Ja jūs izvēlaties to darīt — kļūdas
+ziņojums, ierosinājums, recenzija, funkcijas pieprasījums — jūs ļaujat mums to izmantot, lai
+uzlabotu FitPulse, bez maksas, bez jebkādām saistībām pret jums, tostarp gadījumos, kad tā
+pati ideja mūs sasniedz no kāda cita. Mēs parasti neatzīmējam atsauksmes autoru un mums tas
+nav jādara, taču jebkuras tiesības uz autorības norādi, kas jums ir saskaņā ar jūsu valsts
+likumu, netiek skartas — šīs tiesības lielā daļā Eiropas nevar atdot ar šādu noteikumu kā šis,
+un mēs labprātāk to pasakām, nekā rakstām kaut ko neizpildāmu. Atsauksmes nav konfidenciālas,
+ja vien mēs iepriekš rakstiski nevienojamies citādi, tāpēc, lūdzu, nesūtiet mums neko, kas jums
+ir jāglabā slepenībā. Ja jūs sūtāt ekrānuzņēmumu, eksporta failu vai savu datu kopiju, lai mēs
+varētu atkārtot problēmu, tie ir Jūsu dati, nevis atsauksmes: mēs tos izmantojam tikai, lai
+izmeklētu problēmu, uz tiem attiecas 8. sadaļa, un mēs tos dzēšam, tiklīdz jautājums ir slēgts.
+Šis noteikums nedod mums nekādas tiesības uz Jūsu datiem un nekādas tiesības uz jebko, ko jūs
+neesat izvēlējies mums sūtīt.
+
+## 9. Veselība, fiziskā sagatavotība un drošība — lūdzu, izlasiet šo sadaļu
+
+9.1 **FitPulse ir vispārējs fizisko aktivitāšu uzskaites un informācijas rīks. Tā nav
+medicīniska ierīce un nesniedz medicīniskus padomus.** Nekas Pakalpojumā nav diagnoze,
+ārstēšana, recepte, medicīnisks atzinums vai profesionāla medicīniska padoma aizstājējs.
+
+9.2 **Vispirms konsultējieties ar ārstu.** Jums vajadzētu saņemt padomu no kvalificēta
+medicīnas speciālista pirms jebkuras fizisko aktivitāšu programmas, diētas vai svara
+regulēšanas centienu sākšanas, atsākšanas vai būtiskas maiņas. Tas ir īpaši svarīgi, ja jūs
+esat grūtniece vai pēcdzemdību periodā, esat vai esat bijis traumēts, esat vecāks par 35
+gadiem un iepriekš neaktīvs, vai jums ir vai ir bijis kāds sirds un asinsvadu, elpošanas,
+vielmaiņas, balsta un kustību aparāta vai ar ēšanu saistīts stāvoklis, vai lietojat jebkādus
+medikamentus.
+
+9.3 **Riska uzņemšanās.** Jūs saprotat, ka spēka treniņi, sirds un asinsvadu slodze un svara
+regulēšana nes raksturīgus riskus — tostarp muskuļu sastiepumu, locītavu traumas, trūci,
+lūzumu, sirdsdarbības traucējumus un retos gadījumos nāvi — kurus nevar novērst neatkarīgi no
+tā, cik uzmanīgi jūs trenējaties. **Jūs brīvprātīgi uzņematies šos riskus.** Jūs esat vienīgais
+atbildīgais par savu vingrojumu, slodžu, apjoma un tehnikas izvēli un par lēmumu, vai konkrētā
+sesija konkrētajā dienā jums ir droša.
+
+9.4 **Nepaļaujieties uz skaitļiem.** Apjomi, kopsummas, tendences, aplēses, sērijas, mērķi un
+diagrammas FitPulse ir aritmētiskas ērtības, kas atvasinātas no tā, ko jūs ievadījāt. Tie var
+būt nepareizi, nepilnīgi vai novecojuši. Neizmantojiet tos, lai pieņemtu jebkādu medicīnisku,
+diētas vai veselības lēmumu.
+
+9.5 **Apstājieties un meklējiet palīdzību.** Ja jūs izjūtat sāpes, reiboni, ģīboni, diskomfortu
+krūtīs, elpas trūkumu vai jebkādu citu brīdinājuma zīmi, nekavējoties apstājieties un meklējiet
+medicīnisko palīdzību. FitPulse nevar atklāt, ka kaut kas nav kārtībā, un neaicinās jūs
+apstāties.
+
+9.6 Nekas šajā 9. sadaļā neierobežo mūsu atbildību par nāvi vai miesas bojājumiem, ko izraisījusi
+mūsu pašu nolaidība — skatiet 14.2. punktu.
+
+9.7 **Datumi, sērijas un jūsu ierīces pulkstenis.** Visam FitPulse laika zīmogu piešķir **jūsu
+ierīce** laika joslā, uz kuru jūsu ierīce ir iestatīta. Mēs to nekoriģējam pret servera laiku,
+un mūsu pusē nav autoritatīva pulksteņa: kāds datums, pēc jūsu tālruņa domām, ir, tāds datums
+tiek piešķirts sesijai. Tātad sesija pieder kalendārajai dienai, kurā ir jūsu ierīce, kad jūs
+to saglabājat; nedēļas mērķis skaita pēdējās septiņas kalendārās dienas tā, kā tās mēra jūsu
+ierīce; un sērija skaita atstarpes starp vietējām kalendārajām dienām. Ceļošana pāri laika
+joslām vai jūsu ierīces pulksteņa maiņa pārvieto šīs robežas — tā var pārbīdīt sesiju uz citu
+dienu, pārraut sēriju, kas izskatījās dzīva, vai pagarināt tādu, kas tāda nebija. Sesija, kas
+datēta nākotnē, tiek izslēgta no nedēļas skaita. Nekas no tā nav defekts; uz to visu attiecas
+9.4. punkts. Ja datums jums ir svarīgs, pārbaudiet to lietotnē un izlabojiet to sadaļā History.
+
+9.8 **Ieteikumi, plāni un jebkas automatizēts, ko mēs pievienojam vēlāk.** FitPulse nesaka
+jums, ko trenēt, cik daudz celt, cik bieži trenēties vai cik svērt. Viss, ko tā rāda, ir
+aritmētika par to, ko jūs ievadījāt, plus sākotnējs vingrojumu saraksts, ko jūs varat brīvi
+mainīt vai dzēst. **Ja mēs kādreiz pievienosim funkciju, kas iesaka, plāno, trenē, prognozē
+vai vērtē — vienalga, vai tas ir vienkāršs noteikums, statistisks modelis vai MI modelis —
+visa šī 9. sadaļa uz to pilnībā attiecas.** Jebkurš šāds rezultāts būtu vispārēja informācija,
+nevis medicīnisks, klīnisks, diētas vai fizioterapijas padoms; tas var būt pārliecinoši
+nepareizs; tas nevar zināt jūsu traumas, jūsu medikamentus, jūsu miegu vai to, kā jūs jūtaties
+šodien; un 9.2., 9.3., 9.4. un 9.5. punkts turpina regulēt jūsu lēmumu rīkoties saskaņā ar to.
+Mēs mašīnas ģenerētu rezultātu apzīmētu kā tādu, nepasniegtu to kā personalizētu medicīnisku
+padomu un uzskatītu tā ieviešanu par būtisku izmaiņu saskaņā ar 16.3. punktu.
+
+## 10. Pakalpojums un izmaiņas tajā
+
+10.1 FitPulse **tiek aktīvi izstrādāta**. Funkcijas var tikt pievienotas, mainītas vai
+noņemtas.
+
+10.2 Mēs varam mainīt Pakalpojumu jebkurā laikā, lai:
+
+&nbsp;&nbsp;(a) pievienotu, uzlabotu vai uzturētu funkcijas;
+&nbsp;&nbsp;(b) novērstu defektus vai drošības problēmas;
+&nbsp;&nbsp;(c) atspoguļotu izmaiņas tiesību aktos, regulatīvajās vadlīnijās vai tādas
+platformas vai pakalpojumu sniedzēja noteikumos, no kura mēs esam atkarīgi;
+&nbsp;&nbsp;(d) atspoguļotu izmaiņas mūsu izmantotajā tehnoloģijā, tostarp gadījumos, kad
+trešās puses pakalpojums, uz kuru mēs paļaujamies, mainās vai pārstāj darboties.
+
+10.3 **Ja izmaiņa būtiski samazinātu funkciju, ko jūs izmantojat**, mēs jums paziņosim vismaz
+**30 dienas** pirms tās stāšanās spēkā — lietotnē un pa e-pastu, ja mēs varam to nosūtīt, kā
+apraksta 16.2. punkts — paskaidrosim, kas mainās, un jūs varat slēgt savu kontu un eksportēt
+Jūsu datus pirms izmaiņas piemērošanas. Mēs neveiksim būtisku samazinājumu ar atpakaļejošu
+spēku.
+
+10.4 Mēs varam īslaicīgi apturēt Pakalpojumu apkopes, remonta vai drošības problēmas
+risināšanas nolūkā. Ja apturēšana ir plānota, mēs par to saprātīgi paziņosim iepriekš. Ja tā
+nav plānota, mēs atjaunosim pakalpojumu tik ātri, cik saprātīgi varam, un pastāstīsim jums,
+kas notika.
+
+10.5 Mēs nesolām nekādu konkrētu darbības nepārtrauktības līmeni un nepiedāvājam pakalpojuma
+līmeņa vienošanos.
+
+10.6 **Kas uzskatāms par būtisku samazinājumu saskaņā ar 10.3. punktu.** Izmaiņa būtiski
+samazina funkciju, ja tā to noņem vai pasliktina to pietiekami, lai saprātīgs FitPulse
+lietotājs to pamanītu un tas viņam nepatiktu. Neierobežojot minēto, mēs par būtisku uzskatām
+katru no šiem: sesijas uzskaite; tās vēlāka rediģēšana vai dzēšana; vēstures saglabāšana,
+meklēšana un filtrēšana; diagrammas un statistika; nedēļas mērķis; lietotnes izmantošana
+bezsaistē; sinhronizācija starp jūsu ierīcēm; datu eksportēšana; un datu vai konta dzēšana.
+Jūsu iespējas eksportēt vai dzēst noņemšana būtu būtiska, un mēs to nedarīsim. Kas **nav**
+būtisks samazinājums: kosmētiskas un izkārtojuma izmaiņas, izmaiņas vingrojumu katalogā,
+sākuma veidnēs vai dienu nosaukumos, ko mēs piegādājam, kaut kā jauna pievienošana un defekta
+novēršana — tostarp gadījumos, kad labojums maina skaitli, ko jūs bijāt pieradis redzēt, jo
+nepareizs skaitlis nekad nebija funkcija.
+
+10.7 **Ko nozīmē "saprātīgs iepriekšējs paziņojums" 10.4. punktā.** Plānotai apkopei, kas,
+kā mēs paredzam, ilgs vairāk nekā stundu, vismaz **24 stundu** paziņojums pa e-pastu vai
+lietotnē. Jebkam īsākam — paziņojums lietotnē, kur mēs to varam sniegt. Neplānotam
+pārtraukumam vai steidzamam drošības labojumam nav iepriekšēja paziņojuma — tas ir tas, kas to
+padara steidzamu — un tā vietā piemēro 10.4. punkta otro teikumu: mēs atjaunojam pakalpojumu
+tik ātri, cik varam, un pastāstām jums, kas notika.
+
+10.8 **Mēs varam mainīt uzņēmumus, no kuriem esam atkarīgi.** Mitināšanu, datubāzi,
+autentifikāciju un e-pastu mums piegādā trešās puses, un mēs varam pievienot, aizstāt vai
+noņemt kādu — izmaksu, uzticamības, drošības dēļ vai tāpēc, ka tie pārstāj piedāvāt
+pakalpojumu. Tā ir Pakalpojuma izmaiņa saskaņā ar 10.2. punkta (d) apakšpunktu. Divi
+ierobežojumi tam. Pirmkārt, ja jauns pakalpojumu sniedzējs apstrādātu jūsu personas datus, tas
+kļūst par saņēmēju saskaņā ar Privātuma politiku: mēs to tur nosauksim un sniegsim jums
+iepriekšēju paziņojumu, kā to pieprasa šīs politikas 12. sadaļa, **pirms** jūsu dati to
+sasniedz. Otrkārt, pakalpojumu sniedzēja maiņa nepaplašina 8.2. punktu — pakalpojumu sniedzējs
+rīkojas pēc mūsu norādījumiem kā apstrādātājs un neiegūst tiesības izmantot Jūsu datus jebkam
+savam. Ja pakalpojumu sniedzēja maiņa pati par sevi būtiski samazinātu Pakalpojumu jums,
+piemēro 10.3. punktu.
+
+## 11. Dublējumkopijas, eksports un datu zudums
+
+11.1 Mēs veicam saprātīgus tehniskus un organizatoriskus pasākumus, lai Jūsu dati būtu droši.
+Konkrēti:
+
+&nbsp;&nbsp;(a) katra jūsu datu rinda ir piesaistīta jūsu kontam datubāzes līmenī, tāpēc viens
+konts nevar lasīt vai rakstīt cita konta datus;
+&nbsp;&nbsp;(b) satiksme starp lietotni un mūsu serveriem tiek šifrēta pārsūtīšanas laikā
+(HTTPS);
+&nbsp;&nbsp;(c) mēs nekad neredzam un neglabājam jūsu paroli — autentifikāciju apstrādā mūsu
+infrastruktūras pakalpojumu sniedzējs, kas glabā tikai tās jaucējkodu;
+&nbsp;&nbsp;(d) piekļuve produkcijas datubāzei ir ierobežota līdz personām, kas darbina
+Pakalpojumu — šodien tā ir viena persona — un tā tiek piešķirta caur mūsu datubāzes
+pakalpojumu sniedzēja administratīvo konsoli; un
+&nbsp;&nbsp;(e) pati lietotne neglabā nevienu akreditācijas datu, kas varētu sasniegt cita
+lietotāja rindas — atslēga, ar kuru tā tiek piegādāta, ir publiska, un viss, ko tā ar to dara,
+ir ierobežots ar (a).
+
+Punkti (a) līdz (e) apraksta pasākumus, kas ir spēkā šīs versijas datumā. Tehnoloģija un
+pakalpojumu sniedzēji mainās, tāpēc mēs varam mainīt, kā mēs izpildām 11.1. punkta pirmajā
+teikumā minēto pienākumu — bet **tikai tādā veidā, kas būtiski nesamazina aizsardzību, kas
+jums ir**, un mēs neatceļsim pasākumu, neaizvietojot to ar neko. Pienākums veikt saprātīgus
+tehniskus un organizatoriskus pasākumus nav atkarīgs no saraksta; saraksts ir mūsu konkrēts
+apraksts tam, ko mēs darām, lai jūs varētu mūs pie tā turēt.
+
+Mēs apzināti neapgalvojam vairāk par to. Jo īpaši, **mēs nesolām, ka mums ir atjaunojama jūsu
+datu dublējumkopija**, tāpēc 11.2. punkts ir svarīgs.
+
+11.2 **FitPulse nav ierakstu sistēma un nedrīkst būt jūsu vienīgā kopija.** Jūs esat atbildīgs
+par savas kopijas glabāšanu jebkam, ko nevarat atļauties zaudēt. Pakalpojums nodrošina
+eksporta funkciju tieši šim nolūkam: **Iestatījumi → Dati → Eksportēt dublējumu**. Tā izveido
+vienu failu — šodien JSON failu ar nosaukumu `fitpulse-backup-YYYY-MM-DD.json` — kurā ir jūsu
+treniņi, ķermeņa svara žurnāls, nedēļas mērķis, preferences un konta dati: kontā norādītā
+e-pasta adrese, kad tas tika izveidots, un ieraksts par piekrišanu un Noteikumu versiju, ko
+jūs pieņēmāt. Par formātu mēs solām, ka tas vienmēr būs **dokumentēts, mašīnlasāms,
+nepatentēts un lasāms bez FitPulse**. JSON ir tas, kā mēs to darām šodien; ja mēs to kādreiz
+mainīsim, tas būs uz citu formātu, kas atbilst šim aprakstam, un mēs to norādīsim laidiena
+piezīmē. Eksportēto failu var arī importēt atpakaļ FitPulse kontā — skatiet 11.6. punktu par
+tā ierobežojumiem.
+
+11.3 Daļa jūsu datu tiek īslaicīgi glabāta jūsu pašu ierīcē, lai lietotne darbotos bezsaistē.
+Datus, kas vēl nav sasnieguši mūsu serverus, var zaudēt, ja jūs notīrāt pārlūkprogrammas
+atmiņu, atinstalējat lietotni vai pazaudējat ierīci. Lietotne šādus datus atzīmē kā vēl
+nesinhronizētus.
+
+11.4 11.2. punkts nesamazina mūsu pašu pienākumu veikt 11.1. punktā aprakstītos pasākumus un
+neierobežo mūsu atbildību, ja mēs tos neveicam.
+
+11.5 **Eksports iet līdzi lietotnei.** Ja mēs pievienojam jaunu datu veidu, ko jūs varat
+ievadīt FitPulse, mēs to iekļausim eksportā tajā pašā laidienā. Saistība 11.2. punktā ir dot
+jums **visu, kas mums pieder un kas ir jūsu**, vienā failā — nevis dot jums konkrēto sarakstu
+ar lietām, ko lietotne nejauši glabāja, kad tika rakstīta šī versija. Ja jūs kādreiz atrodat
+lietotnē kaut ko, kas nav jūsu eksportā, pastāstiet mums 1. sadaļā norādītajā adresē: tas ir
+defekts, un tas ir arī datu aizsardzības jautājums saskaņā ar Privātuma politiku.
+
+11.6 **Dublējuma importēšana vēlākā versijā.** Jūsu eksports satur lietotnes nosaukumu un
+formāta versiju, un importētājs pieņem failu, ko tas atpazīst. Mēs uzturēsim importu strādājam
+failiem, kas rakstīti agrākās versijās, visur, kur mēs to saprātīgi varam. Mēs nevaram to
+apsolīt absolūti: turpmāka izmaiņa tajā, kā tiek glabātas sesijas, varētu padarīt vecu failu
+importētājam nelasāmu, pat ja tas paliek pilnīgi lasāms jums, un izlikšanās par citādu būtu
+solījums par programmatūru, kas vēl nepastāv. Saistība 11.2. punktā ir tāda, ka jūs vienmēr
+varat iegūt savus datus **ārā** dokumentētā formātā, ko varat lasīt un izmantot citur; veca
+faila ielikšana **atpakaļ** turpmākā versijā ir maksimālo pūliņu jautājums. Ja imports, kam
+jūs gaidījāt, ka tas darbosies, neizdodas, pastāstiet mums — kur mēs varam palīdzēt ar rokām,
+mēs to darīsim.
+
+11.7 **Ierobežojumi tam, cik bieži jūs eksportējat.** Eksports ir paredzēts izmantošanai
+tad, kad vēlaties, un mēs to nemērām. Ja viens konts eksportē ar ātrumu, kas ir acīmredzami
+automatizēts un pasliktina Pakalpojumu citiem, mēs varam to ierobežot saskaņā ar 7.1. punkta
+(g) apakšpunktu, uz iespējami īsāku laiku un pēc tam, kad esam jums pastāstījuši. **Mēs to
+nekad neizmantosim, lai aizkavētu vai atteiktu pieprasījumu saskaņā ar datu aizsardzības
+tiesību aktiem.** Ja ierobežojums kādreiz traucē iegūt jūsu pašu datus, rakstiet mums 1.
+sadaļā norādītajā adresē, un mēs jums eksportu nosūtīsim paši.
+
+11.8 **Darbs bezsaistē un kas notiek, kad divas ierīces nesaskan.** FitPulse glabā jūsu datu
+kopiju katrā ierīcē, kurā jūs to izmantojat, tāpēc tā darbojas bez savienojuma. Jums vajadzētu
+zināt, kā šīs kopijas tiek saskaņotas, jo tas izšķir, kas paliek:
+
+&nbsp;&nbsp;(a) izmaiņa, ko jūs veicat bezsaistē, tiek glabāta šajā ierīcē un atzīmēta kā vēl
+nesinhronizēta, un tiek nosūtīta nākamajā reizē, kad lietotne veiksmīgi ieraksta mūsu serveros
+vai ielādē no tiem. **Nav fona atkārtošanas** — lietotne nedarbojas, kad tā ir aizvērta, tāpēc
+bezsaistē veikta izmaiņa gaida, līdz jūs atkal atverat FitPulse šajā ierīcē;
+&nbsp;&nbsp;(b) kad lietotne ielādē jūsu datus, vēl nesinhronizēta izmaiņa šajā ierīcē ir
+prioritāra pār mūsu servera tā paša ieraksta kopiju, un vēl nesinhronizēts ieraksts, kas mūs
+nekad nesasniedza, tiek saglabāts, nevis atmests;
+&nbsp;&nbsp;(c) **starp ierīcēm paliek vēlākā izmaiņa, kas sasniedz mūsu serverus.** Nav divu
+vienas sesijas rediģējumu apvienošanas un nav versiju vēstures: ja jūs rediģējat vienu un to
+pašu sesiju divās ierīcēs, otrais ieraksts aizstāj pirmo, un pirmais ir pazudis;
+&nbsp;&nbsp;(d) dzēšana netiek glabāta bezsaistē. Ja dzēšana nevar sasniegt mūsu serverus,
+lietotne ievieto ierakstu atpakaļ un pasaka jums, ka tā nedzēsa — mēģiniet vēlreiz, kad esat
+savienots. Dzēšana, kas mūs sasniedza, paliek izdarīta, un vēlāka ielāde to neatdzīvina;
+&nbsp;&nbsp;(e) izmaiņa, kas nav sasniegusi mūsu serverus, pastāv tikai šajā ierīcē, tāpēc uz
+to attiecas 11.3. punkts: pārlūkprogrammas atmiņas notīrīšana, atinstalēšana vai ierīces
+pazaudēšana to zaudē.
+
+Šis ir apzināts dizains viena lietotāja treniņu žurnālam, nevis defekts, un 14.7. punkts
+attiecīgi sadala risku. Praktiskais padoms: veiciet lielus rediģējumus vienā ierīcē, kamēr
+esat tiešsaistē, un atveriet lietotni jebkurā ierīcē, kas ir izmantota bezsaistē, pirms
+paļaujaties uz to, ko rāda cita ierīce.
+
+## 12. Darbības apturēšana, izbeigšana un kas notiek ar jūsu datiem
+
+12.1 **Jūs varat aiziet jebkurā laikā**, jebkāda iemesla dēļ un nenorādot iemeslu, dzēšot savu
+kontu sadaļā **Iestatījumi → Dzēst kontu**. Dzēšana ir tūlītēja un neatgriezeniska. Vispirms
+eksportējiet Jūsu datus, ja vēlaties tos saglabāt.
+
+12.2 **Mēs varam apturēt vai ierobežot jūsu konta darbību**, ja mēs, pamatojoties uz
+konkrētiem pierādījumiem, saprātīgi uzskatām, ka:
+
+&nbsp;&nbsp;(a) jūs esat būtiski pārkāpis 7. sadaļu (Pieļaujamā izmantošana);
+&nbsp;&nbsp;(b) jūsu konts tiek izmantots nelikumīgi vai ir apdraudēts;
+&nbsp;&nbsp;(c) apturēšana ir nepieciešama, lai aizsargātu Pakalpojuma vai citu lietotāju
+drošību vai integritāti; vai
+&nbsp;&nbsp;(d) mums tas ir jādara saskaņā ar likumu vai tiesas, regulatora vai platformas
+prasību, kas mums ir saistoša.
+
+12.3 Pirms apturēšanas mēs jums paziņosim un dosim saprātīgu iespēju jautājumu labot, **ja
+vien** tas nebūtu nelikumīgi, neizjauktu apturēšanas mērķi vai pārkāpums nav nopietns un
+tūlītējs. Šādā gadījumā mēs jums pastāstīsim, tiklīdz likumīgi varam pēc tam.
+
+12.4 **Jūs varat apstrīdēt jebkuru darbības apturēšanu vai izbeigšanu**, rakstot uz
+**smalkaisk@gmail.com**. Mēs pārskatīsim lēmumu, un mums nebūs vienīgā vai galīgā vārda par
+to, vai pārkāpums notika — jūsu likumā noteiktās tiesības un piekļuve tiesām netiek skarta.
+
+12.5 **Mēs varam izbeigt jūsu kontu un šo vienošanos** tikai:
+
+&nbsp;&nbsp;(a) ar **30 dienu rakstisku paziņojumu**, kas sniegts 16.2. punktā aprakstītajā
+veidā, ja mēs pārtraucam Pakalpojumu;
+&nbsp;&nbsp;(b) ja jūs nepieņemat būtisku izmaiņu šajos Noteikumos saskaņā ar 16.3. punktu, ar
+spēkā stāšanos ne agrāk kā šīs izmaiņas spēkā stāšanās datumā un ar paziņojumu, ko jau
+pieprasa 16.2. punkts; vai
+&nbsp;&nbsp;(c) nekavējoties, ja piemēro 12.2. punkta (a)–(d) apakšpunktā minētos pamatus un
+tie ir nopietni vai nav novērsti.
+
+Gadījumos (a) un (b) mēs padarīsim eksportu pieejamu vismaz uz paziņojuma periodu. Šis punkts
+nosaka vienīgos pamatus, uz kuriem mēs varam izbeigt.
+
+12.6 Izbeigšanas gadījumā: jūsu licence saskaņā ar 6. sadaļu beidzas, un 19.8. punktā
+uzskaitītās sadaļas paliek spēkā. Jūsu dati tiek dzēsti šādi:
+
+&nbsp;&nbsp;(a) **ja jūs dzēšat savu kontu lietotnē**, dzēšana notiek nekavējoties. Jūsu
+pieteikšanās, treniņi, ķermeņa svara žurnāls un iestatījumi tiek noņemti uzreiz. Nav pārdomu
+perioda, un mēs nevaram tos atjaunot pēc tam;
+&nbsp;&nbsp;(b) **ja jūs lūdzat mums dzēst jūsu kontu pa e-pastu**, mēs to izdarīsim **30
+dienu** laikā pēc pieprasījuma pārbaudes;
+&nbsp;&nbsp;(c) abos gadījumos mēs glabājam tikai to, ko likums mums liek glabāt, tikai tik
+ilgi, cik tas prasa, un neizmantojam to nekam citam.
+
+Jūsu datu kopija, kas saglabāta kešatmiņā jūsu pašu ierīcē, tiek notīrīta vienlaikus izmantotajā
+ierīcē. Skatiet mūsu [konta dzēšanas lapu](/lv/delete-account.html) par pilnu informāciju.
+
+12.7 **Ko nozīmē "nekavējoties" un kas paliek pēc tam.** Dzēšana lietotnē ir viena datubāzes
+operācija, nevis rindā ievietots uzdevums: jūsu pieteikšanās, treniņi, svēršanās un iestatījumi
+tiek noņemti, kad jūs apstiprināt, un mums nav datubāzes dublējumkopijas, kurā tie varētu
+saglabāties. Piecas lietas atrodas ārpus šī teikuma, un mēs labprātāk tās nosaucam, nekā
+ļaujam jums pieņemt citādi:
+
+&nbsp;&nbsp;(a) **infrastruktūras žurnāli.** Mūsu pakalpojumu sniedzēji glabā īslaicīgus
+tehniskus pieprasījumu žurnālus — laiku, tīkla adresi, no kuras nāca pieprasījums, un to, kas
+tika pieprasīts. Tie nav jūsu treniņu dati, tie tiek automātiski dzēsti saskaņā ar grafiku,
+kas izklāstīts [Privātuma politikas](/lv/privacy.html) 7. sadaļā, un mēs tos neizskatām
+saistībā ar dzēstu kontu;
+&nbsp;&nbsp;(b) **kopijas jūsu pašu ierīcēs.** Bezsaistes kopija tiek notīrīta ierīcē, no
+kuras jūs dzēšat. Mēs nevaram sasniegt pārējās, un mēs neizliksimies to darām: notīriet
+vietnes datus šajā pārlūkprogrammā vai izrakstieties tur. [Konta dzēšanas
+lapa](/lv/delete-account.html) to izskaidro pilnībā;
+&nbsp;&nbsp;(c) **e-pasta sarakste starp mums — ko jūs esat sūtījis, mūsu atbildes un jebkurš
+paziņojums, ko esam jums nosūtījuši.** Ja jūs esat rakstījis uz 1. sadaļā norādīto adresi, šī
+sarakste atrodas mūsu pastkastē un netiek dzēsta, dzēšot jūsu kontu. Tas pats attiecas uz
+paziņojumu, ko mēs jums nosūtījām: brīdinājums saskaņā ar 12.9. punktu vai izmaiņu paziņojums
+saskaņā ar 16.2. punktu ir jums adresēta ziņa un ieraksts par to, ka mēs sniedzām šajos
+punktos prasīto paziņojumu. Mēs abus glabājam periodu, kas izklāstīts [Privātuma
+politikas](/lv/privacy.html) 7. sadaļā, un izmantojam tos tikai, lai apstrādātu jūsu
+pieprasījumu, nosūtītu paziņojumu un pierādītu, ka to izdarījām. Ja vēlaties, lai tā aizietu
+tajā pašā laikā, kad jūsu konts, pasakiet to, un mēs dzēsīsim saraksti;
+&nbsp;&nbsp;(d) **mūsu autentifikācijas pakalpojuma drošības žurnāls.** Pierakstīšanos,
+reģistrēšanos un paroles atiestatīšanu reģistrē pakalpojumu sniedzējs, kas tās veic, norādot
+laiku, tīkla adresi un izmantoto e-pasta adresi. Tas ir drošības ieraksts, nevis jūsu treniņu
+dati, tas nekad netiek izmantots dzēsta konta atjaunošanai, un [Privātuma
+politikas](/lv/privacy.html) 7. sadaļa norāda periodu, cik ilgi mēs to glabājam;
+&nbsp;&nbsp;(e) **jebkas, ko likums mums liek glabāt**, saskaņā ar 12.6. punkta (c)
+apakšpunktu, un nekas cits.
+
+Avāriju un kļūdu ziņošana ir izslēgta lietotnē, ko mēs piegādājam, tāpēc nekur nepastāv neviens
+kļūdas ziņojums, kas satur jūsu datus. Ja mēs to kādreiz ieslēgsim, tas kļūst par sesto punktu
+šajā sarakstā, un Privātuma politika to norādīs, pirms tas sākas. Dzēšana pa e-pastu saskaņā
+ar 12.6. punkta (b) apakšpunktu ir vienīgais ceļš, kas nav tūlītējs, jo mums vispirms ir
+jāpārbauda pieprasījums.
+
+12.8 **Ja mēs nevaram sniegt 30 dienu paziņojumu.** 12.5. punkta (a) apakšpunkts pieņem, ka
+mēs varam redzēt beigas tuvojamies. Ja notikums ārpus mūsu saprātīgas kontroles to padara
+neiespējamu — infrastruktūras pakalpojumu sniedzējs izbeidz mūsu kontu vai pārtrauc darbību,
+juridisks vai regulatīvs rīkojums, maksātnespēja vai operatora nāve vai nopietna rīcībnespēja
+— mēs vai tas, kas rīkojas mūsu vietā, sniegsim jums tik daudz paziņojuma, cik apstākļi ļauj,
+tiklīdz varam, un uzturēsim eksportu strādājam tik ilgi, cik varam. 19.6. punkts regulē
+kavēšanos mūsu pienākumu izpildē šāda notikuma laikā; šis punkts regulē paša Pakalpojuma
+beigas; 19.11. punkts regulē eksportu un dzēšanu, kamēr tas ilgst. Šis ir otrais iemesls,
+kāpēc 11.2. punkts lūdz jums glabāt savu kopiju: pakalpojums, ko darbina viena persona, var
+apstāties iemeslu dēļ, ko neviens paziņojuma periods nevar segt.
+
+12.9 **Pamesti konti galu galā tiek dzēsti.** Mēs glabājam jūsu datus tik ilgi, kamēr jūs
+izmantojat FitPulse, un mēs nevēlamies mūžīgi glabāt sveša cilvēka treniņu vēsturi tāpēc, ka
+viņš reiz izmēģināja lietotni. Tāpēc:
+
+&nbsp;&nbsp;(a) pēc **24 mēnešiem** bez aktivitātes mēs jums rakstām e-pastu, lai pateiktu, ka
+konts ir paredzēts dzēšanai, kad tas notiks un ka viena pierakstīšanās to atceļ un atiestata
+skaitītāju;
+&nbsp;&nbsp;(b) pēc **36 mēnešiem** bez aktivitātes — pilnu gadu pēc šī brīdinājuma — konts un
+viss tajā tiek dzēsts;
+&nbsp;&nbsp;(c) **"nav aktivitātes" nozīmē nekādas aktivitātes**: nav pierakstīšanās, nav
+reģistrētas sesijas, nav svēršanās un nav iestatījumu maiņas visā periodā. Jebkurš no tiem
+saglabā kontu, tāpēc pietiek vienkārši izmantot FitPulse, un jums nekad nav jādara nekas
+īpašs.
+
+**Brīdinājums ir dzēšanas nosacījums, nevis pieklājība, kas tai pievienota.** Mēs nedzēsīsim
+kontu saskaņā ar šo punktu, ja vien brīdinājums (a) apakšpunktā jums faktiski netika nosūtīts
+un mums ir ieraksts par to, kad. Ja kāda iemesla dēļ tas netika nosūtīts, konts netiek dzēsts
+— skaitītājs nesākas, līdz jums ir paziņots. Mēs to esam veidojuši šādi apzināti: tas ir
+vienīgais šajos Noteikumos, kas iznīcinātu jūsu datus, un "mēs gribējām jūs brīdināt" nav
+brīdinājums.
+
+[Privātuma politikas](/lv/privacy.html) 7. sadaļa nosaka to pašu noteikumu kā glabāšanas
+periodu, kas tas arī ir: personas datu glabāšana bez beigu datuma nav kaut kas, ko mēs esam
+tiesīgi darīt tikai tāpēc, ka tas būtu ērti. Ja mēs kādreiz maināma kādu no skaitļiem, tā ir
+būtiska izmaiņa saskaņā ar 16.3. punktu.
+
+## 13. Ko mēs solām un ko ne
+
+13.1 **Ko mēs solām.** Mēs sniegsim Pakalpojumu ar saprātīgu rūpību un prasmi, un tas būs:
+
+&nbsp;&nbsp;(a) piemērots mērķim, kā aprakstīts mūsu tīmekļa vietnē un šajos Noteikumos, un —
+ja FitPulse tiek izplatīta caur lietotņu veikalu — šī veikala sarakstā. FitPulse šodien ir
+tīmekļa lietotne, un tai nav veikala saraksta, tāpēc apraksts, kas mūs saista, ir tas, kas ir
+mūsu pašu lapās un šajā dokumentā;
+&nbsp;&nbsp;(b) tādas kvalitātes un ar tādām funkcijām un veiktspēju, kas ir normāla bezmaksas
+personīgai fizisko aktivitāšu uzskaites lietotnei un ko jūs varat saprātīgi sagaidīt, ņemot
+vērā mūsu publiskos aprakstus par to; un
+&nbsp;&nbsp;(c) piegādāts ar atjauninājumiem, par kuriem mēs jums pastāstām.
+
+Ja tas tā nav, jums ir jūsu valsts patērētāju tiesību aktos noteiktie tiesiskās aizsardzības
+līdzekļi, tostarp — ja jūs atrodaties EEZ vai Apvienotajā Karalistē — tiesības panākt, lai
+Pakalpojums tiktu novests atbilstībā, un, ja tas nav iespējams vai nesamērīgi, izbeigt šo
+vienošanos. Sazinieties ar **smalkaisk@gmail.com**, un mēs to risināsim.
+
+13.2 **Ko mēs nesolām.** Vienmēr ievērojot 13.1. punktu un 2.4. sadaļu un tiktāl, ciktāl to
+atļauj likums, Pakalpojums tiek nodrošināts **"tāds, kāds tas ir" un "kā pieejams"**, un mēs
+nesolām, ka:
+
+&nbsp;&nbsp;(a) tas būs nepārtraukts, bez kļūdām vai bez kaitīgiem komponentiem;
+&nbsp;&nbsp;(b) jebkurš skaitlis, diagramma, aplēse vai tendence, ko tas rada, būs precīza vai
+pilnīga;
+&nbsp;&nbsp;(c) tas atbildīs prasībai, par kuru jūs mums neesat pastāstījis;
+&nbsp;&nbsp;(d) tas būs saderīgs ar katru ierīci, pārlūkprogrammu vai operētājsistēmas versiju;
+&nbsp;&nbsp;(e) jebkurš defekts tiks izlabots kādā konkrētā laikā.
+
+13.3 Mēs neesam atbildīgi par trešo pušu pakalpojumiem, vietnēm vai saturu, uz kuru FitPulse
+norāda vai ar ko tā sadarbojas, un to pieejamība vai noteikumi ir jautājums starp jums un
+tiem.
+
+13.4 **Kas FitPulse nepieciešams, lai darbotos.** FitPulse ir tīmekļa lietotne, un 13.1.
+punkts ir solījums par tās darbību ierīcē, kas atbilst šīm prasībām: **pašreizēja
+galvenā strāvojuma pārlūkprogrammas versija** — Chrome, Edge, Firefox vai Safari, pašreizējā
+vai tieši iepriekšējā galvenajā versijā — ierīcē, kuras operētājsistēma joprojām saņem
+atjauninājumus no tās ražotāja, ar **iespējotu JavaScript** un **vietnei pieejamu
+pārlūkprogrammas atmiņu**. Atmiņa nav neobligāta: tā glabā bezsaistes kopiju un uztur jūs
+pierakstītu, tāpēc FitPulse nedarbosies lietderīgi privātā logā, kas atmet atmiņu, vai kur
+vietnes dati ir bloķēti. Mēs izstrādājam un testējam galvenokārt pret pašreizējām uz Chromium
+balstītām pārlūkprogrammām, mēs netestējam katru pārlūkprogrammu, versiju vai ierīci, un
+13.2. punkta (d) apakšpunkts attiecas ārpus iepriekš minētajām prasībām — tāpat kā tas attiecas
+uz pārlūkprogrammām, ko modificējuši paplašinājumi, kas maina lapu. Mēs apzināti nesabojāsim
+pārlūkprogrammu, ko tās pašas ražotājs joprojām atbalsta, un, ja mums kādreiz nāksies pacelt
+šo slieksni, mēs to norādīsim laidiena piezīmē un sniegsim paziņojumu saskaņā ar 10.3. punktu,
+ja tas jums būtiski samazina Pakalpojumu.
+
+13.5 **Jūsu ievade, mūsu defekti — kur ir robeža.** 13.2. punkta (b) apakšpunkts un 14.3.
+punkta (e) apakšpunkts ir par aritmētiku ar to, ko jūs ievadījāt: reģistrējiet 100 kg, kur jūs
+pacēlāt 10, un katra kopsumma pēc tam ir nepareiza, un tas nav defekts. **Tie neattiecas uz
+skaitli, kas ir nepareizs tāpēc, ka mūsu programmatūra ir nepareiza.** Ja FitPulse nepareizi
+saskaita pareizi ievadītus piegājienus, zaudē sesiju, ko jūs saglabājāt, attēlo datus, ko jūs
+neievadījāt, vai nepareizi pārrēķina mērvienības, tas ir 13.1. punkta pārkāpums, un jūsu
+tiesiskās aizsardzības līdzekļi saskaņā ar 13.1. punktu, 14. sadaļu un jūsu patērētāju
+tiesībām netiek skarti. Pastāstiet mums 1. sadaļā norādītajā adresē, un mēs to izlabosim.
+
+13.6 **FitPulse šodien tiek piegādāta bez maksas.** Nav abonementa, nav pirkumu lietotnē un
+nav reklāmas, un 13.1. punkta (b) apakšpunkts tiek lasīts attiecībā pret to, ko no bezmaksas
+personīga treniņu žurnāla sagaida. Ja mēs ieviešam maksas plānu: tas būs neobligāts, tā cena
+tiks norādīta, pirms jūs kaut ko pērkat, izmaiņu regulē 16.1. punkta (e) apakšpunkts, un 13.1.
+punkta (b) apakšpunkts tad tiks lasīts attiecībā pret to, par ko jūs faktiski samaksājāt. **Mēs
+neliksim funkciju, uz kuru jūs jau paļaujaties, aiz maksājuma, neuzskatot to par būtisku
+samazinājumu saskaņā ar 10.3. punktu** — ar 30 dienu paziņojumu un jūsu tiesībām eksportēt un
+aiziet, ko šis punkts nes.
+
+## 14. Mūsu atbildība pret jums
+
+Lasiet šo sadaļu kopā ar 2.4. sadaļu. Tā sadala risku; tā neatņem tiesības, ko likums jums
+dod.
+
+14.1 Mēs esam atbildīgi pret jums par zaudējumiem, ko jūs ciešat un kas ir **paredzams** mūsu
+šī līguma pārkāpuma vai saprātīgas rūpības un prasmes neizmantošanas rezultāts. Zaudējumi ir
+paredzami, ja ir acīmredzams, ka tie notiks, vai ja mēs abi zinājām, ka tie varētu notikt, kad
+jūs pieņēmāt šos Noteikumus.
+
+14.2 **Mēs nekādā veidā neizslēdzam un neierobežojam savu atbildību par:**
+
+&nbsp;&nbsp;(a) nāvi vai miesas bojājumiem, ko izraisījusi mūsu nolaidība;
+&nbsp;&nbsp;(b) krāpšanu vai krāpniecisku sagrozīšanu;
+&nbsp;&nbsp;(c) rupju neuzmanību vai tīšu pārkāpjošu rīcību;
+&nbsp;&nbsp;(d) jebkuru jūsu imperatīvo likumā noteikto patērētāja tiesību pārkāpumu, tostarp
+jebkuru tiesību, kas saistīta ar digitālā satura vai pakalpojumu atbilstību;
+&nbsp;&nbsp;(e) mūsu pienākumiem saskaņā ar piemērojamiem datu aizsardzības tiesību aktiem;
+vai
+&nbsp;&nbsp;(f) jebko citu, ko likumīgi nevar izslēgt vai ierobežot.
+
+14.3 **Ievērojot 14.2. punktu**, mēs neesam atbildīgi par:
+
+&nbsp;&nbsp;(a) zaudējumiem, kas nebija paredzami, kad jūs pieņēmāt šos Noteikumus;
+&nbsp;&nbsp;(b) peļņas, ieņēmumu, uzņēmējdarbības, uzņēmējdarbības iespējas vai paredzēto
+ietaupījumu zaudējumu;
+&nbsp;&nbsp;(c) zaudējumiem, kas rodas no jūsu Pakalpojuma izmantošanas jebkādā
+uzņēmējdarbības vai komerciālā nolūkā — FitPulse tiek piegādāta tikai personīgai lietošanai;
+&nbsp;&nbsp;(d) zaudējumiem, kas rodas no jūsu nespējas ievērot 9. sadaļu (veselība un drošība)
+vai saņemt medicīnisku padomu;
+&nbsp;&nbsp;(e) zaudējumiem, kas rodas no tā, ka Jūsu dati ir nepareizi tā dēļ, ko jūs
+ievadījāt.
+
+Katrs 14.3. punkta apakšpunkts ir neatkarīgs. Ja viens tiek atzīts par neizpildāmu, pārējie
+turpina būt piemērojami.
+
+14.4 **Ierobežojums.** Ievērojot 14.2. punktu, mūsu kopējā atbildība pret jums par visām
+prasībām, kas izriet no šīs vienošanās vai ir ar to saistītas, jebkurā 12 mēnešu periodā ir
+ierobežota ar lielāko no:
+
+&nbsp;&nbsp;(a) kopējās summas, ko jūs mums samaksājāt par Pakalpojumu 12 mēnešos pirms
+notikuma, kas radīja prasību; un
+&nbsp;&nbsp;(b) **EUR 100**.
+
+**Vienkārši sakot: FitPulse šodien ir bez maksas (13.6. punkts), tāpēc (a) apakšpunkts ir
+nulle, un ierobežojums ir EUR 100.** (a) apakšpunkts pastāv maksas plānam, ko 16.1. punkta (e)
+apakšpunkts ļauj mums kādreiz ieviest: ja tas notiek, ierobežojums pieaug līdz ar to, ko jūs
+faktiski samaksājāt, un mums nav jāpārraksta šī sadaļa, lai tas darbotos. Ievērojiet, ko
+ierobežojums **nesasniedz** — saskaņā ar 14.2. punktu tas neattiecas uz nāvi vai miesas
+bojājumiem, uz krāpšanu, uz rupju neuzmanību, uz jūsu imperatīvajām patērētāja tiesībām vai uz
+mūsu pienākumiem saskaņā ar datu aizsardzības tiesību aktiem.
+
+14.5 **Pakāpeniska samazināšana.** Ja tiesa vai cita kompetenta iestāde atzīst, ka 14.4.
+punkts pilnībā vai daļēji ir neizpildāms, mūsu atbildība tā vietā tiks ierobežota līdz
+zemākajai summai un vislielākajā mērā, kas ir izpildāms saskaņā ar piemērojamiem tiesību
+aktiem. Ja 14.3. punkts pilnībā vai daļēji tiek atzīts par neizpildāmu, 14.4. punkts turpina
+būt piemērojams neatkarīgi, un otrādi.
+
+14.6 **Datu zudums.** Ievērojot 14.2. punktu, mēs neesam atbildīgi par Jūsu datu zudumu vai
+bojāšanu tiktāl, ciktāl tas izriet no jūsu nespējas glabāt savu eksportu saskaņā ar 11.2.
+punktu vai no datiem, kas vēl nebija sinhronizēti ar mūsu serveriem saskaņā ar 11.3. punktu.
+Mēs paliekam atbildīgi par zaudējumiem, ko izraisījusi mūsu pašu nespēja veikt 11.1. punktā
+aprakstītos pasākumus.
+
+14.7 **Saskaņošana starp jūsu ierīcēm.** Ievērojot 14.2. punktu, mēs neesam atbildīgi par
+datiem, kas zaudēti tāpēc, ka 11.8. punktā minētie saskaņošanas noteikumi darbojās, kā tur
+aprakstīts — piemēram, vēlākais no diviem vienas sesijas rediģējumiem aizstāj agrāko. Tas
+attiecas tikai uz gadījumiem, kad šie noteikumi darbojās, kā norādīts: ja lietotne zaudē datus
+kādā citā veidā vai nedara to, ko 11.8. punkts saka, ka tā dara, 14.7. punkts neattiecas un
+13.1. punkts attiecas.
+
+## 15. Jūsu atbildība pret mums
+
+15.1 Ja jūs pārkāpjat 7. sadaļu (Pieļaujamā izmantošana) **tīši vai neuzmanīgi** un tas rada
+mums tiešus zaudējumus — piemēram, trešās puses prasība pret mums, kas izriet no jūsu
+nelikumīgas Pakalpojuma izmantošanas, vai Pakalpojuma atjaunošanas izmaksas pēc tam, kad jūs
+to uzbrukāt — jūs esat atbildīgs par šiem zaudējumiem.
+
+15.2 15.1. punkts ir ierobežots ar **tiešiem zaudējumiem, kas bija saprātīgi paredzami**,
+neattiecas uz zaudējumiem, ko pilnībā vai daļēji izraisījuši mēs, un neattiecas uz gadījumiem,
+kad jūs rīkojāties kā patērētājs un zaudējumi radās no parastas Pakalpojuma izmantošanas. Mēs
+jūs nekavējoties informēsim par jebkuru prasību, uz kuru mēs plānojam paļauties, un dosim jums
+saprātīgu iespēju atbildēt.
+
+## 16. Izmaiņas šajos Noteikumos
+
+16.1 Mēs varam mainīt šos Noteikumus **tikai** viena vai vairāku no šiem iemesliem dēļ, ko mēs
+norādīsim, kad jums paziņosim:
+
+&nbsp;&nbsp;(a) lai izpildītu izmaiņas likumā, regulējumā, regulatīvajās vadlīnijās vai tiesas
+vai regulatora lēmumā;
+&nbsp;&nbsp;(b) lai atspoguļotu izmaiņu, ko mēs esam veikuši Pakalpojumā saskaņā ar 10.
+sadaļu;
+&nbsp;&nbsp;(c) lai atspoguļotu izmaiņu noteikumos, ko mums uzliek platforma, maksājumu
+pakalpojumu sniedzējs vai infrastruktūras pakalpojumu sniedzējs, no kura mēs esam atkarīgi;
+&nbsp;&nbsp;(d) lai izlabotu kļūdu, neskaidrību vai pretrunu;
+&nbsp;&nbsp;(e) lai ieviestu maksas plānu vai mainītu, kā tas darbojas, kas nekad nemainīs jau
+iegādāta plāna cenu bez jūsu piekrišanas;
+&nbsp;&nbsp;(f) lai uzlabotu šo Noteikumu skaidrību vai taisnīgumu jums par labu;
+&nbsp;&nbsp;(g) lai risinātu drošības vai krāpšanas risku.
+
+16.2 **Paziņojums.** Par jebkuru izmaiņu, kas nav tīri tehniska, mēs jums paziņosim vismaz
+**30 dienas** pirms tās stāšanās spēkā. Paziņojumā tiks norādīts spēkā stāšanās datums,
+vienkāršā valodā apkopots, kas mainās, un dota saite uz pilno jauno versiju un uz iezīmētu
+salīdzinājumu ar pašreizējo.
+
+Mēs sniedzam šo paziņojumu **lietotnē**, kur tas parādās ikreiz, kad jūs atverat FitPulse
+paziņojuma periodā, **un pa e-pastu** uz jūsu reģistrēto adresi, ja mēs varam to nosūtīt.
+Paziņojums lietotnē ir tas, ko mēs vienmēr varam veikt, tāpēc tas ir tas, uz ko šis punkts
+paļaujas; e-pasts ir papildus tam, nevis tā vietā. 19.10. punkts regulē paziņojumu, kas jūs
+nesasniedz, un 16.3. punkts lūdz jūsu piekrišanu būtiskai izmaiņai lietotnē, nevis pa e-pastu,
+tā paša iemesla dēļ.
+
+16.3 **Būtiskām izmaiņām nepieciešama jūsu piekrišana.** Par izmaiņām 8., 9., 12., 13., 14.,
+17. sadaļā vai jebkurā cenu noteikšanā mēs lūgsim jūs pieņemt jauno versiju lietotnē. Ja jūs
+nepieņemat, jūs varat turpināt izmantot Pakalpojuma pašreizējo versiju līdz spēkā stāšanās
+datumam, pēc kura mēs varam slēgt jūsu kontu saskaņā ar **12.5. punkta (b) apakšpunktu** — un
+jūs varat eksportēt Jūsu datus jebkurā laikā pirms un šī perioda laikā.
+
+16.4 Par jebkuru citu izmaiņu — FitPulse turpmāka izmantošana pēc spēkā stāšanās datuma
+nozīmē, ka jūs to pieņemat. Ja jūs to nevēlaties pieņemt, jūs varat slēgt savu kontu jebkurā
+laikā pirms spēkā stāšanās datuma bez maksas.
+
+16.5 Katra iepriekšējā šo Noteikumu versija tiek glabāta projekta Git vēsturē. Rakstiet mums
+1. sadaļā norādītajā adresē, un mēs jums nosūtīsim jebkuru agrāku versiju.
+
+## 17. Piemērojamie tiesību akti un kur tiek izskatīti strīdi
+
+17.1 Šos Noteikumus regulē **Latvijas** tiesību akti.
+
+17.2 **Ja jūs esat patērētājs, kas pastāvīgi dzīvo EEZ vai Apvienotajā Karalistē**, 17.1.
+punkts neatņem jums jūsu dzīvesvietas valsts imperatīvo tiesību aktu aizsardzību, un jūs varat
+uzsākt tiesvedību savas dzīvesvietas valsts tiesās vai **Latvijas** tiesās. Mēs varam uzsākt
+tiesvedību pret jums tikai jūsu dzīvesvietas valsts tiesās.
+
+17.3 **Ja jūs neesat patērētājs** — tas ir, ja jūs izmantojat FitPulse uzņēmējdarbības nolūkos
+— **Latvijas** tiesām ir ekskluzīva jurisdikcija.
+
+17.4 **Ja jūs esat patērētājs, kas pastāvīgi dzīvo ārpus EEZ un Apvienotās Karalistes**, 17.3.
+punkts uz jums neattiecas. Mēs esam viena privātpersona, kas reģistrēta Latvijā un kam nekur
+citur nav vienības, tāpēc Latvija ir vieta, kur mēs celtu vai aizstāvētu prasību, un 17.1.
+punkts izvēlas Latvijas tiesību aktus šim nolūkam. Bet mēs nelūdzam jums atteikties no
+aizsardzības, no kuras jūsu pašu likums neļauj jums atteikties: ja jūsu dzīvesvietas valsts
+imperatīvie patērētāju tiesību akti dod jums tiesības celt prasību vietēji vai piemēro savus
+noteikumus šai vienošanai, šīs tiesības un šie noteikumi noteic pār šo sadaļu. B pielikuma B.3.
+daļa saka to pašu lasītājiem Amerikas Savienotajās Valstīs.
+
+17.5 **Vispirms runājiet ar mums.** Pirms jebkādas oficiālas tiesvedības uzsākšanas, lūdzu,
+sazinieties ar mums uz **smalkaisk@gmail.com** un dodiet mums **30 dienas** jautājuma
+atrisināšanai. Tas neliedz jums vērsties tiesā un neietekmē nevienu noilguma termiņu.
+
+## 18. Sūdzības
+
+18.1 Sūtiet sūdzības uz **smalkaisk@gmail.com**. Mēs apstiprināsim saņemšanu **10 darba dienu**
+laikā un sniegsim atbildi pēc būtības **30 dienu** laikā.
+
+18.2 Ja jūs neesat apmierināts, jūs varat nodot jautājumu patērētāju tiesību aizsardzības
+iestādei vai kompetentai alternatīvās strīdu izšķiršanas iestādei jūsu dzīvesvietas valstī. Tā
+kā mēs esam reģistrēti Latvijā, jūs varat arī sūdzēties **Patērētāju tiesību aizsardzības
+centram ("PTAC")**, kas mūs uzrauga. B pielikuma B.1. daļa skaidro ceļu pārrobežu sūdzībām EEZ
+iekšienē.
+
+18.3 Nekas šajā sadaļā neliedz jums vērsties tiesā.
+
+## 19. Vispārīgie noteikumi
+
+19.1 **Atsevišķu noteikumu spēkā neesamība.** Ja kāds šo Noteikumu noteikums vai noteikuma
+daļa tiek atzīta par spēkā neesošu, nelikumīgu vai neizpildāmu, tā tiek nodalīta, un pārējie
+turpina būt pilnā spēkā. Ja iespējams, nodalītais noteikums jālasa sašaurināti tiktāl, cik
+nepieciešams, lai padarītu to spēkā esošu, nevis pilnībā jānoņem.
+
+19.2 **Nav atteikšanās.** Ja mēs neīstenojam kādu tiesību saskaņā ar šiem Noteikumiem vai
+kavējamies to darīt, tā nav atteikšanās no šīs tiesības un neliedz mums to īstenot vēlāk.
+
+19.3 **Viss līgums.** Šie Noteikumi, Privātuma politika un jebkuri konkrētas funkcijas
+noteikumi, ko jūs pieņemat, ir viss līgums starp mums par Pakalpojumu un aizstāj jebkuru
+agrāku paziņojumu vai vienošanos par to. Šis punkts neizslēdz atbildību par krāpšanu vai
+krāpniecisku sagrozīšanu un neizslēdz nevienu mūsu izteikto apgalvojumu, uz kuru jūs saprātīgi
+paļāvāties, izlemjot izmantot Pakalpojumu.
+
+19.4 **Tiesību nodošana.** Jūs nedrīkstat nodot savas tiesības vai pienākumus saskaņā ar šiem
+Noteikumiem. Mēs varam nodot savas tiesības citai organizācijai apvienošanās, iegādes vai
+pārstrukturēšanas ietvaros, **ar nosacījumu**, ka nodošana nesamazina aizsardzību, kas jums ir
+saskaņā ar šiem Noteikumiem vai saskaņā ar likumu. Mēs jums paziņosim vismaz **30 dienas**
+pirms jebkādas šādas nodošanas, un jūs varat slēgt savu kontu jebkurā laikā.
+
+19.5 **Paziņojumi.** Mēs sūtīsim paziņojumus uz jūsu kontā norādīto e-pasta adresi; jums tā
+jāuztur aktuāla. Paziņojums pa e-pastu tiek uzskatīts par saņemtu 24 stundas pēc tā
+nosūtīšanas, ja vien mēs nesaņemam piegādes kļūdu. Jūs sūtāt mums paziņojumus uz
+**smalkaisk@gmail.com**.
+
+19.6 **No mums neatkarīgi notikumi.** Mēs neesam atbildīgi par savu pienākumu neizpildi vai
+kavēšanos, ko izraisījis notikums ārpus mūsu saprātīgas kontroles, tostarp elektrības vai
+interneta atteice, trešās puses infrastruktūras pakalpojumu sniedzēja atteice, dabas
+katastrofa, karš, terorisms, pilsoniski nemieri, epidēmija, streiks vai valdības rīcība. Mēs
+jums paziņosim un atsāksim darbību, tiklīdz tas būs saprātīgi iespējams. Ja notikums turpinās
+ilgāk par **30 dienām**, jebkurš no mums var izbeigt šo vienošanos.
+
+19.7 **Trešās puses.** Izņemot to, kas norādīts A pielikumā, nevienam citam, izņemot jūs un
+mūs, nav tiesību īstenot šos Noteikumus.
+
+19.8 **Spēkā palikšana.** 1., 2.2., 2.4., 6.2., 6.5., 8.1.–8.3., 8.5.–8.9., 9., 11.2., 12.6.,
+12.7., 13.2., 13.3., 14., 15., 17., 18., 19. un 20. sadaļa, kā arī B pielikums, paliek spēkā
+pēc šīs vienošanās izbeigšanas jebkāda iemesla dēļ.
+
+2.2., 8.5. un 11.2. punkts ir šajā sarakstā iemesla dēļ, ko vērts norādīt. Punkti, kas ir
+vissvarīgākie pēc jūsu aiziešanas, ir tie par to, kas tika dzēsts un kas tika saglabāts (12.6.
+un 12.7.), un tie ir datu aizsardzības jautājumi — tāpēc noteikumam, ka Privātuma politika tos
+regulē (8.5. punkts un izņēmums 2.2. punkta (a) apakšpunktā), arī jāpārdzīvo vienošanās, vai
+arī jūs strīdētos par glabāšanu saskaņā ar punktiem, kas palika spēkā, pret hierarhiju, kas
+nepalika. 11.2. punkts paliek spēkā, jo 14.6. punkts sadala risku ar atsauci uz to.
+
+19.9 **Valoda.** Autoritatīvā šo Noteikumu versija ir **angļu valodas** versija, kas pieejama
+vietnē [/terms.html](/terms.html). Šī ir tulkojums latviešu valodā, ko mēs publicējam
+ērtībai. Ja starp angļu valodas versiju un tulkojumu pastāv pretrunas, noteic angļu valodas
+versija — izņemot to, ka, ja jūs esat patērētājs, jūs varat paļauties uz tulkojumu savā valodā
+tiktāl, ciktāl imperatīvie patērētāju tiesību aizsardzības tiesību akti jūsu dzīvesvietā tam
+piešķir spēku.
+
+19.10 **Kad paziņojums jūs nesasniedz.** E-pasts nav ideāls: filtri to novirza, pastkastes
+pildās, un pakalpojumu sniedzēji noraida ziņojumus. 19.5. punkts joprojām attiecas, un adreses
+uzturēšana aktuāla saskaņā ar 5.1. punktu joprojām ir svarīga, taču tas nedarbojas kā slazds:
+
+&nbsp;&nbsp;(a) ja jūs kaut ko no mums gaidāt un tas nav pienācis, pārbaudiet savu
+mēstuļu mapi — ziņojums, ko mēs sūtām, ne vienmēr ir ziņojums, ko jūsu pakalpojumu sniedzējs
+jums parāda;
+&nbsp;&nbsp;(b) ja mēs saņemam piegādes kļūdu vai citādi mums ir pamats uzskatīt, ka svarīgs
+paziņojums jūs nesasniedza, mēs veiksim saprātīgu turpmāku mēģinājumu. Paziņojums lietotnē ir
+mūsu parastais otrais ceļš;
+&nbsp;&nbsp;(c) 19.5. punktā minētais saņemšanas prezumpcijas noteikums — saņemts 24 stundas
+pēc nosūtīšanas — neattiecas uz paziņojumu, par kuru mēs zinām, ka tas netika piegādāts;
+&nbsp;&nbsp;(d) piekrišana būtiskai izmaiņai saskaņā ar 16.3. punktu tiek lūgta **lietotnē**,
+nevis pa e-pastu, tāpēc e-pasts, ko jūs nekad neredzējāt, pats par sevi nevar jums maksāt
+iespēju to apsvērt;
+&nbsp;&nbsp;(e) **mēs neslēgsim jūsu kontu saskaņā ar 12.5. punkta (b) apakšpunktu par to, ka
+jūs nepieņēmāt izmaiņu, par kuru mēs zinām, ka jums nekad netika paziņots.**
+
+Ja jūsu kontā norādītā adrese vairs nav jūsu un mēs vispār nevaram ar jums sazināties, mēs
+varam uzskatīt paziņojumus par sniegtiem pēc (b) apakšpunkta izpildes — nav nekā cita, ko mēs
+varam darīt, un 5.6. punkts skaidro, kāpēc nesasniedzama adrese ir problēma arī jums.
+
+19.11 **Eksports un dzēšana no mums neatkarīga notikuma laikā.** 19.6. punkts attaisno
+kavēšanos mūsu pienākumu izpildē; tas nav veids, kā paturēt jūsu datus. Ja notikums saskaņā ar
+19.6. punktu aptur eksporta vai dzēšanas darbību, mēs abu atjaunošanu uzskatīsim par
+prioritāti, pastāstīsim jums, ka tie nav pieejami un uz cik ilgu laiku, tiklīdz varam, un
+izpildīsim pieprasījumu, kas nosūtīts pa e-pastu uz 1. sadaļā norādīto adresi, tiklīdz varam
+uz to rīkoties. 19.6. punkts nepagarina likumā noteikto termiņu datu aizsardzības
+pieprasījumam — tos nosaka likums un [Privātuma politika](/lv/privacy.html), nevis šis līgums.
+Ja notikums saskaņā ar 19.6. punktu izbeidz šo vienošanos, mēs nedzēsīsim Jūsu datus
+paziņojuma periodā, ja vien jūs mums to nelūdzat, un mēs padarīsim eksportu pieejamu, ja
+varēsim.
+
+## 20. Definīcijas un interpretācija
+
+20.1 **"Ietver", "tostarp" un "piemēram"** ievada piemērus, kas **neierobežo** vārdu nozīmi,
+kuriem tie seko. Vispārīgos vārdus neierobežo konkrētie piemēri, neatkarīgi no tā, vai piemēri
+ir tāda paša veida.
+
+20.2 **"Rakstisks" un "rakstiski"** ietver e-pastu.
+
+20.3 **"Darba diena"** nozīmē dienu, kas nav sestdiena, svētdiena vai svētku diena **Latvijā**.
+
+20.4 **"Jūsu dati"** ir nozīmē, kas norādīta 8.1. punktā.
+
+20.5 Virsraksti ir ērtībai un neietekmē interpretāciju. Vienskaitlis ietver daudzskaitli un
+otrādi. Atsauce uz likumu ietver šo likumu ar grozījumiem vai aizstāto.
+
+20.6 Tā kā šos Noteikumus sagatavojām mēs un ne individuāli ar jums sarunāti, **jebkura
+patiesa neskaidrība jāinterpretē jums par labu.**
+
+20.7 **Termini, kas definēti to lietošanas vietā.** Vairāki izteicieni ir definēti punktā, kas
+tos lieto, nevis šeit, tāpēc definīcija atrodas kopā ar pienākumu, ko tā veido: **komerciāla
+izmantošana** un **personīga, nekomerciāla** 6.4. punktā; **nesamērīga slodze** 7.4. punktā;
+**anonīms** un **apkopots** 8.8. punktā; **būtisks samazinājums** 10.6. punktā; **saprātīgs
+iepriekšējs paziņojums** par apkopi 10.7. punktā; un prasības, kas FitPulse nepieciešamas, lai
+darbotos, 13.4. punktā. Katra no šīm definīcijām noteic visur, kur izteiciens parādās šajos
+Noteikumos.
+
+---
+
+## A pielikums — Papildu noteikumi App Store un Google Play
+
+Šie noteikumi attiecas tikai tad, ja jūs ieguvāt FitPulse caur Apple App Store vai Google
+Play, un tikai attiecībā uz šo kopiju. Ja tie ir pretrunā ar galvenajiem Noteikumiem, šis
+pielikums noteic šai kopijai.
+
+**A.1 Vienošanās ir ar mums, nevis ar veikalu.** Šie Noteikumi ir starp jums un mums. Apple
+Inc. un Google LLC nav to puses. Šie Noteikumi nedrīkst būt pretrunā ar Apple Media Services
+Terms and Conditions, un pretrunas gadījumā šie noteikumi noteic attiecībā uz jūsu attiecībām
+ar Apple.
+
+**A.2 Licences apjoms.** Jūsu licence saskaņā ar 6. sadaļu ir ierobežota ar FitPulse
+izmantošanu jebkurā Apple zīmola produktā, kas jums pieder vai kuru jūs kontrolējat, kā to
+atļauj Apple Media Services Terms and Conditions lietošanas noteikumi, tostarp caur Family
+Sharing vai apjoma iegādi, kur tas piemērojams.
+
+**A.3 Apkope un atbalsts.** Mēs esam vienīgie atbildīgie par FitPulse apkopes un atbalsta
+nodrošināšanu. Apple nav nekāda pienākuma sniegt jebkādus apkopes vai atbalsta pakalpojumus.
+
+**A.4 Garantija.** Mēs esam vienīgie atbildīgie par jebkādām produkta garantijām, vienalga,
+vai tās ir tieši izteiktas vai likumā netieši noteiktas, tiktāl, ciktāl tās nav efektīvi
+izslēgtas. Ja FitPulse neatbilst kādai piemērojamai garantijai, jūs varat paziņot Apple, un
+Apple atmaksās pirkuma cenu (ja tāda ir); maksimālajā likuma atļautajā apjomā Apple nav citu
+garantijas pienākumu, un jebkuras citas prasības, zaudējumi, saistības, kompensācijas,
+izmaksas vai izdevumi, kas saistīti ar garantijas neatbilstību, ir mūsu vienīgā atbildība.
+
+**A.5 Produkta prasības.** Mēs, nevis Apple, esam atbildīgi par jebkuras jūsu vai trešās puses
+prasības risināšanu, kas saistīta ar FitPulse vai jūsu īpašumu un tās izmantošanu, tostarp
+produktatbildības prasībām, jebkuru prasību, ka FitPulse neatbilst juridiskai vai regulatīvai
+prasībai, un prasībām, kas rodas saskaņā ar patērētāju tiesību aizsardzības, privātuma vai
+līdzīgiem tiesību aktiem, tostarp saistībā ar FitPulse HealthKit vai HomeKit ietvaru
+izmantošanu, ja piemērojams.
+
+**A.6 Intelektuālā īpašuma prasības.** Trešās puses prasības gadījumā, ka FitPulse vai jūsu
+īpašums un tās izmantošana pārkāpj šīs trešās puses intelektuālā īpašuma tiesības, mēs, nevis
+Apple, esam vienīgie atbildīgie par šīs prasības izmeklēšanu, aizstāvību, izlīgumu un
+izpildi.
+
+**A.7 Juridiskā atbilstība.** Jūs apliecināt un garantējat, ka neatrodaties valstī, uz kuru
+attiecas ASV valdības embargo vai kuru ASV valdība apzīmējusi kā "terorismu atbalstošu" valsti,
+un ka neesat iekļauts nevienā ASV valdības aizliegto vai ierobežoto pušu sarakstā.
+
+**A.8 Izstrādātāja nosaukums un adrese.** Mūsu nosaukums, adrese un kontaktinformācija ir 1.
+sadaļā.
+
+**A.9 Trešo pušu noteikumi.** Jums jāievēro visi piemērojamie trešo pušu vienošanās noteikumi,
+izmantojot FitPulse.
+
+**A.10 Trešās puses labuma guvējs.** Jūs apzināties un piekrītat, ka Apple un Apple
+meitasuzņēmumi ir šo Noteikumu trešās puses labuma guvēji un ka pēc jūsu pieņemšanas Apple būs
+tiesības (un tiks uzskatīts, ka tā ir pieņēmusi šīs tiesības) īstenot šos Noteikumus pret jums
+kā trešās puses labuma guvējam.
+
+**A.11 Google Play.** Ja jūs ieguvāt FitPulse caur Google Play, uz jūsu izmantošanu attiecas
+arī Google Play pakalpojumu sniegšanas noteikumi, un Google nav šo Noteikumu puse un tai nav
+atbildības par FitPulse.
+
+---
+
+## B pielikums — Noteikumi, kas atkarīgi no jūsu dzīvesvietas
+
+Patērētāju tiesību aizsardzība ir nacionāls likums, tāpēc viens noteikumu kopums nevar būt
+vienlīdz precīzs visur. Šis pielikums apkopo atšķirības vienā vietā. Izlasiet daļu par to, kur
+jūs dzīvojat; pārējais uz jums neattiecas.
+
+**Kā šis pielikums darbojas.** Ja tā daļa maina galveno Noteikumu punktu, tā to norāda, un tā
+noteic šim reģionam. Ja tā tikai apstiprina tiesību, kas jums jau ir pēc likuma, tā norāda arī
+to — likumā noteiktas tiesības apstiprināšana to nerada, un tās neuzskaitīšana to nenoņem.
+2.4. punkts atrodas virs visa šeit: imperatīvie patērētāju tiesību akti jūsu valstī noteic pār
+jebkuru šo Noteikumu punktu, tostarp šo pielikumu.
+
+### B.1 Ja jūs dzīvojat Eiropas Ekonomikas zonā
+
+**B.1.1 Jūsu likums un jūsu tiesas.** 17.1. punkts izvēlas Latvijas tiesību aktus, taču
+saskaņā ar 17.2. punktu šī izvēle nevar atņemt jums jūsu pašu valsts imperatīvo patērētāju
+tiesību aktu aizsardzību, un jūs varat iesūdzēt savās tiesās. Mēs varam iesūdzēt jūs tikai
+jūsu tiesās.
+
+**B.1.2 Digitālo pakalpojumu atbilstība.** Saskaņā ar Direktīvu (ES) 2019/770, kā tā ieviesta
+jūsu dzīvesvietā, tam, ko mēs piegādājam, jābūt tādam, kā aprakstīts, un piemērotam savam
+mērķim, un jums ir tiesiskās aizsardzības līdzekļi, ja tas tā nav. 13.1. punkts nosaka, ko mēs
+solām; 13.2. punkts un 14. sadaļa nesamazina un nav paredzēti, lai samazinātu šos likumā
+noteiktos tiesiskās aizsardzības līdzekļus zem tā, ko pieprasa Direktīva.
+
+**B.1.3 Atteikums.** FitPulse tiek piegādāta bez maksas, tāpēc nav maksājuma un nav nekā, ko
+atmaksāt. Ja mēs kādreiz ieviešam maksas plānu, likumā noteiktās 14 dienu atteikuma tiesības
+tiks jums parādītas pirkuma brīdī, kopā ar tiešo lūgumu un apstiprinājumu, ko likums pieprasa
+pirms tūlīt piegādāta digitālā satura sniegšanas sākuma.
+
+**B.1.4 Sūdzības pāri robežām.** Piemēro 18. sadaļu. Pārrobežu strīdam ar tirgotāju citā EEZ
+valstī izmantojamais ceļš ir **Eiropas Patērētāju centru tīkls (ECC-Net)**; to risinās jūsu
+nacionālais ECC. Mēs nenorādām jums uz ES Strīdu izšķiršanas tiešsaistē platformu, jo tā tika
+slēgta 2025. gada 20. jūlijā.
+
+**B.1.5 Interpretācija.** 20.6. punkts šeit piemērojams ar pilnu spēku: šos Noteikumus
+sagatavojām mēs un ne ar jums sarunāti, tāpēc patiesa neskaidrība tiek lasīta jums par labu.
+
+### B.2 Ja jūs dzīvojat Apvienotajā Karalistē
+
+**B.2.1 Jūsu likums un jūsu tiesas.** 17.2. punkts sedz jūs tāpat kā EEZ patērētāju: Latvijas
+tiesību aktu izvēle neatņem imperatīvo Apvienotās Karalistes patērētāju tiesību aktu
+aizsardzību, jūs varat iesūdzēt Apvienotās Karalistes tiesās, un mēs varam iesūdzēt jūs tikai
+tur.
+
+**B.2.2 Consumer Rights Act 2015.** Ja šis akts attiecas uz to, ko mēs jums piegādājam, nekas
+šajos Noteikumos nesamazina tiesības, ko tas jums dod. Tas skaidri ietver 46. pantu: ja
+defektīvs digitālais saturs, ko mēs piegādājam, bojā jūsu ierīci vai citu digitālo saturu, un
+mēs neesam izmantojuši saprātīgu rūpību un prasmi, jums var būt tiesības uz remontu vai
+kompensāciju — un 14. sadaļa to neierobežo.
+
+**B.2.3 Negodīgi noteikumi.** Jebkurš šo Noteikumu noteikums, kas būtu negodīgs saskaņā ar
+Consumer Rights Act 2015 2. daļu, jums nav saistošs, un pārējie turpina būt piemērojami (19.1.
+punkts).
+
+**B.2.4 Sūdzības.** Piemēro 18. sadaļu. Jūs varat arī sazināties ar patērētāju konsultāciju
+dienestu Apvienotajā Karalistē, un nekas 17. vai 18. sadaļā neliedz jums celt prasību
+Apvienotās Karalistes tiesās.
+
+### B.3 Ja jūs dzīvojat Amerikas Savienotajās Valstīs
+
+**B.3.1 Nav šķīrējtiesas klauzulas un nav kolektīvās prasības atteikuma.** Mēs apzināti
+neesam iekļāvuši nevienu no tiem. Jūs saglabājat jebkādas tiesības celt prasību tiesā —
+individuāli vai kā daļu no kolektīva. Ja mēs kādreiz ierosinām pievienot šķīrējtiesas
+klauzulu, tā būtu izmaiņa 17. sadaļā — ko 16.3. punkts saka, ka mēs nevaram jums piemērot,
+nelūdzot jums to vispirms pieņemt, un ko jūs varētu atteikt.
+
+**B.3.2 Jurisdikcija, godīgi izklāstīta.** Ekskluzīvās jurisdikcijas klauzula 17.3. punktā
+attiecas uz uzņēmējdarbības lietotājiem, **nevis uz jums kā patērētāju** — 17.4. punkts to
+skaidri norāda. Mēs esam viena privātpersona, kas reģistrēta Latvijā un kam nav ASV vienības,
+tāpēc Latvija ir vieta, kur mēs celtu vai aizstāvētu prasību; tas neatceļ un nevar atcelt
+tiesību, ko jūsu štata likums jums dod un no kuras nevar atteikties ar līgumu, un, ja jūsu
+štata likums ļauj jums iesūdzēt vietēji, jūs varat.
+
+**B.3.3 Jūsu veselības dati.** Ķermeņa svars un treniņu vēsture ir veselības dati saskaņā ar
+ASV likumu tāpat kā ES likumu. [Privātuma politika](/lv/privacy.html) nosaka, kā mēs to
+apstrādājam, un uz mums attiecas FTC Veselības datu pārkāpumu paziņošanas noteikums, kas
+pieprasa mums paziņot jums un FTC, ja tie kādreiz tiek izpausti bez jūsu atļaujas.
+
+**B.3.4 Kalifornija.** Jūs varat izmantot Privātuma politikā aprakstītās tiesības, un mēs
+nepārdodam un nekoplietojam jūsu personas informāciju — tāpēc nav nekā, no kā atteikties, kaut
+gan mēs jebkurā gadījumā ievērojam Global Privacy Control signālu. Kā pieklājības paziņojums:
+elektroniska pakalpojuma Kalifornijas lietotāji var vērst sūdzību Kalifornijas Patērētāju
+lietu departamenta Patērētāju pakalpojumu nodaļas Sūdzību palīdzības vienībai, ar kuru var
+sazināties caur departamenta tīmekļa vietni.
+
+**B.3.5 Vašingtonas štats.** Mūsu [Patērētāju veselības datu privātuma
+paziņojums](/consumer-health-data-privacy.html) ir atsevišķs dokuments, kā to pieprasa My
+Health My Data Act, un tas nosaka jūsu tiesības, mūsu atbildes laikus un to, kā pārsūdzēt
+atteikumu.
+
+### B.4 Ja jūs dzīvojat jebkur citur
+
+2.4. punkts joprojām attiecas: jebkura imperatīva patērētāju tiesību aizsardzība jūsu valstī
+noteic pār jebkuru šo Noteikumu punktu, kas ar to ir pretrunā. 17. un 18. sadaļa piemērojama,
+kā rakstīts, un mēs vienmēr atbildēsim uz sūdzību, kas nosūtīta uz 1. sadaļā norādīto adresi.
+
+---
+
+*Lietošanas noteikumu beigas, versija 1.2.*

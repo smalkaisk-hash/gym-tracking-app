@@ -96,7 +96,7 @@ const TRANSLATIONS = [
     // legal/lv/<FILE>.md; the footer and the English-page language link are both
     // derived from this list, so an untranslated document simply is not offered
     // in Latvian rather than linking to a 404.
-    slugs: ['delete-account', 'faq'],
+    slugs: ['terms', 'privacy', 'delete-account', 'faq'],
     // <title> and meta description per slug. Falls back to the English doc's own
     // if a slug is missing here.
     meta: {
