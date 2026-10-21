@@ -1,15 +1,14 @@
-<!-- legal:draft -->
 # FitPulse Privātuma politika
 
-**Versija 1.1 · Spēkā no 2026. gada 4. septembra · Pēdējoreiz pārskatīts 2026. gada 5. augustā**
+**Versija 1.1 · Spēkā no 2026. gada 4. septembra · Pēdējoreiz pārskatīts 2026. gada 21. oktobrī**
 
 <!-- internal:start -->
-> **DRAFT — read this box before publishing.** This is the Latvian convenience
-> translation of PRIVACY.md. It mirrors the English file's draft state: the same
-> `<!-- legal:draft -->` marker and the same `{{FILL: …}}` spots, which are NOT
-> translated (they are build markers). Resolve them in `legal/PRIVACY.md` first,
-> then re-translate here in the same release. English is the authoritative
-> version — see `legal/lv/README.md`.
+> **Latvian convenience translation of PRIVACY.md.** English is the authoritative
+> version — see `legal/lv/README.md`. The static-host placeholders were resolved and the
+> draft marker removed in the 2026-10-21 release, in step with `legal/PRIVACY.md`. Keep the
+> two in sync: re-translate here in the same release as any English edit. The build markers
+> (draft comment and FILL spots) are deliberately left untranslated. This page still ships
+> "pending professional review" via the warn-bordered banner the build adds.
 <!-- internal:end -->
 
 ---
@@ -270,7 +269,7 @@ kuriem līgumiski ir aizliegts tos izmantot jebkam citam.
 | Pakalpojumu sniedzējs | Ko dara | Kam var piekļūt | Apstrādes valsts |
 | --- | --- | --- | --- |
 | **Supabase, Inc.** | Datubāze, autentifikācija, API mitināšana | Visi konta un lietotnes dati | **Īrija** (reģions `eu-west-1`) |
-| **{{FILL: static host — not yet chosen; the app is not deployed}}** | Apkalpo lietotnes failus | Pieprasījumu žurnāli, tostarp IP adreses. Ne jūsu lietotnes dati | {{FILL: static host country}} |
+| **GitHub, Inc.** (GitHub Pages) | Apkalpo lietotnes failus | Pieprasījumu žurnāli, tostarp IP adreses, ko GitHub glabā arī savas drošības nolūkos. Ne jūsu lietotnes dati | **Amerikas Savienotās Valstis**; skatiet 10. sadaļu |
 | **Supabase, Inc.** (iebūvētais e-pasta pakalpojums) | Sūta paroles atiestatīšanas un apstiprināšanas e-pastu | Jūsu e-pasta adresi un ziņojumu | Pakalpojumu sniedzējs to šim pakalpojumam nepublicē. Supabase, Inc. ir reģistrēta **Amerikas Savienotajās Valstīs**; skatiet 10. sadaļu |
 | **Google LLC** (Gmail) | Mitina pastkasti aiz mūsu kontaktadreses | Tikai to, ko jūs izvēlaties ievietot e-pastā mums. Lietotne tur neko nesūta, un tā neglabā jūsu treniņu, svēršanos vai konta kopiju | **Amerikas Savienotās Valstis**; skatiet 10. sadaļu |
 
@@ -304,7 +303,7 @@ signālus ievērojam jebkurā gadījumā.
 | Piekrišanas un Noteikumu pieņemšanas ieraksts (datumi un versiju numuri; nekādu veselības datu) | Tik ilgi, cik mēs apstrādājam jūsu datus, pamatojoties uz šo piekrišanu, un pēc tam tikai tik ilgi, cik mums varētu būt nepieciešams pierādīt, ka tā tika sniegta. Konta dzēšana to dzēš arī |
 | Ierīces kešatmiņa (`localStorage`) | Līdz jūs izrakstāties, dzēšat visus savus datus vai notīrāt pārlūkprogrammas atmiņu. Tā paliek tikai tajā ierīcē, un tikai tajā ierīcē — mēs to nevaram izdzēst attālināti |
 | Datubāzes un API pieprasījumu žurnāli (tostarp IP) | **1 diena.** Mūsu datubāzes pakalpojumu sniedzējs mūsu plānā glabā pieprasījumu žurnālus 24 stundas, pēc tam tie tiek automātiski dzēsti. Ja mēs pāriesim uz maksas plānu, šis periods kļūs garāks, un mēs šo rindu atjaunināsim |
-| Statiskā mitinātāja pieprasījumu žurnāli (tostarp IP) | {{FILL: the host's published log retention — fill when the host is chosen}} |
+| Statiskā mitinātāja pieprasījumu žurnāli (tostarp IP) | **To nosaka GitHub, nevis mēs.** GitHub reģistrē apmeklētāja IP adresi, kad tiek apskatīta GitHub Pages vietne, savas drošības nolūkos, un nepublicē šo žurnālu glabāšanas periodu. Tie ir GitHub ieraksti, nevis mūsu — mēs tos nevaram lasīt, eksportēt vai dzēst, un tajos nav treniņu, svēršanās vai konta datu |
 | E-pasts, ko sūtāt uz mūsu kontaktadresi, un mūsu atbildes | **24 mēneši** no pēdējās ziņas sarakstē, pēc tam dzēsts no pastkastes un tās miskastes. Mēs to glabājam tikai, lai apstrādātu jūsu pieprasījumu un pierādītu, ka to apstrādājām. **Konta dzēšana to nedzēš** — palūdziet mums, un mēs dzēsīsim arī saraksti |
 | **Pierakstīšanās drošības žurnāls** (tostarp IP un izmantotā e-pasta adrese) | **90 dienas.** Mūsu autentifikācijas pakalpojumu sniedzējs to glabā atsevišķi no jūsu konta un pats to neizbeidz, tāpēc **mēs to attīrām paši** šajā ritmā. Tas ir vienīgais ieraksts, kas **paliek pēc konta dzēšanas**: mēs to neizskatām saistībā ar dzēstu kontu un nekad neizmantojam tā atjaunošanai. Juridiskais pamats: 6. panta 1. punkta f) apakšpunkts — mūsu leģitīmā interese atklāt akreditācijas datu pildīšanu (credential stuffing) un pierakstīšanās galapunkta ļaunprātīgu izmantošanu |
 | Sesijas pilnvaras | Līdz tās beidzas vai jūs izrakstāties — atkarībā no tā, kas notiek pirmais. Izrakstīšanās atsauc pilnvaru un noņem to no jūsu ierīces; dīkstāvē atstāta pilnvara beidzas pēc mūsu autentifikācijas pakalpojumu sniedzēja grafika, un pēc tam to izmantot nevar |
@@ -476,11 +475,11 @@ Divi šaurāki jautājumi, kas norādīti, nevis apieti:
   noteikumos ietvertās standarta līguma klauzulas. Lietotne tur neko nesūta: tas attiecas
   tikai uz saraksti, ko jūs uzsākat. Ja jūs labāk nevēlaties nosūtīt privātuma pieprasījumu
   caur Google, pasakiet to pirmajā ziņā bez detaļām, un mēs sarunāsim citu veidu.
-- **Statiskā mitināšana.** Mitinātājs ir
-  **{{FILL: static host — not yet chosen; the app is not deployed}}**,
-  {{FILL: static host country}}, un, ja tā ir ārpus EEZ, nosūtīšana balstās uz
-  {{FILL: static host transfer mechanism}}. Mitinātājs apkalpo lietotnes failus un redz
-  pieprasījumu žurnālus, tostarp IP adreses; tas nekad neglabā jūsu ierakstus.
+- **Statiskā mitināšana.** Lietotnes failus apkalpo **GitHub Pages**, ko nodrošina **GitHub,
+  Inc.** Amerikas Savienotajās Valstīs. Tā kā tā ir ārpus EEZ, nosūtīšana balstās uz GitHub
+  pašsertifikāciju saskaņā ar **ES–ASV Datu privātuma sistēmu** un uz **standarta līguma
+  klauzulām**, kas iekļautas GitHub Datu aizsardzības līgumā. Mitinātājs apkalpo lietotnes
+  failus un redz pieprasījumu žurnālus, tostarp IP adreses; tas nekad neglabā jūsu ierakstus.
 
 **Apvienotās Karalistes lietotājiem** piemēro to pašu glabāšanu. Nosūtīšanu no Apvienotās
 Karalistes uz Īriju sedz Apvienotās Karalistes aizsardzības līmeņa pietiekamības noteikumi

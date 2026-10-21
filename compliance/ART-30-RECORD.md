@@ -84,8 +84,8 @@ entry, and no activity is carried out that is not listed here.
 | Categories of personal data | Server/API request logs including IP address, timestamp, request made |
 | Legal basis | Art. 6(1)(f) — legitimate interest in a working, secure service. Balancing: the data is technical, retained briefly, never combined with training data, never used to build a profile, and no less intrusive alternative exists for operating a networked service |
 | Special category data | None |
-| Recipients | Supabase, Inc.; the static host (**not yet chosen — see § 5**) |
-| Third-country transfer | Database logs: no (Ireland). Static host: **to be determined on selection** |
+| Recipients | Supabase, Inc.; GitHub, Inc. (GitHub Pages — static file host) |
+| Third-country transfer | Database logs: no (Ireland). Static host: **yes — United States**. Safeguard: GitHub's EU–US Data Privacy Framework self-certification + the SCCs in GitHub's Data Protection Agreement |
 | Retention | Database/API request logs: 1 day (provider default on this plan). Static host: to be determined |
 
 ### P5 — Handling data subject requests and privacy correspondence
@@ -154,9 +154,13 @@ component, for a different period, and — unlike every other row in this record
 | Supabase, Inc. | Database, auth, API hosting | Ireland (`eu-west-1`) | DPA — **copy to be obtained, see § 5** | Not required |
 | Supabase, Inc. (email) | Transactional email | Not published; treat as US | Same DPA | SCCs |
 | Google LLC | Contact mailbox (Gmail) | United States | Google Data Processing Terms | SCCs |
-| Static host | Serves the app's files | **Not yet chosen** | — | — |
+| GitHub, Inc. | Static file host (GitHub Pages) — serves the app's HTML/JS/CSS and legal pages | United States | GitHub Data Protection Agreement (incorporates SCCs) — see note | EU–US Data Privacy Framework + SCCs |
 
-No recipient receives data for its own purposes. Nothing is sold or shared for
+No recipient receives app data for its own purposes — with one narrow exception: the static
+host (GitHub, Inc.) records request logs including visitor IP addresses for its own security,
+which it processes as an independent controller under its own privacy statement. It never
+receives any workout, weigh-in, account or consent row — only the ordinary metadata of a web
+request for the app's files. Nothing is sold or shared for
 cross-context behavioural advertising. There are no joint controllers and no sub-processor
 appointed by the controller directly.
 

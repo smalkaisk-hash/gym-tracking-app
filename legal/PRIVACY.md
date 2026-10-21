@@ -1,7 +1,6 @@
-<!-- legal:draft -->
 # FitPulse Privacy Policy
 
-**Version 1.1 · Effective 4 September 2026 · Last reviewed 5 August 2026**
+**Version 1.1 · Effective 4 September 2026 · Last reviewed 21 October 2026**
 
 <!-- internal:start -->
 > **DRAFT — read this box before publishing.**
@@ -265,7 +264,7 @@ contractually barred from using it for anything else.
 | Provider | What they do | What they can access | Country of processing |
 | --- | --- | --- | --- |
 | **Supabase, Inc.** | Database, authentication, API hosting | All account and app data | **Ireland** (region `eu-west-1`) |
-| **{{FILL: static host — not yet chosen; the app is not deployed}}** | Serves the app files | Request logs including IP addresses. Not your app data | {{FILL: static host country}} |
+| **GitHub, Inc.** (GitHub Pages) | Serves the app's static files | Request logs including visitor IP addresses, which GitHub also keeps for its own security. Not your app data | **United States**; see §10 |
 | **Supabase, Inc.** (built-in email service) | Sends password-reset and confirmation email | Your email address and the message | Not published by the provider for this service. Supabase, Inc. is incorporated in the **United States**; see §10 |
 | **Google LLC** (Gmail) | Hosts the mailbox behind our contact address | Only what you choose to put in an email to us. Nothing is sent there by the app, and it holds no copy of your workouts, weigh-ins or account | **United States**; see §10 |
 
@@ -299,7 +298,7 @@ we honour such signals regardless.
 | Consent and Terms-acceptance record (dates and version numbers; no health data) | For as long as we process your data on the basis of that consent, and afterwards only for as long as we might need to show that it was given. Deleting your account deletes it too |
 | Device cache (`localStorage`) | Until you sign out, delete all your data, or clear your browser storage. It stays on that device only, and only that device — we cannot erase it remotely |
 | Database and API request logs (incl. IP) | **1 day.** Our database provider retains request logs for 24 hours on our plan, after which they are deleted automatically. If we move to a paid plan this becomes longer and we will update this row |
-| Static-host request logs (incl. IP) | {{FILL: the host's published log retention — fill when the host is chosen}} |
+| Static-host request logs (incl. IP) | **Set by GitHub, not us.** GitHub logs a visitor's IP address when a GitHub Pages site is viewed, for its own security, and does not publish a retention period for these logs. They are GitHub's records, not ours — we cannot read, export or delete them, and they contain no workout, weigh-in or account data |
 | Email you send to our contact address, and our replies | **24 months** from the last message in the thread, then deleted from the mailbox and its trash. We keep it only to handle your request and to show we handled it. **Deleting your account does not delete this** — ask us and we will delete the thread as well |
 | **Sign-in security log** (incl. IP and the email address used) | **90 days.** Our authentication provider keeps this separately from your account and does not expire it on its own, so **we purge it ourselves** on that schedule. It is the one record that **survives deleting your account**: we do not consult it about a deleted account and never use it to reconstruct one. Legal basis: Art. 6(1)(f), our legitimate interest in detecting credential-stuffing and abuse of the sign-in endpoint |
 | Session tokens | Until they expire or you sign out, whichever is first. Signing out revokes the token and removes it from your device; a token left idle expires on our authentication provider's own schedule and cannot be used afterwards |
@@ -466,11 +465,12 @@ Two narrower points, stated rather than glossed over:
   Contractual Clauses in Google's terms. Nothing is sent there by the app: this concerns
   only correspondence you start. If you would rather not route a privacy request through
   Google, say so in a first message with no details in it and we will arrange another way.
-- **Static hosting.** The host is
-  **{{FILL: static host — not yet chosen; the app is not deployed}}**, in
-  {{FILL: static host country}}, and where that is outside the EEA the transfer relies on
-  {{FILL: static host transfer mechanism}}. The host serves the app's files and sees
-  request logs including IP addresses; it never holds your rows.
+- **Static hosting.** The app's files are served by **GitHub Pages**, operated by **GitHub,
+  Inc.** in the **United States**. Because that is outside the EEA, the transfer relies on
+  GitHub's self-certification under the **EU–US Data Privacy Framework** and on the
+  **Standard Contractual Clauses** incorporated into GitHub's Data Protection Agreement. The
+  host serves the app's files and sees request logs including IP addresses; it never holds
+  your rows.
 
 **For UK users**, the same storage applies. Transfers from the UK to Ireland are covered by
 the UK's adequacy regulations for the EEA, so no additional safeguard is required.

@@ -212,7 +212,23 @@ being required, and a claim reworded in a way that drops the phrase shows up as 
 published" rather than silently passing. Record the date you **checked** each fact, not the
 date you intended to.
 
-## 7. Deployment deferred — the static host is not chosen, deliberately
+## 7. Deployment — static host chosen (resolved 2026-10-21)
+
+**UPDATE (21 October 2026): RESOLVED.** The static host is **GitHub Pages** (GitHub, Inc.),
+serving the app at `https://smalkaisk-hash.github.io/`. All four `{{FILL}}` facts are filled
+in `PRIVACY.md`, `CONSUMER-HEALTH-DATA-PRIVACY.md` and `lv/PRIVACY.md`; the draft banners are
+removed, so all five legal documents are now in force and `npm run legal:release` passes. The
+recipient is recorded in [ART-30-RECORD.md](ART-30-RECORD.md) § 3 and P4, and the
+external-fact claim in `compliance/verified.json` (`static_host_github_pages`, verified
+2026-10-21). GitHub Pages serves `/404.html` with a real 404 status by default, so step 6
+below needs no host config. **Still open:** the Supabase auth redirect config still points at
+`localhost` — see `launch-decisions.json` `auth_redirect_urls`, which must be set to the
+deployed origin before a real user can confirm an account or reset a password — and a Latvian
+professional review of `PRIVACY.md` is still outstanding (`legal/lv/README.md`).
+
+The original deferral decision is kept below for the record.
+
+---
 
 **Decision (5 August 2026): do not deploy yet. No static host is selected, the four
 `{{FILL: …}}` facts stay unresolved, and `PRIVACY.md` / `CONSUMER-HEALTH-DATA-PRIVACY.md`

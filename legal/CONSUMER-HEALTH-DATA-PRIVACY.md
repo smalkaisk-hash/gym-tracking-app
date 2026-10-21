@@ -1,9 +1,8 @@
-<!-- legal:draft -->
 # FitPulse Consumer Health Data Privacy Policy
 
 **For residents of Washington State (and, where noted, Nevada)**
 
-**Version 1.1 · Effective 1 August 2026 · Last reviewed 5 August 2026**
+**Version 1.1 · Effective 1 August 2026 · Last reviewed 21 October 2026**
 
 <!-- internal:start -->
 > **DRAFT — publishing requirements you cannot satisfy by pasting this file alone:**
@@ -72,7 +71,7 @@ using it for their own purposes, and may not further disclose it:
 | Processor | Role | Consumer health data it can access |
 | --- | --- | --- |
 | **Supabase, Inc.** | Database, authentication and API hosting | All of it, as the storage layer. Region: **Ireland** (`eu-west-1`) |
-| **{{FILL: static host — not yet chosen; the app is not deployed}}** | Serves the app's files | None. It sees request logs and IP addresses, not your rows |
+| **GitHub, Inc.** (GitHub Pages) | Serves the app's files | None. It sees request logs and IP addresses, not your rows |
 | **Supabase, Inc.** (built-in email service) | Password-reset and confirmation email | None |
 | **Google LLC** (Gmail) | Hosts the mailbox behind our contact address | None from the app. Only what you choose to write to us — which, if you exercise a right under §7 by email, may include consumer health data you put in the message |
 

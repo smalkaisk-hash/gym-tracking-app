@@ -27,6 +27,16 @@
       "why": "The whole Art. 44-49 position rests on it. If the region is not in the EEA, every transfer statement in both documents is wrong and an Art. 46 safeguard is required that is not in place.",
       "howToVerify": "Supabase dashboard -> Project Settings -> General -> Region."
     },
+    "static_host_github_pages": {
+      "verified": "2026-10-21",
+      "expires": "2027-04-21",
+      "expiresWhy": "Six-monthly re-check. GitHub's EU-US Data Privacy Framework self-certification can lapse, and moving the static host would invalidate the recipient, country and transfer-mechanism disclosures in both documents at once.",
+      "claim": "The app's static files are served by GitHub Pages (GitHub, Inc., United States); EEA transfers rely on the EU-US Data Privacy Framework and the SCCs in GitHub's Data Protection Agreement.",
+      "published": ["privacy.html", "consumer-health-data-privacy.html"],
+      "phrase": "GitHub Pages",
+      "why": "PRIVACY.md s.6/s.10 and the consumer-health notice now name GitHub, Inc. as the host, the United States as the country of processing, and DPF+SCCs as the Art. 46 safeguard. All three are facts about an outside provider no build step can observe; if GitHub drops its DPF certification or the app moves host, the published transfer basis is wrong while every page still renders.",
+      "howToVerify": "Confirm the deployed origin is GitHub Pages (repo Settings -> Pages). Confirm GitHub, Inc. is still on the EU-US Data Privacy Framework list at dataprivacyframework.gov, and that GitHub's current Data Protection Agreement (github.com/customer-terms/github-data-protection-agreement) still incorporates the 2021/914 Standard Contractual Clauses. Verified 2026-10-21 against GitHub's Trust Center, General Privacy Statement and the GitHub Pages 'Data collection' note (visitor IPs logged for security; no published retention period)."
+    },
     "leaked_password_protection": {
       "verified": null,
       "note": "2026-08-05: HaveIBeenPwned leaked-password protection is a Supabase Pro-plan feature; the project is on the free plan (Management API PATCH returns HTTP 402). The claim was therefore REMOVED from legal/PRIVACY.md § 8 rather than left unbacked — check:claims no longer requires it. To restore the claim, upgrade to Pro, enable Auth -> Passwords -> leaked password protection, re-add the sentence, and set verified here.",

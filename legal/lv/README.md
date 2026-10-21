@@ -16,9 +16,12 @@ have a `legal/lv/<FILE>.md` mirroring the English file name, or the build fails.
 and the English-page language link are derived from that list, so an untranslated document
 is simply not offered in Latvian rather than linking to a 404.
 
-The same strict parser and the same draft / `{{FILL}}` enforcement apply: `legal/lv/PRIVACY.md`
-must carry the English file's `<!-- legal:draft -->` marker and its placeholder spots until
-the static host is chosen.
+The same strict parser and the same draft / `{{FILL}}` enforcement apply. `legal/lv/PRIVACY.md`
+carried the English file's draft marker and placeholder spots until the static host was chosen;
+as of the 2026-10-21 release the host is GitHub Pages, the placeholders are filled, and the
+draft banner is removed — so it is now in force in step with `legal/PRIVACY.md`. It still ships
+behind the warn-bordered convenience-translation banner (English remains authoritative) and
+still awaits professional review.
 
 ## Status
 
@@ -26,7 +29,7 @@ the static host is chosen.
 | --- | --- | --- |
 | `DELETE-ACCOUNT.md` | ✅ 2026-09-01 | ⬜ not yet |
 | `FAQ.md` | ✅ 2026-09-01 | ⬜ not yet (informational — lower priority) |
-| `PRIVACY.md` | ✅ 2026-09-01 (mirrors the English draft state — same `{{FILL}}` spots) | ⬜ **needed before the banner comes off** |
+| `PRIVACY.md` | ✅ 2026-09-01; host placeholders filled & draft banner removed 2026-10-21 | ⬜ **still outstanding — whole document; convenience banner stays until done** |
 | `TERMS.md` | ✅ 2026-09-01 | ⬜ **needed before the banner comes off — §§ 9, 13, 14** |
 | `CONSUMER-HEALTH-DATA-PRIVACY.md` | ➖ not translated on purpose — Washington State notice, no Latvian relevance | — |
 
