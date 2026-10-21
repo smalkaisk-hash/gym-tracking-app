@@ -1,0 +1,110 @@
+# Deploy to GitHub Pages.
+#
+# This builds the Vite app and publishes dist/ to GitHub Pages. It is SEPARATE from ci.yml
+# on purpose: ci.yml is the gate (legal:check -> build -> test, no secrets, touches nothing
+# external); this one actually ships a bundle to a public origin, so it needs the Supabase
+# config and it writes to the Pages environment.
+#
+# -------------------------------------------------------------------------------------------
+# READ THIS BEFORE RELYING ON THE DEPLOYED SITE — the app needs a ROOT origin.
+# -------------------------------------------------------------------------------------------
+# The app's legal links are site-absolute: PRIVACY_URL = '/privacy.html', TERMS_URL =
+# '/terms.html', etc. (src/gym-tracker-app.tsx). Those pages are also the URLs Google Play
+# requires to be publicly reachable with the app uninstalled, and the privacy policy a
+# regulator reads. On a GitHub Pages *project* site the app is served under
+# https://<user>.github.io/<repo>/, where '/privacy.html' resolves to the domain root and
+# 404s — the policy links silently break.
+#
+# So this workflow is only CORRECT behind a root origin:
+#   • a custom domain (recommended — e.g. app.example.com), or
+#   • a user/org site (https://<user>.github.io served at '/').
+# Set a repository VARIABLE named PAGES_CUSTOM_DOMAIN to your domain and the build writes the
+# CNAME for you (and keeps it across deploys — the Actions deploy method drops a CNAME that
+# the artifact doesn't carry). Leave it unset for a user/org site. A project-page deploy with
+# no custom domain will publish, but the absolute links will not work; that is expected, not
+# a workflow bug.
+#
+# Whatever origin you choose is also the value that fills PRIVACY.md's four {{FILL}} host
+# placeholders and the Supabase auth redirect allowlist (the auth_redirect_urls decision) —
+# see DECISIONS-AND-ASSESSMENTS.md § 7 and compliance/launch-decisions.json.
+#
+# -------------------------------------------------------------------------------------------
+# Supabase config
+# -------------------------------------------------------------------------------------------
+# The build reads VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY. With neither set the bundle
+# builds fine but renders ConfigError (src/supabase.ts), so a real deploy must supply both.
+# The anon key is safe in the browser ONLY because every table is RLS-scoped to auth.uid()
+# (see CLAUDE.md) — it is a public value, not a secret, so a repository Variable is the
+# honest home for it; this reads them as secrets so either Secrets or Variables named the
+# same way work, and nothing sensitive is involved either way.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages needs these; everything else stays least-privilege.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. Do NOT cancel an in-flight run — a half-finished Pages deploy is
+# worse than a queued one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Vite 8 requires ^20.19.0 || >=22.12.0 — same pin as ci.yml.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # legal -> check:monitoring -> check:backups -> tsc -> vite build. A build failure
+      # fails the job and nothing is deployed.
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      # Carry the custom domain into the artifact so GitHub serves the app at a root origin
+      # and keeps the domain across deploys. Skipped (with a loud note) when unset.
+      - name: Write CNAME for custom domain
+        env:
+          PAGES_CUSTOM_DOMAIN: ${{ vars.PAGES_CUSTOM_DOMAIN }}
+        run: |
+          if [ -n "$PAGES_CUSTOM_DOMAIN" ]; then
+            echo "$PAGES_CUSTOM_DOMAIN" > dist/CNAME
+            echo "CNAME set to $PAGES_CUSTOM_DOMAIN"
+          else
+            echo "::warning::PAGES_CUSTOM_DOMAIN is not set. Deploying to the default *.github.io origin."
+            echo "::warning::If this is a PROJECT page (served under /<repo>/), the app's absolute legal links (/privacy.html, /terms.html, ...) will 404. Set a custom domain or use a user/org site."
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
