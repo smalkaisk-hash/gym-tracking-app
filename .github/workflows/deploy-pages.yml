@@ -35,8 +35,9 @@
 # builds fine but renders ConfigError (src/supabase.ts), so a real deploy must supply both.
 # The anon key is safe in the browser ONLY because every table is RLS-scoped to auth.uid()
 # (see CLAUDE.md) — it is a public value, not a secret, so a repository Variable is the
-# honest home for it; this reads them as secrets so either Secrets or Variables named the
-# same way work, and nothing sensitive is involved either way.
+# honest home for it; the build step below reads a Secret OR a repo Variable of the same
+# name (secrets.* || vars.*), so whichever bucket you used works, and nothing sensitive is
+# involved either way.
 
 name: Deploy to GitHub Pages
 
@@ -75,8 +76,8 @@ jobs:
       # fails the job and nothing is deployed.
       - name: Build
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
       # Carry the custom domain into the artifact so GitHub serves the app at a root origin
