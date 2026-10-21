@@ -208,8 +208,7 @@ optional; if you don't provide it, the related feature simply shows nothing.
 
 FitPulse keeps a copy of your data in your browser's `localStorage` so the app works
 offline and opens instantly. That is the whole of it — we use no other browser storage:
-no IndexedDB, no Cache API, no service worker, and one short-lived `sessionStorage`
-entry noted at the end of the table. The keys are:
+no IndexedDB, no Cache API, no service worker, and no `sessionStorage`. The keys are:
 
 | Key | Where | Contents |
 | --- | --- | --- |
@@ -221,7 +220,7 @@ entry noted at the end of the table. The keys are:
 | `gym-cache-owner` | `localStorage` | Which account the cached rows belong to |
 | `gym-theme`, `gym-theme-vars` | `localStorage` | Your theme choice and its colours |
 | `sb-…-auth-token` | `localStorage` | Your sign-in session, set by our authentication provider so you stay signed in |
-| `gym-recovery` | `sessionStorage` | A flag set only while you are following a password-reset link, so a page refresh can't drop you past the reset screen. It holds no personal data and your browser discards it when you close the tab |
+| `gym-recovery` | `localStorage` | A flag set only while you are following a password-reset link, so no refresh, new tab or reopened window can drop you past the reset screen before you set a new password. It holds no personal data, and it is cleared when you set the password or sign out |
 
 **This is not tracking, and there are no cookies used for tracking.** None of it is read by
 anyone but the app on your own device, and none of it goes to a third party.
@@ -244,9 +243,8 @@ either.
 `localStorage` key in the table above from that browser — including your theme choice and
 its colours, which are resolved from your preferences — and your sign-in session is
 removed with them. It leaves your account and its data on the server untouched, so it is
-the right control on a shared or borrowed computer. The `sessionStorage` entry is gone as
-soon as you close the tab. Your browser's own "clear site data" control does the same
-thing.
+the right control on a shared or borrowed computer. Your browser's own "clear site data"
+control does the same thing.
 
 Settings → **Delete all my data** is a different and much larger action: it erases your
 workouts, weigh-ins and settings **on the server as well**, for every device, and it cannot

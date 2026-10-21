@@ -4729,7 +4729,7 @@ const GymTrackerApp = () => {
   // cleared both; the two now agree. `tests/qa/fuzz.test.mjs` guards the pair.
   const clearLocalCache = () => {
     try {
-      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, CACHE_OWNER_KEY, THEME_KEY, THEME_VARS_KEY]
+      [STORAGE_KEY, BW_LOG_KEY, GOAL_KEY, PREFS_KEY, ACTIVE_KEY, CACHE_OWNER_KEY, RECOVERY_KEY, THEME_KEY, THEME_VARS_KEY]
         .forEach(k => localStorage.removeItem(k));
     } catch { /* ignore */ }
   };
@@ -4758,23 +4758,43 @@ const GymTrackerApp = () => {
   // becomes the real relation. Once true it stays true — a column can't disappear.
   const bwHasWorkoutId = useRef(false);
   // recovery — the user arrived via a password-reset link. That link returns a
-  // real session, so without this flag the gate below would drop them straight
-  // into the app; instead it pins them on ResetPasswordScreen until they set a
-  // new password (or explicitly sign out).
-  // The password-recovery gate. It has to survive a RELOAD: supabase-js consumes
-  // and strips the URL hash on the first load, so a refresh on the reset screen
-  // fires no second PASSWORD_RECOVERY — the flag went false while the recovery
-  // session was still valid, and the gate fell straight through to the dashboard
-  // with the password never changed. sessionStorage scopes it to this tab, so it
-  // dies with the tab rather than pinning a future visit.
+  // REAL, fully-privileged session that supabase-js persists to localStorage and
+  // syncs across tabs. So this flag is the ONLY thing standing between a reset
+  // link and full account access, and it must be exactly as durable and cross-tab
+  // as the session it guards:
+  //   • Survive a RELOAD: supabase-js consumes and strips the URL hash on first
+  //     load, so a refresh fires no second PASSWORD_RECOVERY.
+  //   • Be CROSS-TAB. A per-tab sessionStorage flag held only in the tab that
+  //     opened the link, while the recovery SESSION lived in shared localStorage —
+  //     so a second tab, or the same tab reopened, resolved that session with no
+  //     flag and fell straight through to the dashboard with the password never
+  //     changed. That was a real bypass; localStorage + the `storage` listener
+  //     below closes it.
+  // Cleared only by a successful password set (onDone), an explicit sign-out
+  // (signOut), or the session ending (the `if (!s)` branch) — so a recovery
+  // session can do nothing but set a password or sign out, in any tab. This is a
+  // client-side gate: it stops accidental and casual access, not a scripted
+  // attacker holding the recovery token. Shortening the reset-link expiry in the
+  // Supabase dashboard is the server-side half.
   const RECOVERY_KEY = 'gym-recovery';
-  const [recovery, setRecoveryState] = useState(() => {
-    try { return sessionStorage.getItem(RECOVERY_KEY) === '1'; } catch { return false; }
-  });
+  const readRecovery = () => {
+    try { return localStorage.getItem(RECOVERY_KEY) === '1'; } catch { return false; }
+  };
+  const [recovery, setRecoveryState] = useState(readRecovery);
   const setRecovery = (on: boolean) => {
     setRecoveryState(on);
-    try { on ? sessionStorage.setItem(RECOVERY_KEY, '1') : sessionStorage.removeItem(RECOVERY_KEY); } catch { /* ignore */ }
+    try { on ? localStorage.setItem(RECOVERY_KEY, '1') : localStorage.removeItem(RECOVERY_KEY); } catch { /* ignore */ }
   };
+  // Mirror a recovery-flag change made in ANOTHER tab into this one, so entering
+  // recovery pins every open tab and finishing it releases them. Pairs with
+  // supabase-js's own cross-tab session sync. `e.key === null` is localStorage.clear().
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === RECOVERY_KEY || e.key === null) setRecoveryState(readRecovery());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const { theme, mode, setMode, toggle } = useTheme();
 
@@ -4922,6 +4942,10 @@ const GymTrackerApp = () => {
       // set-new-password screen instead of the app.
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       if (!s) {
+        // A recovery session that ends (sign-out, expiry, revoked token) can no longer
+        // set a password — drop the gate flag so the next visit, in any tab, isn't
+        // stranded on a reset screen whose updateUser() has no session.
+        setRecovery(false);
         // A session can end WITHOUT the user asking: an expired or revoked refresh
         // token, the account deleted elsewhere, a sign-out in another tab. Those are
         // exactly the moments most likely to coincide with being offline, so this

@@ -213,8 +213,7 @@ ir neobligāts; ja jūs to nesniedzat, attiecīgā funkcija vienkārši neko ner
 
 FitPulse glabā jūsu datu kopiju jūsu pārlūkprogrammas `localStorage`, lai lietotne darbotos
 bezsaistē un atvērtos uzreiz. Tas ir viss — mēs neizmantojam nekādu citu pārlūkprogrammas
-atmiņu: nedz IndexedDB, nedz Cache API, nedz service worker, un vienu īslaicīgu
-`sessionStorage` ierakstu, kas atzīmēts tabulas beigās. Atslēgas ir:
+atmiņu: nedz IndexedDB, nedz Cache API, nedz service worker, nedz `sessionStorage`. Atslēgas ir:
 
 | Atslēga | Kur | Saturs |
 | --- | --- | --- |
@@ -226,7 +225,7 @@ atmiņu: nedz IndexedDB, nedz Cache API, nedz service worker, un vienu īslaicī
 | `gym-cache-owner` | `localStorage` | Kuram kontam pieder kešatmiņā saglabātie ieraksti |
 | `gym-theme`, `gym-theme-vars` | `localStorage` | Jūsu tēmas izvēle un tās krāsas |
 | `sb-…-auth-token` | `localStorage` | Jūsu pierakstīšanās sesija, ko iestata mūsu autentifikācijas pakalpojumu sniedzējs, lai jūs paliktu pierakstīts |
-| `gym-recovery` | `sessionStorage` | Karodziņš, kas iestatīts tikai tad, kad jūs sekojat paroles atiestatīšanas saitei, lai lapas pārlāde jūs neaizvestu garām atiestatīšanas ekrānam. Tajā nav personas datu, un jūsu pārlūkprogramma to izdzēš, kad aizverat cilni |
+| `gym-recovery` | `localStorage` | Karodziņš, kas iestatīts tikai tad, kad jūs sekojat paroles atiestatīšanas saitei, lai neviena pārlāde, jauna cilne vai atkārtoti atvērts logs jūs neaizvestu garām atiestatīšanas ekrānam, pirms neesat iestatījis jaunu paroli. Tajā nav personas datu, un tas tiek dzēsts, kad iestatāt paroli vai izrakstāties |
 
 **Tā nav izsekošana, un izsekošanai netiek izmantoti nekādi sīkfaili.** Neko no tā nelasa
 neviens, izņemot pašu lietotni jūsu ierīcē, un nekas no tā nenonāk pie trešās puses.
@@ -250,8 +249,8 @@ nav plānu darīt ne vienu, ne otru.
 šīs pārlūkprogrammas katru `localStorage` atslēgu iepriekšējā tabulā — tostarp jūsu tēmas
 izvēli un tās krāsas, kas atvasinātas no jūsu preferencēm — un jūsu pierakstīšanās sesija
 tiek noņemta kopā ar tām. Tā atstāj jūsu kontu un tā datus serverī neskartus, tāpēc tā ir
-pareizā izvēle koplietotā vai aizņemtā datorā. `sessionStorage` ieraksts pazūd, tiklīdz
-aizverat cilni. Jūsu pārlūkprogrammas "notīrīt vietnes datus" vadīkla dara to pašu.
+pareizā izvēle koplietotā vai aizņemtā datorā. Jūsu pārlūkprogrammas "notīrīt vietnes datus"
+vadīkla dara to pašu.
 
 Iestatījumi → **Dzēst visus manus datus** ir cita un daudz lielāka darbība: tā izdzēš jūsu
 treniņus, svēršanās un iestatījumus **arī serverī**, katrā ierīcē, un to nevar atsaukt. Mēs
