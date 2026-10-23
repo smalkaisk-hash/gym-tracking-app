@@ -2,36 +2,20 @@
 //
 // Run: `node tests/sync-merge.test.mjs`  (no framework — plain Node assertions).
 //
-// This mirrors `mergeUnsynced` from src/gym-tracker-app.tsx VERBATIM. The app keeps
-// its state logic inline in the one big component, so this can't import it directly;
-// if you change the merge in the app, change it here too. (Extracting the reconcile
-// helpers into an importable module — so this stops being a copy — is a worthwhile
-// follow-up once the file gets split.)
+// This USED to mirror `mergeUnsynced` from src/gym-tracker-app.tsx verbatim, which
+// could only ever prove the copy right. It now imports the REAL function out of the
+// app with the QA harness (extractFn brace-matches the nested helper and compiles it
+// standalone), so the named scenarios A–H below exercise the shipping bytes. A failure
+// here is a bug in src/, not a drifted copy.
 //
 // The merge is the code that stops silent offline data loss, so it's the one piece
-// that must never regress quietly.
+// that must never regress quietly. tests/qa/fuzz.test.mjs fuzzes the same real function;
+// this file documents the specific intended cases in a readable form.
 
+import { extractFn } from './qa/load-app.mjs';
+
+const mergeUnsynced = await extractFn('mergeUnsynced');
 const rowToWorkout = (r) => ({ id: r.id, type: r.type, date: r.date });   // stand-in mapper (no _sync)
-
-// `knownIds` = the row ids that existed when the fetch was ISSUED. It's what lets
-// "absent from the server" mean "deleted remotely" instead of "written after the
-// snapshot was taken" — a row inserted while the fetch was in flight is legitimately
-// missing from it and must not be dropped.
-const mergeUnsynced = (serverRows, mapRow, prev, knownIds = new Set(prev.map(r => r.id))) => {
-  const unsynced = prev.filter(r => r._sync);
-  const byId = new Map(unsynced.map(r => [r.id, r]));
-  const serverIds = new Set(serverRows.map(r => r.id));
-  const serverDates = new Set(serverRows.map(r => r.date));
-  const merged  = serverRows.map(r => byId.get(r.id) ?? mapRow(r));
-  // An unsynced insert whose id never reached the server is re-appended — UNLESS a
-  // server row already carries its exact date (the insert committed, we lost the
-  // ack), which would otherwise duplicate the row.
-  const orphans = unsynced.filter(r => !serverIds.has(r.id) && !serverDates.has(r.date));
-  // Rows that appeared after the fetch was issued, mark or no mark.
-  const fresh = prev.filter(r =>
-    !r._sync && !knownIds.has(r.id) && !serverIds.has(r.id) && !serverDates.has(r.date));
-  return [...merged, ...orphans, ...fresh];
-};
 
 let pass = 0, fail = 0;
 const check = (name, cond) => { cond ? (pass++, console.log('  ok  ', name)) : (fail++, console.log('  FAIL', name)); };

@@ -14,10 +14,13 @@
 // so the functions and the MAX_*/GOAL_* constants below are the ones that ship, not
 // a mirror. A failure here is a bug in src/, not in the test.
 
+import fs from 'fs';
 import { loadApp } from './qa/load-app.mjs';
 
 const A = await loadApp();
 const {
+  sanitizePrefs, DEFAULT_PREFS, GOAL_CARD_STYLES,
+  rowToWorkout, workoutToRow, rowToBW, bwToRow, supabaseEnabled,
   num, volumeOf,
   toDisplayWeight, fromInputWeight, fromInputReps, fromInputBodyWeight,
   trim1, fmtWeight, fmtVolume, fmtDuration, fmtDurationWords, metricValueLabel,
@@ -274,6 +277,112 @@ eq('pick refuses toString', pick({ push: 1 }, 'toString'), undefined);
   // app. Asking late is a smaller failure than asking at the wrong moment.
   eq('reconsentDue: an unparseable effective date is never due', reconsentDue(Date.now(), 'not-a-date'), false);
   eq('reconsentDue: a missing effective date is never due', reconsentDue(Date.now(), ''), false);
+}
+
+// ── sanitizePrefs: every untrusted field is pinned to a known-good value ──────
+// prefs.base/accent/semantics index palette tables and goalCardStyle picks a tile
+// branch — an unknown id used to blank the app on EVERY device, because the bad blob
+// syncs through the server. fuzz.test.mjs proves the sanitiser stays total on junk;
+// these pin what it must COMPUTE for specific bad inputs, which totality does not.
+{
+  eq('units: a bad stored value falls back to kg', sanitizePrefs({ units: 'stone' }).units, 'kg');
+  eq('units: a good value passes through', sanitizePrefs({ units: 'lb' }).units, 'lb');
+  eq('bwChart: unknown falls back to line', sanitizePrefs({ bwChart: 'pie' }).bwChart, 'line');
+  eq('muscleMetric: unknown falls back to sets', sanitizePrefs({ muscleMetric: 'bogus' }).muscleMetric, 'sets');
+  eq('goalCardStyle: unknown falls back to liquid', sanitizePrefs({ goalCardStyle: 'nope' }).goalCardStyle, 'liquid');
+  check('goalCardStyle: a real style passes through',
+    GOAL_CARD_STYLES.every((s) => sanitizePrefs({ goalCardStyle: s }).goalCardStyle === s));
+  eq('accent: unknown id falls back to blue', sanitizePrefs({ accent: 'chartreuse' }).accent, 'blue');
+  eq('base: unknown id falls back to graphite', sanitizePrefs({ base: 'plaid' }).base, 'graphite');
+  eq('restSeconds: an off-scale value falls back to the default', sanitizePrefs({ restSeconds: 999 }).restSeconds, DEFAULT_PREFS.restSeconds);
+  eq('restTimer: a non-boolean falls back to the default', sanitizePrefs({ restTimer: 'yes' }).restTimer, DEFAULT_PREFS.restTimer);
+  eq('restTimer: a real boolean passes through', sanitizePrefs({ restTimer: false }).restTimer, false);
+  eq('split: unknown id falls back to not-chosen', sanitizePrefs({ split: 'bogus' }).split, '');
+  eq("split: '' (not chosen) is a legal value, not a fallback trigger", sanitizePrefs({ split: '' }).split, '');
+  eq('name: trimmed', sanitizePrefs({ name: '  Sam  ' }).name, 'Sam');
+  eq('name: a non-string becomes empty', sanitizePrefs({ name: 42 }).name, '');
+  eq('gender: an unknown value becomes empty', sanitizePrefs({ gender: 'alien' }).gender, '');
+  check('hidden: unknown widget keys are dropped, real ones kept', (() => {
+    const h = sanitizePrefs({ hidden: ['dash.stats', 'bogus.key', 'dash.muscle'] }).hidden;
+    return h.includes('dash.stats') && h.includes('dash.muscle') && !h.includes('bogus.key');
+  })());
+  eq('an unknown future field survives the merge (forward-compatible blob)',
+    sanitizePrefs({ futureField: 7 }).futureField, 7);
+
+  // Completeness guard: CLAUDE.md's rule "add a field to Prefs, add its sanitizePrefs
+  // clause" had NO enforcement. sanitizePrefs spreads ...DEFAULT_PREFS, so a new field
+  // added to DEFAULT_PREFS but not explicitly re-pinned would carry a hostile stored
+  // value straight through — and nothing would fail. Assert every DEFAULT_PREFS key is
+  // explicitly assigned in the sanitizer's return literal, not merely spread.
+  const src = fs.readFileSync(new URL('../src/gym-tracker-app.tsx', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('const sanitizePrefs'), src.indexOf('const resolveThemeVars'));
+  for (const key of Object.keys(DEFAULT_PREFS)) {
+    check(`sanitizePrefs explicitly pins '${key}' (not just spread from DEFAULT_PREFS)`,
+      new RegExp(`\\n\\s*${key}:`).test(body));
+  }
+}
+
+// ── row ⇄ state mappers: exact field mapping, defaults, and both directions ───
+// fuzz.test.mjs proves these mappers never throw and round-trip the happy path; it
+// does NOT pin what they compute for ABSENT fields or assert rowToBW's output shape,
+// so mutation testing found the default branches (`?? ''`, `?? []`, `?? null`) and the
+// whole rowToBW direction unguarded. These assert every field and every conditional,
+// in both directions, so a mapper that quietly drops a default or a column is caught.
+{
+  const sortKeys = (o) => JSON.stringify(o, Object.keys(o).sort());
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+  // supabaseEnabled must be false with no env (the config-screen gate depends on it);
+  // in the QA harness import.meta.env is empty, so url/anon are undefined.
+  eq('supabaseEnabled is false without env', supabaseEnabled, false);
+
+  // rowToWorkout: snake_case row → camelCase state, with defaults for absent fields.
+  {
+    const row = { id: 'w1', type: 'push', body_weight: 80.5, exercises: [{ name: 'Bench Press' }],
+      date: '2026-01-01T10:00:00.000Z', notes: 'leg day', duration: 3600 };
+    eq('rowToWorkout maps every field', sortKeys(rowToWorkout(row)),
+      sortKeys({ id: 'w1', type: 'push', bodyWeight: 80.5, exercises: [{ name: 'Bench Press' }],
+        date: '2026-01-01T10:00:00.000Z', notes: 'leg day', duration: 3600 }));
+    eq('rowToWorkout: a null body_weight stays null (skipped weigh-in, not 0)', rowToWorkout({ body_weight: null }).bodyWeight, null);
+    eq('rowToWorkout: missing exercises defaults to []', sortKeys(rowToWorkout({}).exercises), '[]');
+    eq('rowToWorkout: missing notes defaults to empty string', rowToWorkout({}).notes, '');
+    check('rowToWorkout: duration is omitted (not null) when absent', !has(rowToWorkout({}), 'duration'));
+    eq('rowToWorkout: a real duration is carried through', rowToWorkout({ duration: 3600 }).duration, 3600);
+    eq('rowToWorkout: duration 0 is a real value, carried through', rowToWorkout({ duration: 0 }).duration, 0);
+  }
+
+  // workoutToRow: camelCase state → snake_case row, with the write-direction defaults.
+  {
+    const w = { id: 'x', type: 'legs', bodyWeight: 72, exercises: [{ name: 'Squat' }],
+      date: '2026-01-02T10:00:00.000Z', notes: 'n', duration: 1800 };
+    eq('workoutToRow maps every real column (no id, no _sync)', sortKeys(workoutToRow(w)),
+      sortKeys({ type: 'legs', body_weight: 72, exercises: [{ name: 'Squat' }],
+        date: '2026-01-02T10:00:00.000Z', notes: 'n', duration: 1800 }));
+    eq('workoutToRow: a skipped weigh-in is null, never 0', workoutToRow({ bodyWeight: null }).body_weight, null);
+    eq('workoutToRow: missing bodyWeight defaults to null', workoutToRow({}).body_weight, null);
+    eq('workoutToRow: missing exercises defaults to []', sortKeys(workoutToRow({}).exercises), '[]');
+    eq('workoutToRow: missing notes defaults to empty string', workoutToRow({}).notes, '');
+    eq('workoutToRow: missing duration defaults to null', workoutToRow({}).duration, null);
+  }
+
+  // rowToBW: the row → state direction the mutation run found entirely unasserted.
+  {
+    eq('rowToBW maps id/date/weight', sortKeys(rowToBW({ id: 'b1', date: 'd', weight: 80 })),
+      sortKeys({ id: 'b1', date: 'd', weight: 80 }));
+    eq('rowToBW: a linked workout_id surfaces as camelCase workoutId', rowToBW({ id: 'b1', date: 'd', weight: 80, workout_id: 'w1' }).workoutId, 'w1');
+    check('rowToBW: workoutId is present only when the row is linked',
+      has(rowToBW({ workout_id: 'w1' }), 'workoutId') && !has(rowToBW({ date: 'd', weight: 80 }), 'workoutId'));
+    check('rowToBW: a null workout_id does not surface a workoutId key', !has(rowToBW({ workout_id: null }), 'workoutId'));
+  }
+
+  // bwToRow: the mirror. Also fuzzed, pinned here for the same default/branch reasons.
+  {
+    eq('bwToRow maps date/weight', sortKeys(bwToRow({ date: 'd', weight: 80 })), sortKeys({ date: 'd', weight: 80 }));
+    eq('bwToRow: a workoutId is written as snake_case workout_id', bwToRow({ date: 'd', weight: 80, workoutId: 'w1' }).workout_id, 'w1');
+    check('bwToRow: workout_id is emitted only when linked (pre-0001 / standalone omit it)',
+      has(bwToRow({ workoutId: 'w1' }), 'workout_id') && !has(bwToRow({ date: 'd', weight: 80 }), 'workout_id'));
+    check('bwToRow: a null workoutId does not emit a workout_id column', !has(bwToRow({ workoutId: null }), 'workout_id'));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

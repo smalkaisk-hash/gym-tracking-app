@@ -1,9 +1,10 @@
 # FitPulse
 
-A personal gym tracking app — log push / pull / legs (and custom) workouts set by set,
+A gym tracking app — log push / pull / legs (and custom) workouts set by set,
 weigh in, and watch strength and body weight trend over time. It started as a for-fun
-personal project (just me and one other person using it), and is now being taken toward a
-real product; see [PRODUCT-ROADMAP.md](PRODUCT-ROADMAP.md) for where that's going and why.
+personal project (just me and one other person using it) and is now a production app
+being released on Google Play for real users; see [PRODUCT-ROADMAP.md](PRODUCT-ROADMAP.md)
+for how it got there and what remains.
 
 React + TypeScript + Vite + Tailwind on the front end, Supabase (Postgres) on the back.
 
@@ -11,7 +12,7 @@ React + TypeScript + Vite + Tailwind on the front end, Supabase (Postgres) on th
 
 A few choices look unusual until you know the constraint behind them:
 
-- **The whole UI is one file** — [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx) (~5.8k
+- **The whole UI is one file** — [src/gym-tracker-app.tsx](src/gym-tracker-app.tsx) (~6.8k
   lines). Not an accident: at one contributor it keeps everything in one place with no
   import archaeology. Splitting it is deferred until there's a second editor
   ([PRODUCT-ROADMAP.md](PRODUCT-ROADMAP.md), "Deliberately deferred"). Adding a feature
@@ -79,6 +80,13 @@ The anon key is safe to ship to the browser **only** because every table is Row 
 Security–scoped to `auth.uid()` (see [src/supabase.ts](src/supabase.ts) and
 [schema.sql](schema.sql)). Never disable RLS.
 
+Two further variables are **optional** (both listed, blank, in [.env.example](.env.example)):
+
+| Variable | Value |
+| --- | --- |
+| `VITE_SENTRY_DSN` | Error tracking. Blank = disabled: with no DSN the app loads no Sentry code and makes no network calls. Turning it on is also a legal edit — `npm run build` fails if a DSN is set while `PRIVACY.md` still says reporting is off. |
+| `VITE_DEV_AUTH_BYPASS` | **Dev only.** `1` skips the login screen and lands in the app with seeded demo data. Gated on Vite's `DEV` flag, so it folds to a no-op in a production build and can never ship enabled. Leave blank for normal auth. |
+
 ### One-time Supabase dashboard setup
 
 The auth flows need a little dashboard configuration (redirect URLs, the email-confirmation
@@ -90,10 +98,10 @@ choice, optional email-template copy). It's a one-time walkthrough in
 ```bash
 npm run dev       # Vite dev server
 npm run legal     # publish legal/*.md → public/*.html (policies, terms, deletion page, FAQ)
-npm run build     # npm run legal && tsc && vite build — tsc is the only typecheck
+npm run build     # legal && check:monitoring && check:backups && check:restore-drill && tsc && vite build — tsc is the only typecheck
 npm run preview   # serve the production build from dist/
-npm test          # the five Node assertion suites, in order
-npm run backup    # logical JSON backup of the three tables — see BACKUP-RESTORE.md
+npm test          # the six Node assertion suites, in order
+npm run backup    # logical JSON backup of all five public tables — see BACKUP-RESTORE.md
 npm run restore   # restore a backup (scratch target by default; --force-prod to overwrite prod)
 npm run test:e2e  # Playwright screenshot baselines for the auth screens
 ```
@@ -103,18 +111,39 @@ assertion scripts. `npm run build && npm test` is the full check. The suites are
 runnable one at a time, which is what you want while iterating on one of them:
 
 ```bash
-node tests/unit-logic.test.mjs         # value assertions for the pure helpers
-node tests/sync-merge.test.mjs         # offline sync-reconcile merge semantics
-node tests/exercise-identity.test.mjs  # exercise-catalogue slug-collision guard
+node tests/unit-logic.test.mjs         # value assertions for the pure helpers + prefs/mapper domains
+node tests/import.test.mjs             # the account-replacing import path: refusal rules + insert-before-delete/rollback
+node tests/sync-merge.test.mjs         # offline sync-reconcile merge semantics (the real extracted fn)
+node tests/exercise-identity.test.mjs  # exercise-catalogue slug-collision guard + identity semantics
 node tests/legal-pages.test.mjs        # published policies exist, are current, leak nothing
 node tests/qa/fuzz.test.mjs            # fuzz + guards over the real src/ bytes
 ```
 
-`tests/qa/` compiles and exercises the actual shipping source rather than a copy, so a
-failure there is a bug in `src/`, not a broken test. The Playwright suite
-(`npm run test:e2e`, one-time `npx playwright install chromium`) guards the auth screens
-against silent visual regressions; re-baseline deliberately with
-`npm run test:e2e -- --update-snapshots`.
+`tests/qa/load-app.mjs` compiles and exercises the actual shipping source rather than a
+copy — `unit-logic`, `import`, `sync-merge`, `exercise-identity` and `fuzz` all run the
+real `src/` bytes through it, so a failure in any of them is a bug in `src/`, not a broken
+test.
+
+**Beyond `npm test`** there are three checks that need infrastructure, so they're run on
+demand rather than in the no-secrets gate:
+
+```bash
+npm run test:e2e       # Playwright screenshot baselines for the auth screens
+npm run test:e2e:flow  # Playwright FUNCTIONAL smoke (login-bypass → routing → data export)
+npm run test:rls       # cross-tenant RLS integration test — proves the authorization model
+npm run test:mutation  # Stryker mutation run, scoped to src/supabase.ts
+```
+
+- Both Playwright suites need a browser (one-time `npx playwright install chromium`).
+  Re-baseline the screenshots deliberately with `npm run test:e2e -- --update-snapshots`.
+  The functional flow boots the dev server with `VITE_DEV_AUTH_BYPASS=1` via its own
+  [`playwright.flow.config.ts`](playwright.flow.config.ts), so it never touches a backend.
+- `npm run test:rls` creates and deletes auth users, so it needs `SUPABASE_URL`,
+  `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_ANON_KEY` and a **disposable** target
+  (`supabase start`, or a scratch project with `RLS_TEST_ALLOW_REMOTE=1`). It refuses a
+  non-local URL by default — never point it at production.
+- `npm run test:mutation` grades the suite by mutating `src/supabase.ts` and re-running
+  `npm test` per mutant (Stryker is installed as a dev dependency).
 
 ### CI
 
@@ -139,9 +168,12 @@ development MCP connection is read-only, so migrations are applied by hand in th
 SQL editor — see the [migrations README](supabase/migrations/README.md) for which files are
 live on production and how to apply the pending ones.
 
-Three tables, each RLS-scoped to the signed-in user: `workouts`, `body_weight_log`, and a
+Three app tables, each RLS-scoped to the signed-in user: `workouts`, `body_weight_log`, and a
 one-row-per-user `settings` (holding the weekly goal and a forward-compatible `prefs` JSON
-blob). A `delete_account()` `SECURITY DEFINER` function backs self-service deletion.
+blob). A `delete_account()` `SECURITY DEFINER` function backs self-service deletion. Two
+further RLS-scoped tables hold compliance records — `consents` (append-only consent
+evidence) and `dormancy_notices` — so `public` has five tables in all; the backup covers
+every one.
 
 ## Documentation map
 

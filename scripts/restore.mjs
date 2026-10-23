@@ -37,6 +37,13 @@ const backup = JSON.parse(fs.readFileSync(fileArg, 'utf8'));
 if (backup.app !== 'fitpulse' || !backup.tables) {
   console.error(`${fileArg} is not a FitPulse backup.`); process.exit(1);
 }
+// backup.mjs stamps `version: 1`. Refuse an unknown format rather than upserting a
+// shape this restore doesn't understand — a future bump that changed a table's columns
+// would otherwise write silently malformed rows.
+if (backup.version !== 1) {
+  console.error(`${fileArg} is backup version ${backup.version}; this restore understands version 1 only.`);
+  process.exit(1);
+}
 
 const hostOf = (u) => { try { return new URL(u).host; } catch { return null; } };
 const sameAsSource = Boolean(backup.source) && hostOf(backup.source) === hostOf(targetUrl);
@@ -68,7 +75,17 @@ const run = async () => {
     // being written now, whatever it once said.
     const onConflict = table === 'settings' ? 'user_id' : 'id';
     const { error } = await db.from(table).upsert(rows, { onConflict });
-    if (error) throw new Error(`Restoring ${table}: ${error.message}`);
+    if (error) {
+      // The usual first failure when restoring into a fresh project is the user_id ->
+      // auth.users FK: the backed-up users don't exist in the target yet. Point at the
+      // seed file backup.mjs wrote next to the JSON rather than just echoing the raw error.
+      const hint = /foreign key|auth\.users|violates/i.test(error.message)
+        ? `\n  Hint: if the target is a fresh project, run the companion` +
+          ` fitpulse-backup-<ISO>.auth-users.sql in its SQL editor first, or restore into a` +
+          ` branch of the source project (which clones auth.users). See BACKUP-RESTORE.md.`
+        : '';
+      throw new Error(`Restoring ${table}: ${error.message}${hint}`);
+    }
     console.log(`  ${table}: ${rows.length} rows restored`);
   }
   console.log('\nRestore complete. Verify row counts against the backup file above.');

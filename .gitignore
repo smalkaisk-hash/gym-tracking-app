@@ -11,6 +11,10 @@ backups/
 test-results/
 playwright-report/
 
+# Stryker mutation-test output (npm run test:mutation).
+.stryker-tmp/
+reports/
+
 # Generated notices — dormancy warnings and the § 16.2 policy-change mail. Each one
 # contains real user email addresses (the policy-change file is a BCC list of every
 # account that hasn't re-accepted). Committing one would publish personal data to the

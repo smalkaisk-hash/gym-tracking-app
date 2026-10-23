@@ -105,6 +105,15 @@ jobs:
 #   on windows-latest with --update-snapshots and keep both sets) or moving the suite to a
 #   container so local and CI rasterise identically. Until then it stays a local check.
 #
+#   npm run test:e2e:flow — the functional smoke flow. Same browser/rasterisation story as
+#   the screenshot suite above, plus it boots `vite dev` with the dev-auth-bypass; a local
+#   check, run with `npx playwright install chromium` once.
+#
+#   npm run test:rls — the cross-tenant RLS integration test. It creates and deletes auth
+#   users, so it needs a service_role key and a DISPOSABLE target (supabase start, or a
+#   scratch project with RLS_TEST_ALLOW_REMOTE=1). It refuses a non-local URL by default and
+#   must never point at production — an operator/local check, not a no-secrets CI step.
+#
 #   npm run backup / restore / dormant / notify:policy-change / purge:auth-log — all of
 #   these touch real user data and need a service_role key. They are operator tasks run by
 #   hand from a machine that holds the credential, never from CI.

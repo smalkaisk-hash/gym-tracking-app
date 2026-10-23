@@ -1,9 +1,12 @@
 # Backup & restore
 
-FitPulse's data lives in three Supabase Postgres tables (`workouts`,
-`body_weight_log`, `settings` — see [schema.sql](schema.sql)). This document is the
-runbook for backing them up **and rehearsing a restore**, because a backup you have
-never restored is not a backup — it's hope.
+FitPulse's data lives in five public Supabase Postgres tables: the three app tables
+(`workouts`, `body_weight_log`, `settings`) plus two compliance records (`consents` —
+Art. 7(1) consent evidence — and `dormancy_notices` — proof a dormancy warning was
+sent); see [schema.sql](schema.sql). All five are backed up, because dropping the
+latter two would silently lose records whose whole value is being producible later.
+This document is the runbook for backing them up **and rehearsing a restore**, because
+a backup you have never restored is not a backup — it's hope.
 
 There are two layers, and you want both:
 
@@ -29,7 +32,7 @@ which is exactly why layer 2 exists.
 
 ## 2. Your own logical backups
 
-`npm run backup` writes every row of the three tables to a timestamped JSON file
+`npm run backup` writes every row of all five tables to a timestamped JSON file
 under `backups/` (gitignored — it contains all users' data). It uses the
 **service_role** key, which bypasses RLS, so it runs only locally with secrets from
 the environment and is never part of the app bundle.
@@ -61,8 +64,16 @@ Output:
   workouts: 128 rows
   body_weight_log: 40 rows
   settings: 1 rows
-Wrote 169 rows to backups/fitpulse-backup-2026-07-24T....json
+  consents: 2 rows
+  dormancy_notices: 0 rows
+Wrote 171 rows to backups/fitpulse-backup-2026-07-24T....json
+Wrote auth.users seed (1 user(s)) to backups/fitpulse-backup-2026-07-24T....auth-users.sql
 ```
+
+Alongside the JSON, `npm run backup` writes a `.auth-users.sql` companion holding a
+placeholder `auth.users` row per user the backup references. You only need it when
+restoring into a **fresh** project, where the real accounts don't exist yet — see the
+restore drill below.
 
 Run it on a schedule you're comfortable with (before every deploy is a good habit,
 since import/migration are the app's most destructive paths).
@@ -76,20 +87,35 @@ full restore with zero risk to production: by default it **refuses to write to t
 backup's own source project** and expects you to point it at a throwaway scratch
 project instead.
 
-### Set up a scratch project (once)
+> **The restore target must already contain the backed-up users.** Every one of the
+> five tables has a **foreign key to `auth.users`** (`user_id ... references auth.users`
+> — see [schema.sql](schema.sql)), and the backup file does **not** include `auth.users`
+> (it is Supabase-managed; the service_role key bypasses RLS but **not** foreign-key
+> constraints). So restoring the source project's rows into a project whose `auth.users`
+> is empty fails on the very first table with `violates foreign key constraint
+> "workouts_user_id_fkey"`. Pick one of the two drill setups below accordingly; the
+> branch is the recommended one because it needs no manual user seeding.
+
+#### Option A — Supabase branch (recommended)
+
+1. Create a **branch** of the real project (Dashboard → Branches). A branch clones
+   `auth.users`, so every `user_id` the backup carries already resolves.
+2. Grab the branch's `SUPABASE_URL` and `service_role` key. Its host differs from the
+   source, so `restore.mjs` treats it as a scratch target (no `--force-prod` needed).
+
+#### Option B — empty scratch project (needs user seeding)
 
 1. Create a second, empty Supabase project (the free tier is fine — call it
    `fitpulse-restore-drill`).
-2. Run [schema.sql](schema.sql) in its **SQL Editor** so it has the same three
+2. Run [schema.sql](schema.sql) in its **SQL Editor** so it has the same five
    tables, RLS, and the `delete_account` function.
-3. Grab its `SUPABASE_URL` and `service_role` key.
-
-> Note on `user_id`: rows carry the `user_id` from the source project. Restoring
-> into a scratch project that has no matching `auth.users` rows still works for a
-> **structural** drill (the tables are RLS-scoped but the service_role key bypasses
-> RLS, and `user_id` has no FK requirement satisfied by seeding auth). If you want a
-> byte-perfect drill including auth, restore into a Supabase **branch** of the real
-> project instead, which clones `auth.users`.
+3. **Seed the referenced users first**, or the restore fails on the FK. `npm run backup`
+   writes a companion `backups/fitpulse-backup-<ISO>.auth-users.sql` next to the JSON —
+   open it and run it in the scratch project's **SQL Editor**. It inserts a placeholder
+   `auth.users` row (one `on conflict do nothing` statement per distinct `user_id` in the
+   backup), which is all the FK needs. These placeholders carry no password and can't log
+   in; they exist only so the data restores.
+4. Grab its `SUPABASE_URL` and `service_role` key.
 
 ### Run the drill
 
@@ -108,12 +134,18 @@ Restoring backups/fitpulse-backup-<ISO>.json
   workouts: 128 rows restored
   body_weight_log: 40 rows restored
   settings: 1 rows restored
+  consents: 2 rows restored
+  dormancy_notices: 0 rows, skipped
 
 Restore complete. Verify row counts against the backup file above.
 ```
 
 The restore upserts on the primary key, so it's idempotent — running it twice is
-safe.
+safe. Note it is an **additive merge, not a wipe-and-replace**: it writes the backup's
+rows but never deletes rows already in the target that the backup doesn't contain. So
+restoring over a database that has drifted since the backup leaves any newer (or
+corrupt) rows in place. For a true point-in-time state, restore into a freshly created,
+empty target (Option A or B above), not over a populated one.
 
 ### Verify (the drill only counts if you check)
 
@@ -121,9 +153,11 @@ In the scratch project's SQL Editor:
 
 ```sql
 select
-  (select count(*) from workouts)        as workouts,
-  (select count(*) from body_weight_log) as body_weight_log,
-  (select count(*) from settings)        as settings;
+  (select count(*) from workouts)         as workouts,
+  (select count(*) from body_weight_log)  as body_weight_log,
+  (select count(*) from settings)         as settings,
+  (select count(*) from consents)         as consents,
+  (select count(*) from dormancy_notices) as dormancy_notices;
 ```
 
 Confirm the counts match the backup's output. Spot-check one workout's `exercises`

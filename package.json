@@ -10,18 +10,22 @@
     "legal:release": "node scripts/build-legal.mjs --release",
     "check:monitoring": "node scripts/check-monitoring-claim.mjs",
     "check:backups": "node scripts/check-backup-claim.mjs",
+    "check:restore-drill": "node scripts/check-restore-drill.mjs",
     "check:claims": "node scripts/check-external-claims.mjs",
     "check:decisions": "node scripts/check-launch-decisions.mjs",
     "release:check": "npm run legal:release && npm run check:claims && npm run check:decisions",
-    "build": "npm run legal && npm run check:monitoring && npm run check:backups && tsc && vite build",
+    "build": "npm run legal && npm run check:monitoring && npm run check:backups && npm run check:restore-drill && tsc && vite build",
     "preview": "vite preview",
-    "test": "node tests/unit-logic.test.mjs && node tests/sync-merge.test.mjs && node tests/exercise-identity.test.mjs && node tests/legal-pages.test.mjs && node tests/qa/fuzz.test.mjs",
+    "test": "node tests/unit-logic.test.mjs && node tests/import.test.mjs && node tests/sync-merge.test.mjs && node tests/exercise-identity.test.mjs && node tests/legal-pages.test.mjs && node tests/qa/fuzz.test.mjs",
+    "test:rls": "node tests/integration/rls.test.mjs",
     "backup": "node scripts/backup.mjs",
     "restore": "node scripts/restore.mjs",
     "dormant": "node scripts/dormant.mjs",
     "notify:policy-change": "node scripts/notify-policy-change.mjs",
     "purge:auth-log": "node scripts/purge-auth-log.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:flow": "playwright test -c playwright.flow.config.ts",
+    "test:mutation": "stryker run"
   },
   "dependencies": {
     "@fontsource/barlow": "^5.2.8",
@@ -35,6 +39,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@stryker-mutator/core": "^10.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^6.0.3",

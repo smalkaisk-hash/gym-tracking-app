@@ -1,9 +1,9 @@
 # FitPulse — Product Roadmap
 
-The README and CLAUDE.md still describe this as a "for-fun personal project." That is
-changing: **FitPulse is being taken toward a real product with real users.** This file
-captures what has to change to survive that transition, in the order that protects user
-data — because the person who wrote it will also be user #1, and does not want to lose
+FitPulse began as a for-fun personal project. That is no longer what it is:
+**FitPulse is now a production app being released on Google Play for real users.** This
+file captures what had to change to survive that transition, in the order that protects
+user data — because the person who wrote it will also be user #1, and does not want to lose
 their own training history.
 
 The through-line: the app is small (**~2 real rows** at time of writing), which is exactly
@@ -157,7 +157,7 @@ most conflicts stop existing.
     (scoped to `auth.uid()`, cascades wipe the user's rows) + a two-step confirm in
     Settings calling it via RPC. Captured as migration `0002`; verify it's applied on prod.
   - ◻️ **Backups — tooling done, one manual drill remaining.** `npm run backup` writes a
-    logical JSON backup of all three tables; `npm run restore` restores it, defaulting to a
+    logical JSON backup of all five public tables; `npm run restore` restores it, defaulting to a
     SCRATCH target so a restore can be rehearsed without risking prod (`--force-prod` to
     override). Runbook + verification checklist in [BACKUP-RESTORE.md](BACKUP-RESTORE.md).
     **Do the restore drill once** — an untested restore is still just hope. Point-in-time

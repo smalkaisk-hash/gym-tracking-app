@@ -4653,6 +4653,119 @@ const ReconsentScreen = ({ onAccept, onSignOut, onExport, onDeleteAccount }: any
   );
 };
 
+// ─── import: the most dangerous path, split into two pure, testable halves ──────
+// importData used to be one closure over React + Supabase, so its decisions (refuse a
+// file that would replace everything with nothing; insert before delete; roll back on
+// failure) could only be guarded by regex over the source. They now live here at module
+// scope: `planImport` decides WHAT an import means with no I/O, and `runImportPlan`
+// performs the DB sequencing against an injected client — so tests/import.test.mjs drives
+// both with the real bytes and a fake db. importData is the thin file+session+setState shell.
+
+// Decide what an imported file means. Returns null to REFUSE (not our file, wrong
+// version, no session, or — the historical data-loss bug — a file that sanitises down
+// to nothing, which is a truncated backup and not an intentional wipe). Pure: no I/O.
+const planImport = (
+  raw: any,
+  hasSession: boolean,
+): { workouts: any[]; bw: any[]; goal: number; prefs: Prefs } | null => {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.workouts) || !hasSession) return null;
+  // A backup we didn't write (or one from a future schema) can't be trusted to mean
+  // what this code thinks it means. `app` was only added alongside `version`, so a file
+  // carrying neither is an early export and is allowed.
+  if (raw.app != null && raw.app !== 'FitPulse') return null;
+  if (raw.version != null && raw.version !== 1)  return null;
+
+  // Sanitise before anything touches the account: a file that parsed but yields no
+  // usable workouts is invalid rather than a signal to wipe everything.
+  const workouts = raw.workouts.map(cleanImportedWorkout).filter(Boolean);
+  if (raw.workouts.length && !workouts.length) return null;
+  const bw = (Array.isArray(raw.bodyWeightLog) ? raw.bodyWeightLog : [])
+    .map(cleanImportedBW).filter(Boolean);
+  // An import that would REPLACE everything with nothing is a truncated or half-written
+  // file, not an intentional wipe — and `{"workouts":[]}` passes the guard above because
+  // `raw.workouts.length` is 0. Wiping has its own button; this isn't it.
+  if (!workouts.length && !bw.length) return null;
+
+  const goal  = Number.isFinite(raw.weeklyGoal) ? clampGoal(raw.weeklyGoal) : GOAL_DEFAULT;
+  const prefs = sanitizePrefs(raw.prefs);
+  return { workouts, bw, goal, prefs };
+};
+
+// Apply a plan to the account: INSERT the new rows first and only delete the old ones
+// once every insert and the settings upsert have succeeded, so a failure leaves the
+// account exactly as it was instead of wiping it between a delete and a throw. `db` is
+// the Supabase client, injected so a fake can drive the ordering in a test. Throws on
+// any failure (the caller reports it); returns the server-assigned rows to commit.
+const runImportPlan = async (
+  plan: { workouts: any[]; bw: any[]; goal: number; prefs: Prefs },
+  db: any,
+  uid: string,
+): Promise<{ wRows: any[]; bwRows: any[] }> => {
+  // Capture the pre-existing ids up front so the final delete removes exactly the old
+  // set, not the rows we just added.
+  const [{ data: oldW }, { data: oldBW }] = await Promise.all([
+    db.from('workouts').select('id').eq('user_id', uid),
+    db.from('body_weight_log').select('id').eq('user_id', uid),
+  ]);
+  const oldWIds  = (oldW  ?? []).map((r: any) => r.id);
+  const oldBWIds = (oldBW ?? []).map((r: any) => r.id);
+
+  // Undo inserts already made. Its own failure must not mask the error that triggered
+  // it, so it reports rather than throws — a rollback that can't run is exactly when the
+  // user needs to be told the account now holds both sets of rows.
+  const rollback = async (rows: any[], table: string) => {
+    const ids = rows.map((r: any) => r.id);
+    if (!ids.length) return true;
+    const { error } = await db.from(table).delete().in('id', ids);
+    if (error) { console.error(`Import rollback of ${table} failed`, error); reportError(error, { at: 'importRollback', table }); }
+    return !error;
+  };
+
+  let wRows: any[] = [];
+  if (plan.workouts.length) {
+    const { data, error } = await db.from('workouts').insert(plan.workouts.map(workoutToRow)).select();
+    if (error) throw error;
+    wRows = data ?? [];
+  }
+
+  let bwRows: any[] = [];
+  if (plan.bw.length) {
+    const { data, error } = await db.from('body_weight_log').insert(plan.bw.map(bwToRow)).select();
+    if (error) { await rollback(wRows, 'workouts'); throw error; }
+    bwRows = data ?? [];
+  }
+
+  // The settings upsert used to run AFTER the old rows were deleted, so its failure
+  // reported "import failed" on an account that had already been replaced. Write it
+  // while everything is still reversible.
+  const { error: sErr } = await db.from('settings')
+    .upsert({ user_id: uid, weekly_goal: plan.goal, prefs: plan.prefs, updated_at: new Date().toISOString() });
+  if (sErr) { await rollback(bwRows, 'body_weight_log'); await rollback(wRows, 'workouts'); throw sErr; }
+
+  // Every insert landed — now it's safe to drop the old rows. Chunk the ids to stay
+  // well inside the query-string limit, and treat a failure as a failed import (these
+  // deletes used to discard their result, so a failure left old rows beside the new and
+  // still reported success: history silently doubled on the next hydrate).
+  const deleteByIds = async (ids: string[], table: string) => {
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await db.from(table).delete().in('id', ids.slice(i, i + 200));
+      if (error) throw error;
+    }
+  };
+  try {
+    await deleteByIds(oldWIds, 'workouts');
+    await deleteByIds(oldBWIds, 'body_weight_log');
+  } catch (delErr) {
+    // New rows are live and the old ones are (partly) still there. Undo the import so
+    // the account is left as it was rather than holding both sets.
+    await rollback(bwRows, 'body_weight_log');
+    await rollback(wRows, 'workouts');
+    throw delErr;
+  }
+
+  return { wRows, bwRows };
+};
+
 // ─── GymTrackerApp ─────────────────────────────────────────────────────────────
 const GymTrackerApp = () => {
   const [currentScreen, setCurrentScreen]             = useState('home');
@@ -5746,111 +5859,13 @@ const GymTrackerApp = () => {
       const reader = new FileReader();
       reader.onload = async () => {
         try {
-          const d = JSON.parse(String(reader.result));
-          if (!Array.isArray(d.workouts) || !session) { resolve(false); return; }
-          // A backup we didn't write (or one from a future schema) can't be trusted
-          // to mean what this code thinks it means. `app` was only added alongside
-          // `version`, so a file carrying neither is an early export and is allowed.
-          if (d.app != null && d.app !== 'FitPulse') { resolve(false); return; }
-          if (d.version != null && d.version !== 1)  { resolve(false); return; }
-          const uid = session.user.id;
-
-          // Sanitise before we touch the account: a file that parsed but yields no
-          // usable workouts is treated as invalid rather than a signal to wipe
-          // everything — so a corrupt backup can't destroy existing data.
-          const cleanWorkouts = d.workouts.map(cleanImportedWorkout).filter(Boolean);
-          if (d.workouts.length && !cleanWorkouts.length) { resolve(false); return; }
-          const cleanBW = (Array.isArray(d.bodyWeightLog) ? d.bodyWeightLog : [])
-            .map(cleanImportedBW).filter(Boolean);
-          // An import that would REPLACE everything with nothing is a truncated or
-          // half-written file, not an intentional wipe — and the old guard above only
-          // fires when `workouts` is non-empty, so `{"workouts":[]}` used to sail
-          // through and delete the account. Wiping has its own button; this isn't it.
-          if (!cleanWorkouts.length && !cleanBW.length) { resolve(false); return; }
-
-          // Non-destructive replace: INSERT the new rows first, and only once every
-          // insert has succeeded delete the old ones. A failed import then leaves the
-          // account's existing data intact instead of wiping it between a delete and
-          // a throw. Capture the pre-existing ids up front so the final delete removes
-          // exactly the old set, not the rows we just added.
-          const [{ data: oldW }, { data: oldBW }] = await Promise.all([
-            supabase.from('workouts').select('id').eq('user_id', uid),
-            supabase.from('body_weight_log').select('id').eq('user_id', uid),
-          ]);
-          const oldWIds  = (oldW  ?? []).map((r: any) => r.id);
-          const oldBWIds = (oldBW ?? []).map((r: any) => r.id);
-
-          let wRows: any[] = [];
-          if (cleanWorkouts.length) {
-            const { data, error } = await supabase.from('workouts').insert(cleanWorkouts.map(workoutToRow)).select();
-            if (error) throw error;
-            wRows = data ?? [];
-          }
-          // Undo the inserts we've already made. Its own failure must not mask the
-          // error that triggered it, so it reports rather than throws — a rollback
-          // that can't run is exactly the case where the user needs to be told the
-          // account is now holding both sets of rows.
-          const rollback = async (rows: any[], table: string) => {
-            const ids = rows.map((r: any) => r.id);
-            if (!ids.length) return true;
-            const { error } = await supabase.from(table).delete().in('id', ids);
-            if (error) { console.error(`Import rollback of ${table} failed`, error); reportError(error, { at: 'importRollback', table }); }
-            return !error;
-          };
-
-          let bwRows: any[] = [];
-          if (cleanBW.length) {
-            const { data, error } = await supabase.from('body_weight_log')
-              .insert(cleanBW.map(bwToRow)).select();
-            if (error) {
-              // Roll back the workouts we just inserted so a half-done import doesn't
-              // leave new rows sitting duplicated alongside the still-present old set.
-              await rollback(wRows, 'workouts');
-              throw error;
-            }
-            bwRows = data ?? [];
-          }
-
-          // The settings upsert used to run AFTER the old rows were deleted, so its
-          // failure reported "import failed" on an account that had already been
-          // replaced. Write it while everything is still reversible.
-          const goal     = Number.isFinite(d.weeklyGoal) ? clampGoal(d.weeklyGoal) : GOAL_DEFAULT;
-          const prefsObj = sanitizePrefs(d.prefs);
-          const { error: sErr } = await supabase.from('settings')
-            .upsert({ user_id: uid, weekly_goal: goal, prefs: prefsObj, updated_at: new Date().toISOString() });
-          if (sErr) {
-            await rollback(bwRows, 'body_weight_log');
-            await rollback(wRows, 'workouts');
-            throw sErr;
-          }
-
-          // Every insert landed — now it's safe to drop the old rows. These deletes
-          // used to discard their result, so a failure (offline, or an `in()` list
-          // long enough to blow the URL limit) left the old rows in place next to the
-          // new ones and still reported success: history silently doubled on the next
-          // hydrate. Chunk the ids to stay well inside the query-string limit, and
-          // treat a failure as a failed import.
-          const deleteByIds = async (ids: string[], table: string) => {
-            for (let i = 0; i < ids.length; i += 200) {
-              const { error } = await supabase.from(table).delete().in('id', ids.slice(i, i + 200));
-              if (error) throw error;
-            }
-          };
-          try {
-            await deleteByIds(oldWIds, 'workouts');
-            await deleteByIds(oldBWIds, 'body_weight_log');
-          } catch (delErr) {
-            // The new rows are live and the old ones are (partly) still there. Undo the
-            // import so the account is left as it was rather than holding both sets.
-            await rollback(bwRows, 'body_weight_log');
-            await rollback(wRows, 'workouts');
-            throw delErr;
-          }
-
+          const plan = planImport(JSON.parse(String(reader.result)), !!session);
+          if (!plan) { resolve(false); return; }
+          const { wRows, bwRows } = await runImportPlan(plan, supabase, session!.user.id);
           setWorkouts(wRows.map(rowToWorkout));
           setBodyWeightLog(bwRows.map(rowToBW));
-          setWeeklyGoal(goal);
-          setPrefs(prefsObj);
+          setWeeklyGoal(plan.goal);
+          setPrefs(plan.prefs);
           resolve(true);
         } catch (e) { console.error('Import failed', e); resolve(false); }
       };
