@@ -897,6 +897,22 @@ const cleanWeight = (raw: any): number | null | undefined => {
 };
 
 const MAX_REPS = 10000;
+
+// A real session is a few dozen exercises of a few dozen sets; these ceilings sit far
+// above that and only stop abuse. They are NOT cosmetic. A workout row is writable to
+// one's OWN account via the REST API with any shape AND any size (RLS checks ownership,
+// not size), and several render paths SPREAD a set array into a call —
+// `Math.max(...exercise.sets.map(...))` in ExerciseCard, the History editor and
+// ProgressScreen's top-set series. A spread of ~125k+ elements throws
+// `RangeError: Maximum call stack size exceeded` past the root ErrorBoundary, and the
+// poison lives server-side, so the cache-clear recovery cannot help (the next hydrate
+// re-reads it) — a durable white-screen across every device. Migration 0009's byte cap
+// does NOT close this: a huge array of tiny repeated sets compresses far below it, so the
+// element COUNT must be bounded too. sanitizeWorkoutShape (the read boundary) and
+// cleanImportedWorkout (the import path) both clamp, so no ingress is laxer than another.
+const MAX_EXERCISES_PER_WORKOUT = 200;
+const MAX_SETS_PER_EXERCISE = 1000;
+
 const cleanImportedSet = (s: any) => {
   const reps = Math.trunc(Number(s?.reps));
   if (!Number.isFinite(reps) || reps <= 0 || reps > MAX_REPS) return null;   // a set needs real reps
@@ -911,7 +927,7 @@ const cleanImportedExercise = (e: any) => {
   return {
     name,
     exerciseId: typeof e?.exerciseId === 'string' && e.exerciseId ? e.exerciseId : idForName(name),
-    sets: Array.isArray(e?.sets) ? e.sets.map(cleanImportedSet).filter(Boolean) : [],
+    sets: Array.isArray(e?.sets) ? e.sets.slice(0, MAX_SETS_PER_EXERCISE).map(cleanImportedSet).filter(Boolean) : [],
     notes: typeof e?.notes === 'string' ? e.notes : '',
   };
 };
@@ -928,7 +944,7 @@ const cleanImportedWorkout = (w: any) => {
   return {
     type: pick(TYPE_CONFIG, w.type) ? w.type : 'custom',         // unknown type folds to custom
     bodyWeight: bw === undefined ? null : bw,                     // out-of-range → skipped weigh-in
-    exercises: Array.isArray(w.exercises) ? w.exercises.map(cleanImportedExercise).filter(Boolean) : [],
+    exercises: Array.isArray(w.exercises) ? w.exercises.slice(0, MAX_EXERCISES_PER_WORKOUT).map(cleanImportedExercise).filter(Boolean) : [],
     date,
     notes: typeof w.notes === 'string' ? w.notes : '',
     ...(Number.isFinite(dur) && dur > 0 ? { duration: Math.min(dur, MAX_DURATION_S) } : {}),
@@ -941,6 +957,57 @@ const cleanImportedBW = (e: any) => {
   const weight = Number(e.weight);
   if (!Number.isFinite(weight) || weight <= 0 || weight > MAX_WEIGHT_KG) return null;
   return { date: e.date, weight };
+};
+
+// Read-boundary shape guard for a workout — the workouts analogue of sanitizePrefs.
+// A workout reaches state from THREE untrusted sources: the localStorage cache, the
+// server `workouts` row (hydrate), and the migration insert. Only the IMPORT path was
+// ever cleaned (cleanImportedWorkout). But RLS checks row OWNERSHIP, not SHAPE, so any
+// signed-in user can write a malformed row to their OWN account straight through the
+// REST API — e.g. `exercises: "x"` or an exercise whose `sets` is not an array — and it
+// then syncs to every device they own, where History's `exercise.sets.map(...)` (and the
+// reduce over `exercises`) throws. That crash is caught by the root ErrorBoundary, whose
+// only recovery is clearing THIS device's cache — which cannot help, because the next
+// hydrate re-reads the poisoned server row. Result: a durable white-screen of History /
+// Progress across devices. sanitizePrefs already defends the prefs blob against exactly
+// this ("the server blob is NOT trustworthy just because it came from Postgres"); this is
+// the same defence for workouts. Unlike cleanImportedWorkout it PRESERVES identity (`id`,
+// `_sync`, `workoutId`, `duration`, …) and reinterprets no values — it only coerces the
+// two shapes the renderers assume are arrays, drops non-object members that would crash
+// an unguarded `s.weight` / `s.reps` read, and CAPS the length of both arrays
+// (MAX_EXERCISES_PER_WORKOUT / MAX_SETS_PER_EXERCISE): a set array of ~125k+ spread into
+// `Math.max(...)` by ExerciseCard/History/Progress RangeErrors past the ErrorBoundary,
+// and such an array compresses far under migration 0009's byte cap, so count — not just
+// bytes — has to be bounded on read.
+const sanitizeWorkoutShape = (w: any) => {
+  if (!w || typeof w !== 'object') return w;
+  const exercises = (Array.isArray(w.exercises) ? w.exercises : [])
+    .slice(0, MAX_EXERCISES_PER_WORKOUT)          // bound COUNT: a spread of a huge sets/exercise array RangeErrors past the ErrorBoundary (see MAX_* above)
+    .filter((ex: any) => ex && typeof ex === 'object')
+    .map((ex: any) => ({
+      ...ex,
+      // Coerce the leaf scalars a renderer prints DIRECTLY — `{exercise.name}` (History
+      // h4 + ExerciseCard), `{exercise.notes}` (History) and `{set.reps}` (SetRow). A JSON
+      // object/array there throws "Objects are not valid as a React child" past the
+      // ErrorBoundary, and ProgressScreen's exercise picker sorts on `name` so a non-string
+      // label throws in `localeCompare` on tab-open. Fixing only the two array SHAPES left
+      // these open: a `{name:{}}` row passes this guard AND migration 0009's CHECKs (which
+      // test `jsonb_typeof=array`/size, not element type). Coerce the way the write path and
+      // `num`/`slug` already do, PRESERVING the shapes the app relies on — a STRING
+      // reps/weight is the History editor's held-raw-invalid draft, and a `null` weight is
+      // bodyweight (CLAUDE.md), so never turn either into a number here.
+      name:  typeof ex.name === 'string' ? ex.name : String(ex.name ?? ''),
+      notes: typeof ex.notes === 'string' || ex.notes == null ? ex.notes : String(ex.notes),
+      sets: (Array.isArray(ex.sets) ? ex.sets : [])
+        .slice(0, MAX_SETS_PER_EXERCISE)          // bound COUNT: Math.max(...sets.map(...)) RangeErrors on ~125k+ (ExerciseCard/History/Progress)
+        .filter((s: any) => s && typeof s === 'object')
+        .map((s: any) => ({
+          ...s,
+          reps:   typeof s.reps === 'number' || typeof s.reps === 'string' ? s.reps : num(s.reps),
+          weight: s.weight == null || typeof s.weight === 'number' || typeof s.weight === 'string' ? s.weight : null,
+        })),
+    }));
+  return { ...w, exercises };
 };
 
 // Home-screen session picker. Every tile is a flat surface: the three PPL days
@@ -1517,10 +1584,17 @@ const muscleDonutPalette = (accentHex: string, theme: Theme, count: number): str
 // screen. `num` also stops a NaN/Infinity in the data propagating into the total —
 // once the sum is NaN every volume readout on the page renders "NaN".
 const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+// Guarding the INPUTS alone is not enough: `num(reps) * num(weight)` can still overflow
+// to Infinity with finite-but-extreme operands (a set written straight into the exercises
+// JSONB via the REST API, past the MAX_REPS/MAX_WEIGHT_KG input gates — see
+// sanitizeWorkoutShape, which coerces leaf TYPE but not magnitude). An Infinity here poisons
+// the whole breakdown: muscleGroupBreakdown's `sum` goes Infinity and EVERY slice's `pct`
+// becomes NaN, blanking the donut, while the readout silently shows "0". So wrap each
+// per-set product AND the final total in `num` — volumeOf is now guaranteed finite.
 const volumeOf = (exercise: any) =>
-  Array.isArray(exercise?.sets)
-    ? exercise.sets.reduce((sum: number, s: any) => sum + num(s?.reps) * num(s?.weight), 0)
-    : 0;
+  num(Array.isArray(exercise?.sets)
+    ? exercise.sets.reduce((sum: number, s: any) => sum + num(num(s?.reps) * num(s?.weight)), 0)
+    : 0);
 
 // ─── Units ───────────────────────────────────────────────────────────────────
 // Everything is stored in kg. These convert only at the display and input edges,
@@ -3901,16 +3975,21 @@ const SettingsScreen = ({ prefs, updatePrefs, toggleHidden, theme, themeMode = '
         {/* The acceptance record TERMS.md § 3.2 promises the user can ask for — shown
             rather than only stored, since a consent you can't see is one you can't
             meaningfully withdraw. */}
-        {(consentAt || termsAt) && (
+        {/* These come straight from `session.user.user_metadata`, which is USER-WRITABLE
+            via `supabase.auth.updateUser({ data })` — nothing sanitises it on read (unlike
+            prefs). An object/array version renders as a React child and throws (crashing
+            this whole screen, and with it in-app sign-out / delete / password / export);
+            an object date yields "Invalid Date". Only show string values. */}
+        {(typeof consentAt === 'string' || typeof termsAt === 'string') && (
           <div className="text-xs text-faint mt-3 space-y-1">
-            {consentAt && (
+            {typeof consentAt === 'string' && (
               <p>
                 Health-data consent given {new Date(consentAt).toLocaleDateString()}
-                {consentVersion && <> under policy v{consentVersion}</>}. Withdraw it by deleting your account above.
+                {typeof consentVersion === 'string' && consentVersion && <> under policy v{consentVersion}</>}. Withdraw it by deleting your account above.
               </p>
             )}
-            {termsAt && (
-              <p>Terms {termsVersion && <>v{termsVersion} </>}accepted {new Date(termsAt).toLocaleDateString()}.</p>
+            {typeof termsAt === 'string' && (
+              <p>Terms {typeof termsVersion === 'string' && termsVersion && <>v{termsVersion} </>}accepted {new Date(termsAt).toLocaleDateString()}.</p>
             )}
           </div>
         )}
@@ -4987,7 +5066,7 @@ const GymTrackerApp = () => {
     // Back-fill a local id on cache entries that predate row ids, so the cached
     // list is editable until hydrate swaps in the server rows.
     const loadedWorkouts = (readCache(STORAGE_KEY, parseArray) ?? [])
-      .map((w: any) => normalizeSync({ ...w, id: w.id ?? crypto.randomUUID() }));
+      .map((w: any) => sanitizeWorkoutShape(normalizeSync({ ...w, id: w.id ?? crypto.randomUUID() })));
     if (loadedWorkouts.length > 0) setWorkouts(loadedWorkouts);
 
     // Clamp on read: a goal saved before the 7/week cap would otherwise survive it.
@@ -5249,11 +5328,16 @@ const GymTrackerApp = () => {
             !r._sync && !knownIds.has(r.id) && !serverIds.has(r.id) && !serverDates.has(r.date));
           return [...merged, ...orphans, ...fresh];
         };
+        // rowToWorkout is wrapped in sanitizeWorkoutShape at every server→state boundary:
+        // the row is the source of truth but not trusted to be well-SHAPED (a malformed
+        // `exercises`/`sets` written via the REST API syncs here and crashes History —
+        // see sanitizeWorkoutShape). body_weight_log has no nested array a renderer maps,
+        // so rowToBW needs no shape guard.
         if (migrated) {
-          setWorkouts(workoutRows.map(rowToWorkout));
+          setWorkouts(workoutRows.map((r: any) => sanitizeWorkoutShape(rowToWorkout(r))));
           setBodyWeightLog(bwRows.map(rowToBW));
         } else {
-          setWorkouts(prev => mergeUnsynced(workoutRows, rowToWorkout, prev, knownWorkoutIds));
+          setWorkouts(prev => mergeUnsynced(workoutRows, (r: any) => sanitizeWorkoutShape(rowToWorkout(r)), prev, knownWorkoutIds));
           setBodyWeightLog(prev => mergeUnsynced(bwRows, rowToBW, prev, knownBWIds));
         }
         if (settingsRow) {

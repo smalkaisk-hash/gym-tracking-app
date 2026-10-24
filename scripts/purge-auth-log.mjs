@@ -15,7 +15,9 @@
 // ever run, both rows become false and the policy misstates our practice — which for a
 // health app is the FTC Act § 5 problem, not a tidiness problem.
 //
-//   Usage:  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run purge:auth-log
+//   Usage:  put SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in a gitignored .env.backup
+//           (auto-loaded), or pass them inline (which wins), then:
+//           npm run purge:auth-log
 //           npm run purge:auth-log -- --purge          actually delete (default: dry run)
 //           npm run purge:auth-log -- --retain-days=90
 //
@@ -26,6 +28,11 @@
 // Connects with the service_role key, which bypasses RLS — local use only, never in the
 // browser, never committed. Same rule as backup.mjs and dormant.mjs.
 import { createClient } from '@supabase/supabase-js';
+import { loadOpsEnv } from './env-lib.mjs';
+
+// Keep the service_role key off the command line and out of shell history. Shares
+// .env.backup with the other prod service_role scripts.
+loadOpsEnv('.env.backup');
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;

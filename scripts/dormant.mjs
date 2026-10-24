@@ -27,7 +27,9 @@
 // That is the safe direction to fail in, and while the project has no outbound channel
 // it is also the only honest one.
 //
-//   Usage:  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... SITE_URL=... npm run dormant
+//   Usage:  put SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SITE_URL in a gitignored
+//           .env.backup (auto-loaded), or pass them inline (which wins), then:
+//           npm run dormant
 //           npm run dormant -- --record-warning   record that the warnings were SENT
 //           npm run dormant -- --delete     actually delete (default is a dry run)
 //           npm run dormant -- --warn-months=24 --delete-months=36
@@ -51,6 +53,11 @@
 // reintroduces the precise failure this script's design exists to prevent.
 import { createClient } from '@supabase/supabase-js';
 import { siteUrl, writeNotice } from './notice-lib.mjs';
+import { loadOpsEnv } from './env-lib.mjs';
+
+// Keep the service_role key off the command line and out of shell history. Shares
+// .env.backup with the other prod service_role scripts (SITE_URL can live there too).
+loadOpsEnv('.env.backup');
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;

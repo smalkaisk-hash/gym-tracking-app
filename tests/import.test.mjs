@@ -72,6 +72,21 @@ check('a hostile backup does not pollute Object.prototype through the plan', (()
   planImport(JSON.parse('{"workouts":[{"date":"2026-01-01T00:00:00.000Z","type":"push","exercises":[]}],"__proto__":{"pwned":1}}'), true);
   return ({}).pwned === undefined;
 })());
+// The import path must be no laxer than the read boundary: an oversized sets/exercises
+// array (which would spread into Math.max(...) and RangeError the app) is clamped here
+// too, so a malicious backup can't smuggle past import what sanitizeWorkoutShape bounds.
+check('a backup with a crash-sized sets array is clamped to MAX_SETS_PER_EXERCISE', (() => {
+  const big = Array.from({ length: 200000 }, () => ({ reps: 5, weight: 10 }));
+  const p = planImport({ workouts: [{ date: '2026-01-01T00:00:00.000Z', type: 'push',
+    exercises: [{ name: 'Bench Press', sets: big }] }] }, true);
+  return p && p.workouts[0].exercises[0].sets.length === A.MAX_SETS_PER_EXERCISE;
+})());
+check('a backup with too many exercises is clamped to MAX_EXERCISES_PER_WORKOUT', (() => {
+  const many = Array.from({ length: A.MAX_EXERCISES_PER_WORKOUT + 50 },
+    () => ({ name: 'Bench Press', sets: [{ reps: 5, weight: 10 }] }));
+  const p = planImport({ workouts: [{ date: '2026-01-01T00:00:00.000Z', type: 'push', exercises: many }] }, true);
+  return p && p.workouts[0].exercises.length === A.MAX_EXERCISES_PER_WORKOUT;
+})());
 
 // ── runImportPlan: insert-before-delete, roll back on failure ────────────────
 console.log('\n── runImportPlan — ordering and rollback against a fake db');

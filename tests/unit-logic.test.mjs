@@ -19,9 +19,9 @@ import { loadApp } from './qa/load-app.mjs';
 
 const A = await loadApp();
 const {
-  sanitizePrefs, DEFAULT_PREFS, GOAL_CARD_STYLES,
+  sanitizePrefs, DEFAULT_PREFS, GOAL_CARD_STYLES, sanitizeWorkoutShape,
   rowToWorkout, workoutToRow, rowToBW, bwToRow, supabaseEnabled,
-  num, volumeOf,
+  num, volumeOf, muscleGroupBreakdown,
   toDisplayWeight, fromInputWeight, fromInputReps, fromInputBodyWeight,
   trim1, fmtWeight, fmtVolume, fmtDuration, fmtDurationWords, metricValueLabel,
   startOfDayMs, daysBetween,
@@ -29,6 +29,7 @@ const {
   clampGoal, clampPct, labelForType,
   pick, bareMap,
   LB_PER_KG, KG_PER_LB, MAX_WEIGHT_KG, MAX_REPS,
+  MAX_EXERCISES_PER_WORKOUT, MAX_SETS_PER_EXERCISE,
   GOAL_MIN, GOAL_MAX, GOAL_DEFAULT,
   ACCENTS, FALLBACK_HEX,
   consentRowsFor, needsReconsentFor, reconsentDue,
@@ -57,6 +58,20 @@ eq('volume sums sets', volumeOf({ sets: [{ reps: 10, weight: 80 }, { reps: 5, we
 eq('bodyweight set (null weight) adds 0', volumeOf({ sets: [{ reps: 12, weight: null }] }), 0);
 eq('no sets array is 0 volume', volumeOf({}), 0);
 eq('a NaN weight does not poison the sum', volumeOf({ sets: [{ reps: 10, weight: 80 }, { reps: 5, weight: NaN }] }), 800);
+// Overflow guard: a set written into the exercises JSONB via REST can carry finite-but-
+// extreme reps/weight (past the input gates). `num(reps) * num(weight)` then overflows to
+// Infinity; volumeOf must stay FINITE (the overflowing set scores 0) so it can't blank the
+// muscle donut via a NaN pct. See volumeOf's comment in src.
+check('an overflowing product stays finite (the garbage set scores 0, not Infinity)',
+  Number.isFinite(volumeOf({ sets: [{ reps: 1e308, weight: 1e308 }] })) &&
+  volumeOf({ sets: [{ reps: 1e308, weight: 1e308 }] }) === 0);
+check('a legit set still sums even alongside an overflowing one',
+  volumeOf({ sets: [{ reps: 10, weight: 80 }, { reps: 1e308, weight: 1e308 }] }) === 800);
+check('muscleGroupBreakdown by volume keeps every pct finite despite an overflow set', (() => {
+  const w = { type: 'push', date: '2026-01-01', exercises: [{ name: 'X', sets: [{ reps: 1e308, weight: 1e308 }] }] };
+  const bd = muscleGroupBreakdown([w], 'volume');
+  return bd.every((d) => Number.isFinite(d.value) && Number.isFinite(d.pct));
+})());
 
 // ── unit conversion: stored kg ⇄ displayed lb, null preserved as bodyweight ────
 eq('kg displays unchanged in kg', toDisplayWeight(100, 'kg'), 100);
@@ -383,6 +398,124 @@ eq('pick refuses toString', pick({ push: 1 }, 'toString'), undefined);
       has(bwToRow({ workoutId: 'w1' }), 'workout_id') && !has(bwToRow({ date: 'd', weight: 80 }), 'workout_id'));
     check('bwToRow: a null workoutId does not emit a workout_id column', !has(bwToRow({ workoutId: null }), 'workout_id'));
   }
+}
+
+// ── sanitizeWorkoutShape: the hydrate/cache read-boundary guard ───────────────
+// A workout row is writable to one's OWN account via the REST API with ANY shape (RLS
+// checks ownership, not shape). A row whose `exercises`/`sets` is not an array crashes
+// History's unguarded `exercise.sets.map(...)` past the ErrorBoundary — and because the
+// poison lives on the server, the cache-clear recovery can't fix it: the next hydrate
+// re-reads it. This function is the always-on defence; it must coerce the shapes the
+// renderers assume WITHOUT dropping identity or reinterpreting values. The source-wiring
+// block below asserts it is actually CALLED at all three untrusted ingress points — a
+// working function that nothing calls is the silent-revert this guards against.
+{
+  const sortKeys = (o) => JSON.stringify(o, Object.keys(o).sort());
+
+  eq('shape: exercises that is not an array becomes []',
+    sortKeys(sanitizeWorkoutShape({ exercises: 'x' }).exercises), '[]');
+  eq('shape: exercises null becomes []',
+    sortKeys(sanitizeWorkoutShape({ exercises: null }).exercises), '[]');
+  eq('shape: an exercise whose sets is not an array gets sets []',
+    sortKeys(sanitizeWorkoutShape({ exercises: [{ name: 'Bench', sets: 'nope' }] }).exercises[0].sets), '[]');
+  check('shape: a non-object set member is dropped (would crash s.weight)', (() => {
+    const sets = sanitizeWorkoutShape({ exercises: [{ name: 'Bench', sets: [null, 7, { reps: 5, weight: 10 }] }] }).exercises[0].sets;
+    return sets.length === 1 && sets[0].reps === 5 && sets[0].weight === 10;
+  })());
+  check('shape: a non-object exercise member is dropped', (() => {
+    const exes = sanitizeWorkoutShape({ exercises: [null, 'x', { name: 'Squat', sets: [] }] }).exercises;
+    return exes.length === 1 && exes[0].name === 'Squat';
+  })());
+  check('shape: identity and values are PRESERVED (id, _sync, type, date, duration, notes, real sets)', (() => {
+    const w = sanitizeWorkoutShape({
+      id: 'w1', _sync: 'error', type: 'push', date: '2026-01-01T00:00:00.000Z',
+      duration: 1800, notes: 'n', bodyWeight: 80,
+      exercises: [{ name: 'Bench', exerciseId: 'bench', notes: 'x', sets: [{ reps: 8, weight: 60 }] }],
+    });
+    return w.id === 'w1' && w._sync === 'error' && w.type === 'push' && w.duration === 1800 &&
+      w.notes === 'n' && w.bodyWeight === 80 &&
+      w.exercises[0].exerciseId === 'bench' && w.exercises[0].notes === 'x' &&
+      w.exercises[0].sets[0].reps === 8 && w.exercises[0].sets[0].weight === 60;
+  })());
+  check('shape: a well-formed bodyweight set (null weight) survives untouched', (() => {
+    const sets = sanitizeWorkoutShape({ exercises: [{ name: 'Pull Up', sets: [{ reps: 10, weight: null }] }] }).exercises[0].sets;
+    return sets.length === 1 && sets[0].weight === null && sets[0].reps === 10;
+  })());
+  check('shape: a non-object workout is returned as-is (defensive, no throw)',
+    sanitizeWorkoutShape(null) === null && sanitizeWorkoutShape('x') === 'x');
+
+  // Leaf coercion: a renderer prints name/notes/reps DIRECTLY (and Progress sorts on
+  // `name` via localeCompare), so an object/array leaf throws past the ErrorBoundary.
+  // These survive the array-shape fixes above AND migration 0009's array/size CHECKs, so
+  // pin them — while keeping the shapes the app relies on (string reps = the editor's
+  // held-invalid draft; null weight = bodyweight).
+  check('leaf: an object exercise name is coerced to a string', (() => {
+    const ex = sanitizeWorkoutShape({ exercises: [{ name: { evil: 1 }, sets: [] }] }).exercises[0];
+    return typeof ex.name === 'string';
+  })());
+  check('leaf: object exercise notes are coerced to a string; null/undefined notes are kept', (() => {
+    const bad  = sanitizeWorkoutShape({ exercises: [{ name: 'B', notes: { x: 1 }, sets: [] }] }).exercises[0];
+    const none = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: [] }] }).exercises[0];
+    return typeof bad.notes === 'string' && none.notes == null;
+  })());
+  check('leaf: an object set reps becomes a number; a string reps (editor draft) is kept', (() => {
+    const objReps = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: [{ reps: { n: 5 }, weight: 1 }] }] }).exercises[0].sets[0];
+    const strReps = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: [{ reps: '12', weight: 1 }] }] }).exercises[0].sets[0];
+    return objReps.reps === 0 && strReps.reps === '12';
+  })());
+  check('leaf: an object set weight becomes null (bodyweight); null and string weight are kept', (() => {
+    const objW = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: [{ reps: 5, weight: { k: 1 } }] }] }).exercises[0].sets[0];
+    const nulW = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: [{ reps: 5, weight: null }] }] }).exercises[0].sets[0];
+    const strW = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: [{ reps: 5, weight: '80' }] }] }).exercises[0].sets[0];
+    return objW.weight === null && nulW.weight === null && strW.weight === '80';
+  })());
+  check('leaf: no rendered leaf is an object/array after sanitising (would throw as a React child)', (() => {
+    const ex = sanitizeWorkoutShape({ exercises: [{ name: [1, 2], notes: {}, sets: [{ reps: {}, weight: [] }] }] }).exercises[0];
+    const isLeaf = (v) => v == null || typeof v !== 'object';
+    return isLeaf(ex.name) && isLeaf(ex.notes) && ex.sets.every((s) => isLeaf(s.reps) && isLeaf(s.weight));
+  })());
+
+  // Element-count caps: a workout row is REST-writable with any SIZE (RLS checks ownership,
+  // not size). Several render paths SPREAD a set array into a call — Math.max(...sets.map(..))
+  // in ExerciseCard/History/Progress — which RangeErrors ("Maximum call stack size exceeded")
+  // at ~125k+ elements, past the ErrorBoundary, durably (the poison is server-side). A huge
+  // array of tiny repeated sets compresses under migration 0009's byte cap, so the COUNT must
+  // be bounded on read. These assert the clamp, and that the exact shipping expression that
+  // used to crash no longer does.
+  check('cap: a crash-sized sets array is clamped to MAX_SETS_PER_EXERCISE', (() => {
+    const big  = Array.from({ length: 200000 }, () => ({ reps: 5, weight: 10 }));
+    const sets = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: big }] }).exercises[0].sets;
+    return sets.length === MAX_SETS_PER_EXERCISE && sets[0].reps === 5 && sets[0].weight === 10;
+  })());
+  check('cap: after clamping, the shipping render expression Math.max(...sets.map(..)) no longer throws', (() => {
+    const big  = Array.from({ length: 200000 }, () => ({ reps: 5, weight: 10 }));
+    const sets = sanitizeWorkoutShape({ exercises: [{ name: 'B', sets: big }] }).exercises[0].sets;
+    try { Math.max(...sets.map((s) => s.weight ?? 0)); return true; } catch { return false; }
+  })());
+  check('cap: the SAME expression on the UNCLAMPED input RangeErrors (so the cap is load-bearing, not cosmetic)', (() => {
+    const big = Array.from({ length: 200000 }, () => ({ weight: 10 }));
+    try { Math.max(...big.map((s) => s.weight ?? 0)); return false; } catch (e) { return e instanceof RangeError; }
+  })());
+  check('cap: exercises beyond MAX_EXERCISES_PER_WORKOUT are dropped', (() => {
+    const many = Array.from({ length: MAX_EXERCISES_PER_WORKOUT + 50 }, (_, i) => ({ name: 'E' + i, sets: [] }));
+    return sanitizeWorkoutShape({ exercises: many }).exercises.length === MAX_EXERCISES_PER_WORKOUT;
+  })());
+  check('cap: a real-sized workout is untouched by the caps', (() => {
+    const sets = Array.from({ length: 20 }, () => ({ reps: 8, weight: 60 }));
+    const w = sanitizeWorkoutShape({ exercises: [{ name: 'Bench', sets }] });
+    return w.exercises.length === 1 && w.exercises[0].sets.length === 20;
+  })());
+
+  // Source-wiring guard: the function above is worthless if nothing calls it. Assert it
+  // wraps rowToWorkout at the hydrate boundary (both the merge and migration branches)
+  // and is applied on the localStorage cache load — the three untrusted ingress points.
+  // A refactor that drops one of these re-opens the durable-crash hole with every unit
+  // test still green, exactly the silent revert the guards below fuzz.test.mjs catch.
+  const src = fs.readFileSync(new URL('../src/gym-tracker-app.tsx', import.meta.url), 'utf8');
+  const wraps = (src.match(/sanitizeWorkoutShape\(rowToWorkout\(/g) ?? []).length;
+  check('wiring: sanitizeWorkoutShape wraps rowToWorkout at BOTH hydrate branches (merge + migration)', wraps >= 2);
+  check('wiring: sanitizeWorkoutShape is applied on the localStorage cache load',
+    /sanitizeWorkoutShape\(normalizeSync\(/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

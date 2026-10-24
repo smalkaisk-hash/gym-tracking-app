@@ -13,7 +13,9 @@
 // list, to be sent from the contact address — already a disclosed processor (Google LLC,
 // PRIVACY.md § 6). A promise nobody can perform is the failure; the pipeline is not.
 //
-//   Usage:  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run notify:policy-change
+//   Usage:  put SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SITE_URL in a gitignored
+//           .env.backup (auto-loaded), or pass them inline (which wins), then:
+//           npm run notify:policy-change
 //
 // It reads the versions and the effective date out of src/gym-tracker-app.tsx rather
 // than taking them as arguments, so the notice cannot describe a different change from
@@ -22,6 +24,11 @@ import { createClient } from '@supabase/supabase-js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { root, siteUrl, writeNotice } from './notice-lib.mjs';
+import { loadOpsEnv } from './env-lib.mjs';
+
+// Keep the service_role key off the command line and out of shell history. Shares
+// .env.backup with the other prod service_role scripts (SITE_URL can live there too).
+loadOpsEnv('.env.backup');
 
 const src = fs.readFileSync(path.join(root, 'src/gym-tracker-app.tsx'), 'utf8');
 

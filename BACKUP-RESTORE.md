@@ -46,11 +46,29 @@ Get the values from the Supabase dashboard → **Project Settings → API**:
   key). Treat it like a root password: never commit it, never ship it to the
   browser.
 
-Put them somewhere gitignored — e.g. a `.env.backup` file you `source`, or your
-shell profile. (`.env.*` is already gitignored; `.env.example` is the only tracked
-one.)
+Put them in a **`.env.backup`** file at the repo root:
+
+```
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role-key>
+```
+
+`npm run backup` (and `dormant` / `purge:auth-log` / `notify:policy-change`, which share
+the same credentials) **auto-loads `.env.backup`** — so the service_role key stays in a
+gitignored file instead of being typed on the command line, where it would land in shell
+history. (`.env.*` is already gitignored; `.env.example` is the only tracked one. Never
+commit this file — the service_role key is a root password.) A value passed inline on the
+command line still wins over the file, so the examples below also work verbatim.
 
 ### Take a backup
+
+With `.env.backup` in place:
+
+```bash
+npm run backup
+```
+
+Or pass the secrets inline (this overrides the file):
 
 ```bash
 SUPABASE_URL=https://<ref>.supabase.co \
@@ -119,6 +137,11 @@ project instead.
 
 ### Run the drill
 
+`restore.mjs` auto-loads a gitignored **`.env.restore`** file (separate from
+`.env.backup` because it points at a *different* project and uses `RESTORE_*` names), so
+the target's service_role key can live there instead of on the command line. Put the
+scratch target's credentials in it, or pass them inline as shown (inline wins):
+
 ```bash
 RESTORE_SUPABASE_URL=https://<scratch-ref>.supabase.co \
 RESTORE_SERVICE_ROLE_KEY=<scratch-service_role-key> \
@@ -177,5 +200,25 @@ RESTORE_SERVICE_ROLE_KEY=<prod-service_role-key> \
   npm run restore -- backups/fitpulse-backup-<ISO>.json --force-prod
 ```
 
-Without `--force-prod` the script hard-stops when the target matches the backup's
-source — that guard is deliberate, so a drill can never hit prod by muscle memory.
+Without `--force-prod` the script hard-stops when it recognises the target as
+production — that guard is deliberate, so a drill can never hit prod by muscle memory.
+It recognises production two ways:
+
+1. the target matches the **backup's own `source`** project (catches "I forgot to switch
+   the target away from prod" while holding a prod backup); and
+2. the target matches **`PROD_SUPABASE_URL`**, if you set it.
+
+Set `PROD_SUPABASE_URL` — in `.env.restore` alongside the restore target's
+credentials — to your real project URL. Signal (1) alone only recognises prod when the
+*backup itself* came from prod; a drill backup taken from a **branch** (which clones
+`auth.users`, so it carries real `user_id`s) or a scratch project has a different
+`source`, and without (2) it could be restored straight over production with no flag.
+`PROD_SUPABASE_URL` closes that by naming prod independently of whatever backup is in
+hand:
+
+```
+# .env.restore — scratch target by default, plus prod named for the guard
+RESTORE_SUPABASE_URL=https://<scratch-ref>.supabase.co
+RESTORE_SERVICE_ROLE_KEY=<scratch-service_role-key>
+PROD_SUPABASE_URL=https://<prod-ref>.supabase.co
+```

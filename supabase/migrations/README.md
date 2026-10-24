@@ -22,6 +22,7 @@ by hand. Run each un-applied file's SQL in the **Supabase SQL editor** (or via
 | `0006_add_dormancy_notices.sql` | ✅ **applied 2026-08-05** — verified: `public.dormancy_notices` exists, RLS on, `SELECT`-only policy (no session-writable INSERT/UPDATE/DELETE); `scripts/dormant.mjs` now has its gate row and the dormancy rule can operate |
 | `0007_server_stamp_consents.sql` | ✅ **applied 2026-10-23** (via Management API) — verified: trigger `consents_stamp_trg` present on `public.consents`, function `consents_stamp()` `SECURITY DEFINER` with `search_path = ''`. Functional proof (rolled back): a client-sent `recorded_at` of 2000 was stored as `now()` (year 2026), and a `granted_at` two days in the future was refused with `consents.granted_at is in the future`. `legal/PRIVACY.md` § 3's immutability now holds against an appended backdated row, not just a rewrite |
 | `0008_schedule_auth_log_purge.sql` | ✅ **applied 2026-10-23** (via Management API) — verified: `pg_cron` 1.6.4 installed in **`pg_catalog`** (not `public` → no `extension_in_public` advisor), job `purge-auth-audit-log` registered, `active`, schedule `17 3 * * *`, command `select public.purge_auth_audit_log(90, false)`. Evidence of a working **scheduled** run (not just a registered job): `cron.job_run_details` shows `status = 'succeeded'` at `2026-10-23 18:30:00 UTC` (`auth.audit_log_entries` held 0 rows >90d, so a clean no-op delete). `legal/PRIVACY.md` § 7's 90-day retention is now an ongoing practice |
+| `0009_harden_row_shape_and_size.sql` | ⛔ **NOT applied** — shape/size CHECK constraints on `workouts`/`body_weight_log`/`settings`. Blocks a malformed row (`exercises` not a JSON array → durable History crash), unbounded TEXT/JSONB, and oversized element COUNT (a huge repeated-set array compresses under the byte cap but RangeErrors `Math.max(...)` → durable crash) at the source. Adds helper `fitpulse_max_sets_per_exercise`. Additive, no app deploy (the app already guards+clamps workouts on read via `sanitizeWorkoutShape`). Added NOT VALID, so it cannot fail on existing rows |
 
 ### To apply 0001
 
@@ -226,6 +227,47 @@ running is. That entry was once marked verified with a note conceding the practi
 started, which is exactly the failure `check:claims` exists to catch.
 
 To wind it back: `select cron.unschedule('purge-auth-audit-log');`
+
+### To apply 0009
+
+Paste the file into the SQL editor and run it. It is additive and needs **no app deploy**:
+every weigh-in/workout/settings row the app writes already satisfies these bounds (the
+client enforces `MAX_WEIGHT_KG`, always writes an array `exercises`, etc.), and the app
+also guards workouts on read (`sanitizeWorkoutShape`), so the constraints are defence in
+depth against a row written by anything that is *not* the app (a direct REST call with a
+real session, a hand-edited row, an older client). Each constraint is `NOT VALID`, so it
+is enforced on every new write immediately and **cannot fail or lock on existing rows**.
+
+Confirm no existing row would violate (all should return 0), then — and only then —
+optionally run the `VALIDATE CONSTRAINT` block at the bottom of the file to check the
+existing rows too:
+
+```sql
+-- rows that already break a new constraint (expected: all zero on clean prod data)
+select 'exercises_not_array' k, count(*) from public.workouts where jsonb_typeof(exercises) <> 'array'
+union all select 'exercises_too_big', count(*) from public.workouts where pg_column_size(exercises) > 262144
+union all select 'type_too_long',     count(*) from public.workouts where char_length(type) > 64
+union all select 'notes_too_long',    count(*) from public.workouts where notes is not null and char_length(notes) > 20000
+union all select 'bw_out_of_range',   count(*) from public.workouts where body_weight is not null and (body_weight <= 0 or body_weight > 100000)
+union all select 'too_many_exercises', count(*) from public.workouts where jsonb_typeof(exercises) = 'array' and jsonb_array_length(exercises) > 1000
+union all select 'too_many_sets',     count(*) from public.workouts where public.fitpulse_max_sets_per_exercise(exercises) > 5000
+union all select 'weight_out_of_range', count(*) from public.body_weight_log where weight <= 0 or weight > 100000
+union all select 'prefs_not_object',  count(*) from public.settings where prefs is not null and jsonb_typeof(prefs) <> 'object'
+union all select 'prefs_too_big',     count(*) from public.settings where prefs is not null and pg_column_size(prefs) > 131072;
+```
+
+Verify the constraint blocks the attack (run as a signed-in user against your own row, or
+as service_role against a throwaway id — expect an ERROR):
+
+```sql
+-- expected: ERROR — new row for relation "workouts" violates check constraint
+--           "workouts_exercises_is_array"
+insert into public.workouts (type, date, exercises) values ('push', '2026-01-01', '"x"'::jsonb);
+```
+
+To wind it back: `alter table public.workouts drop constraint workouts_exercises_is_array;`
+(and likewise for the other eleven named constraints, then
+`drop function public.fitpulse_max_sets_per_exercise(jsonb);` once nothing references it).
 
 ## Per-user deletion: what is guaranteed
 

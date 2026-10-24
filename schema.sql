@@ -100,6 +100,84 @@ drop policy if exists "own settings" on public.settings;
 create policy "own settings" on public.settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- ── Shape & size constraints (migration 0009) ─────────────────────────────────
+-- RLS scopes a row to its owner but does NOT constrain its SHAPE. A signed-in user can
+-- POST straight to PostgREST (the app's own validation is client-side only) and store a
+-- malformed row under their own id — e.g. `exercises: "x"` (valid JSONB; `not null` only
+-- blocks SQL NULL, not a scalar), which then syncs to every device and crashes History's
+-- `exercise.sets.map(...)`. These enforce the shapes the renderers assume and bound the
+-- otherwise ~1 GB TEXT/JSONB columns against storage abuse. The app also guards workouts
+-- on read (sanitizeWorkoutShape); this is the same invariant at the source. Guarded on
+-- pg_constraint so this is safe to re-run. (In a FRESH environment the tables are empty,
+-- so these are added fully valid; migration 0009 adds the same set NOT VALID on a live
+-- table so existing rows are grandfathered — see supabase/migrations/0009.)
+--
+-- Element COUNT is capped as well as byte size: a huge array of tiny repeated sets
+-- compresses far under the 256 KiB byte cap, yet ~125k+ elements spread into
+-- Math.max(...sets.map(...)) RangeErrors the app past its ErrorBoundary. This helper backs
+-- the sets-per-exercise cap (IMMUTABLE, reads only its argument, CASE-guarded so a
+-- non-array can never make jsonb_array_elements error inside the CHECK).
+create or replace function public.fitpulse_max_sets_per_exercise(ex jsonb)
+returns integer language sql immutable parallel safe as $$
+  select coalesce(max(jsonb_array_length(e -> 'sets')), 0)
+  from jsonb_array_elements(case when jsonb_typeof(ex) = 'array' then ex else '[]'::jsonb end) as e
+  where jsonb_typeof(e -> 'sets') = 'array'
+$$;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'workouts_exercises_is_array') then
+    alter table public.workouts add constraint workouts_exercises_is_array
+      check (jsonb_typeof(exercises) = 'array');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'workouts_exercises_size') then
+    alter table public.workouts add constraint workouts_exercises_size
+      check (pg_column_size(exercises) <= 262144);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'workouts_type_len') then
+    alter table public.workouts add constraint workouts_type_len
+      check (char_length(type) <= 64);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'workouts_date_len') then
+    alter table public.workouts add constraint workouts_date_len
+      check (char_length(date) <= 64);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'workouts_notes_len') then
+    alter table public.workouts add constraint workouts_notes_len
+      check (notes is null or char_length(notes) <= 20000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'workouts_body_weight_range') then
+    alter table public.workouts add constraint workouts_body_weight_range
+      check (body_weight is null or (body_weight > 0 and body_weight <= 100000));
+  end if;
+  -- Element-count caps (above the app's read-clamp of 200/1000 so a legit write never
+  -- trips) — the count defence the byte cap cannot give (a repetitive array compresses small).
+  if not exists (select 1 from pg_constraint where conname = 'workouts_exercises_count') then
+    alter table public.workouts add constraint workouts_exercises_count
+      check (jsonb_typeof(exercises) <> 'array' or jsonb_array_length(exercises) <= 1000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'workouts_sets_per_exercise') then
+    alter table public.workouts add constraint workouts_sets_per_exercise
+      check (public.fitpulse_max_sets_per_exercise(exercises) <= 5000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bw_weight_range') then
+    alter table public.body_weight_log add constraint bw_weight_range
+      check (weight > 0 and weight <= 100000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bw_date_len') then
+    alter table public.body_weight_log add constraint bw_date_len
+      check (char_length(date) <= 64);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'settings_prefs_is_object') then
+    alter table public.settings add constraint settings_prefs_is_object
+      check (prefs is null or jsonb_typeof(prefs) = 'object');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'settings_prefs_size') then
+    alter table public.settings add constraint settings_prefs_size
+      check (prefs is null or pg_column_size(prefs) <= 131072);
+  end if;
+end $$;
+
 -- ── consents (append-only evidence of consent) ───────────────────────────────
 -- GDPR Art. 7(1) puts the burden of DEMONSTRATING consent on the controller. The
 -- copy in auth.users.raw_user_meta_data is written first (it survives an abandoned

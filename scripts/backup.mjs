@@ -6,8 +6,9 @@
 // so it must only ever run locally with secrets from the environment — never in
 // the browser, never committed.
 //
-//   Usage:  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run backup
-//           (or put those two in .env.backup — see BACKUP-RESTORE.md)
+//   Usage:  put SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in a gitignored .env.backup
+//           (auto-loaded) and run `npm run backup`; or pass them inline on the command
+//           line, which wins over the file. See BACKUP-RESTORE.md.
 //
 // Output:  backups/fitpulse-backup-<ISO>.json       — feed it to `npm run restore`.
 //          backups/fitpulse-backup-<ISO>.auth-users.sql — placeholder auth.users rows to
@@ -25,6 +26,10 @@
 import { createClient } from '@supabase/supabase-js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { loadOpsEnv } from './env-lib.mjs';
+
+// Keep the service_role key off the command line and out of shell history.
+loadOpsEnv('.env.backup');
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
