@@ -175,6 +175,34 @@ further RLS-scoped tables hold compliance records — `consents` (append-only co
 evidence) and `dormancy_notices` — so `public` has five tables in all; the backup covers
 every one.
 
+## Security
+
+A quick tour of the model — the depth is in [CLAUDE.md](CLAUDE.md), [schema.sql](schema.sql)
+and [PRIVACY.md](legal/PRIVACY.md).
+
+- **Row Level Security on every table.** Each row is scoped to `auth.uid()`, so a signed-in
+  user can only ever read or write their own data. This is why shipping the anon key in the
+  browser is safe — authorization lives in the database, not in the client. A cross-tenant
+  integration test (`npm run test:rls`) exercises the model against a disposable project.
+- **Secrets stay server-side.** Only `VITE_`-prefixed vars reach the browser (just the URL +
+  anon key); `.env.local` is gitignored, and the `service_role` key is never in client code.
+- **Auth.** Email + password via Supabase. Changing a password requires the current one,
+  and account deletion is self-service (a `SECURITY DEFINER` function that removes every row).
+- **Untrusted input is validated at the edge and on read.** Numbers, dates and row shapes are
+  checked before they're stored, and again when they're read back — so a malformed or
+  oversized row (e.g. written directly via the API) degrades gracefully instead of crashing
+  the app. Server-side `CHECK` constraints back this up as defence-in-depth (see the
+  [migrations README](supabase/migrations/README.md)).
+- **The offline cache is owner-tagged.** Cached data is stamped with the user id it belongs
+  to and cleared on a genuine account change or sign-out, so a shared device can't leak one
+  account's data to another.
+- **No third-party tracking by default.** Error reporting is off unless a DSN is explicitly
+  configured, and turning it on is gated against the privacy policy (`npm run build` fails if
+  the two disagree). The app ships no analytics or ad SDKs.
+
+This is a surface overview, not a formal audit; see [LEGAL-LIABILITY-AUDIT.md](LEGAL-LIABILITY-AUDIT.md)
+and the `compliance/` records for the accountability side.
+
 ## Documentation map
 
 | File | What it covers |
